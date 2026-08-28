@@ -1,12 +1,13 @@
 import Link from "next/link";
-import { connection } from "next/server";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
+
 import {
   ArrowLeft,
-  Clock,
   Globe,
   Activity,
   CheckCircle2,
+  Clock,
   XCircle,
 } from "lucide-react";
 
@@ -29,7 +30,6 @@ export default async function MonitorDetailsPage({
 
   if (!user) return null;
 
-  // MONITOR
   const { data: monitor } = await supabase
     .from("monitors")
     .select("*")

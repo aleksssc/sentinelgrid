@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity } from "lucide-react";
+import Image from "next/image";
 import { AuthButton } from "@/components/auth-button";
 
 export default function MarketingLayout({
@@ -18,9 +18,13 @@ export default function MarketingLayout({
             href="/"
             className="flex items-center gap-2 font-bold"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-black">
-              <Activity size={18} />
-            </div>
+            <Image
+              src="/logos/sentinelgrid_png.png"
+              alt="SentinelGrid"
+              width={32}
+              height={32}
+              className="h-8 w-8 object-contain"
+            />
 
             <span className="text-lg">
               SentinelGrid
@@ -29,6 +33,7 @@ export default function MarketingLayout({
 
           {/* NAV */}
           <div className="hidden items-center gap-8 md:flex">
+
             <Link
               href="/features"
               className="text-sm text-zinc-400 transition hover:text-white"
@@ -56,6 +61,7 @@ export default function MarketingLayout({
             >
               About
             </Link>
+
           </div>
 
           {/* AUTH */}
@@ -68,6 +74,7 @@ export default function MarketingLayout({
 
       <footer className="border-t border-zinc-800">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 text-sm text-zinc-600">
+
           <span>
             © {new Date().getFullYear()} SentinelGrid
           </span>
@@ -75,6 +82,7 @@ export default function MarketingLayout({
           <span>
             Infrastructure Monitoring Platform
           </span>
+
         </div>
       </footer>
 
