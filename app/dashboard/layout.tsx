@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import {
   LayoutDashboard,
   Activity,
@@ -25,8 +26,22 @@ export default function DashboardLayout({
       <aside className="relative w-64 border-r border-zinc-800 bg-zinc-950 p-4">
 
         <div className="px-3 py-4 mb-6">
-          <Link href="/" className="text-xl font-bold">
-            SentinelGrid
+          {/* LOGO */}
+          <Link
+            href="/"
+            className="flex items-center gap-2 font-bold"
+          >
+            <Image
+              src="/logos/sentinelgrid_png.png"
+              alt="SentinelGrid"
+              width={32}
+              height={32}
+              className="h-8 w-8 object-contain"
+            />
+
+            <span className="text-lg">
+              SentinelGrid
+            </span>
           </Link>
         </div>
 
