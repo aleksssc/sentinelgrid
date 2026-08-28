@@ -58,6 +58,42 @@ export function LogoutButton() {
   }, [supabase]);
 
   useEffect(() => {
+    function handleProfileUpdated(event: Event) {
+      const customEvent = event as CustomEvent<{
+        name?: string;
+        email?: string;
+        avatarUrl?: string | null;
+      }>;
+
+      const data = customEvent.detail;
+
+      if (data.name !== undefined) {
+        setName(data.name);
+      }
+
+      if (data.email !== undefined) {
+        setEmail(data.email);
+      }
+
+      if (data.avatarUrl !== undefined) {
+        setAvatarUrl(data.avatarUrl);
+      }
+    }
+
+    window.addEventListener(
+      "sentinelgrid-profile-updated",
+      handleProfileUpdated
+    );
+
+    return () => {
+      window.removeEventListener(
+        "sentinelgrid-profile-updated",
+        handleProfileUpdated
+      );
+    };
+  }, []);
+
+  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
         menuRef.current &&
@@ -122,7 +158,7 @@ export function LogoutButton() {
               type="button"
               onClick={() => {
                 setOpen(false);
-                router.push("/dashboard/settings");
+                router.push("/dashboard/profile");
               }}
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-white"
             >
