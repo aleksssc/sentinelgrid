@@ -315,37 +315,6 @@ Open:
 ```text
 http://localhost:3000
 ```
-
----
-
-## 📁 Project Structure
-
-```text
-sentinelgrid/
-│
-├── app/
-│   ├── auth/
-│   │   ├── login/
-│   │   ├── sign-up/
-│   │   ├── confirm/
-│   │   ├── forgot-password/
-│   │   └── update-password/
-│   │
-│   ├── dashboard/
-│   │   ├── monitors/
-│   │   ├── profile/
-│   │   └── settings/
-│   │
-│   ├── api/
-│   └── page.tsx
-│
-├── components/
-├── lib/
-├── public/
-│
-└── package.json
-```
-
 ---
 
 ## 🎯 Vision
