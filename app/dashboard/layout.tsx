@@ -49,11 +49,11 @@ export default function DashboardLayout({
           </Link>
 
           <Link
-            href="/dashboard/servers"
+            href="/dashboard/organizations"
             className="flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-300 hover:bg-zinc-900 hover:text-white"
           >
             <Server size={18} />
-            Servers
+            Organizations
           </Link>
 
           <Link
