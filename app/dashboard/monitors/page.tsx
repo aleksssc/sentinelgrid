@@ -1,11 +1,16 @@
 import { connection } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
 
 export default async function MonitorsPage() {
   await connection();
 
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   const { data: monitors } = await supabase
     .from("monitors")
@@ -15,119 +20,327 @@ export default async function MonitorsPage() {
   async function addMonitor(formData: FormData) {
     "use server";
 
-    const name = formData.get("name") as string;
-    const url = formData.get("url") as string;
-
-    if (!name || !url) return;
-
     const supabase = await createClient();
 
-    const { error } = await supabase.from("monitors").insert({
-      name,
-      url,
-    });
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (error) {
-      console.error(error);
+    if (!user) return;
+
+    const name = String(formData.get("name") ?? "").trim();
+    const urlInput = String(formData.get("url") ?? "").trim();
+
+    if (!name || !urlInput) return;
+
+    let parsedUrl: URL;
+
+    try {
+      parsedUrl = new URL(urlInput);
+    } catch {
       return;
     }
+
+    if (
+      parsedUrl.protocol !== "http:" &&
+      parsedUrl.protocol !== "https:"
+    ) {
+      return;
+    }
+
+    await supabase.from("monitors").insert({
+      user_id: user.id,
+      name,
+      url: parsedUrl.toString(),
+    });
 
     revalidatePath("/dashboard/monitors");
   }
 
+  async function checkMonitor(monitorId: string) {
+    "use server";
+
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    /*
+      IMPORTANT:
+      Só vamos buscar um monitor que pertença
+      ao utilizador autenticado.
+    */
+
+    const { data: monitor } = await supabase
+      .from("monitors")
+      .select("*")
+      .eq("id", monitorId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (!monitor) return;
+
+    let online = false;
+    let statusCode: number | null = null;
+    let responseTime: number | null = null;
+    let errorMessage: string | null = null;
+
+    const controller = new AbortController();
+
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 8000);
+
+    const start = performance.now();
+
+    try {
+      const response = await fetch(monitor.url, {
+        method: "GET",
+        redirect: "follow",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+
+      responseTime = Math.round(
+        performance.now() - start
+      );
+
+      statusCode = response.status;
+
+      online = response.ok;
+    } catch (error) {
+      responseTime = Math.round(
+        performance.now() - start
+      );
+
+      online = false;
+
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else {
+        errorMessage = "Unknown connection error";
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    /*
+      Guarda histórico
+    */
+
+    await supabase.from("monitor_checks").insert({
+      monitor_id: monitor.id,
+      online,
+      status_code: statusCode,
+      response_time_ms: responseTime,
+      error_message: errorMessage,
+    });
+
+    /*
+      Atualiza estado atual
+    */
+
+    await supabase
+      .from("monitors")
+      .update({
+        status: online ? "online" : "offline",
+        status_code: statusCode,
+        response_time_ms: responseTime,
+        last_checked_at: new Date().toISOString(),
+      })
+      .eq("id", monitor.id);
+
+    revalidatePath("/dashboard/monitors");
+    revalidatePath("/dashboard");
+  }
+
   return (
-    <main className="min-h-screen bg-zinc-950 text-white p-10">
+    <main className="p-8">
+      <div className="mx-auto max-w-7xl">
 
-      <div className="max-w-6xl mx-auto">
+        {/* HEADER */}
 
-        <div className="mb-10">
+        <div className="mb-8">
           <h1 className="text-3xl font-bold">
             Monitors
           </h1>
 
-          <p className="text-zinc-400 mt-2">
-            Monitor your websites and services.
+          <p className="mt-2 text-zinc-400">
+            Monitor websites, APIs and services.
           </p>
         </div>
-
 
         {/* ADD MONITOR */}
 
         <form
           action={addMonitor}
-          className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-10"
+          className="mb-8 rounded-2xl border border-zinc-800 bg-zinc-900 p-6"
         >
-
-          <h2 className="text-xl font-semibold mb-5">
-            Add Monitor
+          <h2 className="mb-5 text-lg font-semibold">
+            Add monitor
           </h2>
 
-          <div className="flex gap-4">
+          <div className="grid gap-4 md:grid-cols-[1fr_2fr_auto]">
 
             <input
               name="name"
-              placeholder="Website name"
               required
-              className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-4 py-3 outline-none"
+              placeholder="Website name"
+              className="rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none transition focus:border-zinc-500"
             />
 
             <input
               name="url"
               type="url"
-              placeholder="https://example.com"
               required
-              className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-4 py-3 outline-none"
+              placeholder="https://example.com"
+              className="rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none transition focus:border-zinc-500"
             />
 
             <button
               type="submit"
-              className="bg-white text-black px-6 py-3 rounded-lg font-medium hover:bg-zinc-200"
+              className="rounded-xl bg-white px-6 py-3 font-medium text-black transition hover:bg-zinc-200"
             >
-              Add Monitor
+              Add monitor
             </button>
 
           </div>
-
         </form>
 
+        {/* EMPTY STATE */}
+
+        {!monitors?.length && (
+          <div className="rounded-2xl border border-dashed border-zinc-800 py-20 text-center">
+            <p className="font-medium">
+              No monitors yet
+            </p>
+
+            <p className="mt-2 text-sm text-zinc-500">
+              Add your first website above.
+            </p>
+          </div>
+        )}
 
         {/* MONITORS */}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
 
-          {monitors?.map((monitor) => (
+          {monitors?.map((monitor) => {
+            const checkAction =
+              checkMonitor.bind(null, monitor.id);
 
-            <div
-              key={monitor.id}
-              className="bg-zinc-900 border border-zinc-800 rounded-xl p-6"
-            >
+            return (
+              <div
+                key={monitor.id}
+                className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6"
+              >
 
-              <div className="flex justify-between items-start">
+                {/* TOP */}
 
-                <div>
-                  <h3 className="font-semibold text-lg">
-                    {monitor.name}
-                  </h3>
+                <div className="flex items-start justify-between gap-4">
 
-                  <p className="text-zinc-500 text-sm mt-1">
-                    {monitor.url}
-                  </p>
+                  <div className="min-w-0">
+                    <h3 className="truncate text-lg font-semibold">
+                      {monitor.name}
+                    </h3>
+
+                    <p className="mt-1 truncate text-sm text-zinc-500">
+                      {monitor.url}
+                    </p>
+                  </div>
+
+                  {monitor.status === "online" && (
+                    <span className="shrink-0 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">
+                      ● Online
+                    </span>
+                  )}
+
+                  {monitor.status === "offline" && (
+                    <span className="shrink-0 rounded-full bg-red-500/10 px-3 py-1 text-xs font-medium text-red-400">
+                      ● Offline
+                    </span>
+                  )}
+
+                  {monitor.status === "unknown" && (
+                    <span className="shrink-0 rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-400">
+                      ● Not checked
+                    </span>
+                  )}
+
                 </div>
 
-                <span className="text-yellow-400 text-sm">
-                  ● Not checked
+                {/* STATS */}
+
+                <div className="mt-6 grid grid-cols-2 gap-4">
+
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-zinc-600">
+                      Response
+                    </p>
+
+                    <p className="mt-1 font-medium">
+                      {monitor.response_time_ms
+                        ? `${monitor.response_time_ms} ms`
+                        : "--"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-zinc-600">
+                      HTTP
+                    </p>
+
+                    <p className="mt-1 font-medium">
+                      {monitor.status_code ?? "--"}
+                    </p>
+                  </div>
+
+                </div>
+
+                {/* FOOTER */}
+
+                <div className="mt-6 flex items-center justify-between border-t border-zinc-800 pt-4">
+
+                <span className="text-xs text-zinc-600">
+                    {monitor.last_checked_at
+                    ? `Last checked ${new Date(
+                        monitor.last_checked_at
+                        ).toLocaleString()}`
+                    : "Never checked"}
                 </span>
 
+                <div className="flex items-center gap-2">
+
+                <Link
+                    href={`/dashboard/monitors/${monitor.id}`}
+                    className="flex h-11 min-w-[110px] items-center justify-center rounded-lg border border-zinc-700 px-4 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 hover:text-white"
+                >
+                    Details
+                </Link>
+
+                <form action={checkAction}>
+                    <button
+                    type="submit"
+                    className="flex h-11 min-w-[110px] items-center justify-center whitespace-nowrap rounded-lg border border-zinc-700 px-4 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 hover:text-white"
+                    >
+                    Check now
+                    </button>
+                </form>
+
+                </div>
+
+                </div>
+
               </div>
-
-            </div>
-
-          ))}
+            );
+          })}
 
         </div>
 
       </div>
-
     </main>
   );
 }

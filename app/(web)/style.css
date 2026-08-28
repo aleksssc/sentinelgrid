@@ -1,0 +1,168 @@
+/* =========================================================
+                    SENTINELGRID HERO
+========================================================= */
+
+.hero-grid {
+    background-image:
+        linear-gradient(
+            rgba(255, 255, 255, 0.035) 1px,
+            transparent 1px
+        ),
+        linear-gradient(
+            90deg,
+            rgba(255, 255, 255, 0.035) 1px,
+            transparent 1px
+        );
+
+    background-size: 55px 55px;
+
+    mask-image:
+        linear-gradient(
+            to bottom,
+            black 0%,
+            rgba(0, 0, 0, 0.8) 55%,
+            transparent 100%
+        );
+
+    animation: hero-grid-move 18s linear infinite;
+}
+
+
+@keyframes hero-grid-move {
+
+    from {
+        background-position:
+            0 0,
+            0 0;
+    }
+
+    to {
+        background-position:
+            55px 55px,
+            55px 55px;
+    }
+
+}
+
+
+/* =========================================================
+                    BACKGROUND GLOWS
+========================================================= */
+
+.hero-glow {
+    position: absolute;
+
+    width: 600px;
+    height: 600px;
+
+    border-radius: 9999px;
+
+    filter: blur(130px);
+
+    opacity: 0.13;
+
+    animation:
+        hero-glow-float 12s ease-in-out infinite;
+}
+
+
+.hero-glow-one {
+    top: -300px;
+    right: 5%;
+
+    background: #10b981;
+}
+
+
+.hero-glow-two {
+    bottom: -350px;
+    left: 20%;
+
+    background: #3b82f6;
+
+    animation-delay: -6s;
+}
+
+
+@keyframes hero-glow-float {
+
+    0%,
+    100% {
+        transform:
+            translate3d(0, 0, 0)
+            scale(1);
+    }
+
+    50% {
+        transform:
+            translate3d(40px, 30px, 0)
+            scale(1.1);
+    }
+
+}
+
+
+/* =========================================================
+                    SCANNING LINE
+========================================================= */
+
+.hero-scan-line {
+    position: absolute;
+
+    left: 0;
+
+    width: 100%;
+    height: 1px;
+
+    background:
+        linear-gradient(
+            90deg,
+            transparent,
+            rgba(16, 185, 129, 0.5),
+            transparent
+        );
+
+    box-shadow:
+        0 0 25px rgba(16, 185, 129, 0.15);
+
+    animation:
+        hero-scan 8s ease-in-out infinite;
+}
+
+
+@keyframes hero-scan {
+
+    0% {
+        top: 10%;
+        opacity: 0;
+    }
+
+    15% {
+        opacity: 1;
+    }
+
+    85% {
+        opacity: 1;
+    }
+
+    100% {
+        top: 90%;
+        opacity: 0;
+    }
+
+}
+
+
+/* =========================================================
+                    REDUCED MOTION
+========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+
+    .hero-grid,
+    .hero-glow,
+    .hero-scan-line {
+        animation: none;
+    }
+
+}

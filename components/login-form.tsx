@@ -1,110 +1,250 @@
 "use client";
 
-import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import {
+  Eye,
+  EyeOff,
+  Loader2,
+  LogIn,
+} from "lucide-react";
 
-export function LoginForm({
-  className,
-  ...props
-}: React.ComponentPropsWithoutRef<"div">) {
+import { createClient } from "@/lib/supabase/client";
+
+export function LoginForm() {
+  const router = useRouter();
+  const supabase = createClient();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const supabase = createClient();
-    setIsLoading(true);
-    setError(null);
+  const [showPassword, setShowPassword] =
+    useState(false);
 
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
+  const [loading, setLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  async function handleLogin(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    setLoading(true);
+    setError("");
+
+    const { error } =
+      await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      if (error) throw error;
-      // Update this route to redirect to an authenticated route. The user already has an active session.
-      router.push("/dashboard");
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred");
-    } finally {
-      setIsLoading(false);
+
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+      return;
     }
-  };
+
+    router.push("/dashboard");
+    router.refresh();
+  }
 
   return (
-    <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">Login</CardTitle>
-          <CardDescription>
-            Enter your email below to login to your account
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleLogin}>
-            <div className="flex flex-col gap-6">
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="m@example.com"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="password">Password</Label>
-                  <Link
-                    href="/auth/forgot-password"
-                    className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
-                  >
-                    Forgot your password?
-                  </Link>
-                </div>
-                <Input
-                  id="password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Logging in..." : "Login"}
-              </Button>
-            </div>
-            <div className="mt-4 text-center text-sm">
-              Don&apos;t have an account?{" "}
-              <Link
-                href="/auth/sign-up"
-                className="underline underline-offset-4"
+    <div>
+      {/* HEADER */}
+
+      <div className="mb-8 text-center">
+        <div className="mb-3 text-sm font-medium text-emerald-400">
+          Welcome back
+        </div>
+
+        <h1 className="text-3xl font-bold tracking-tight">
+          Sign in to SentinelGrid
+        </h1>
+
+        <p className="mt-2 text-sm text-zinc-500">
+          Monitor and manage your infrastructure.
+        </p>
+      </div>
+
+      {/* CARD */}
+
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-7">
+
+        <form
+          onSubmit={handleLogin}
+          className="space-y-5"
+        >
+
+          {/* EMAIL */}
+
+          <div>
+            <label
+              htmlFor="email"
+              className="mb-2 block text-sm font-medium text-zinc-300"
+            >
+              Email
+            </label>
+
+            <input
+              id="email"
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(event) =>
+                setEmail(event.target.value)
+              }
+              placeholder="you@example.com"
+              className="
+                w-full rounded-xl
+                border border-zinc-700
+                bg-zinc-950
+                px-4 py-3
+                text-white
+                outline-none
+                transition
+                placeholder:text-zinc-700
+                focus:border-zinc-500
+              "
+            />
+          </div>
+
+          {/* PASSWORD */}
+
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <label
+                htmlFor="password"
+                className="text-sm font-medium text-zinc-300"
               >
-                Sign up
+                Password
+              </label>
+
+              <Link
+                href="/auth/forgot-password"
+                className="text-xs text-zinc-500 transition hover:text-white"
+              >
+                Forgot password?
               </Link>
             </div>
-          </form>
-        </CardContent>
-      </Card>
+
+            <div className="relative">
+
+              <input
+                id="password"
+                type={
+                  showPassword
+                    ? "text"
+                    : "password"
+                }
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) =>
+                  setPassword(
+                    event.target.value
+                  )
+                }
+                className="
+                  w-full rounded-xl
+                  border border-zinc-700
+                  bg-zinc-950
+                  px-4 py-3 pr-12
+                  text-white
+                  outline-none
+                  transition
+                  focus:border-zinc-500
+                "
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  setShowPassword(
+                    (current) => !current
+                  )
+                }
+                className="
+                  absolute right-3 top-1/2
+                  -translate-y-1/2
+                  rounded-lg p-1.5
+                  text-zinc-500
+                  transition
+                  hover:bg-zinc-800
+                  hover:text-white
+                "
+              >
+                {showPassword ? (
+                  <EyeOff size={17} />
+                ) : (
+                  <Eye size={17} />
+                )}
+              </button>
+
+            </div>
+          </div>
+
+          {/* ERROR */}
+
+          {error && (
+            <div className="rounded-xl border border-red-900 bg-red-950/30 px-4 py-3 text-sm text-red-400">
+              {error}
+            </div>
+          )}
+
+          {/* SUBMIT */}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="
+              flex w-full items-center
+              justify-center gap-2
+              rounded-xl bg-white
+              px-4 py-3
+              font-medium text-black
+              transition
+              hover:bg-zinc-200
+              disabled:cursor-not-allowed
+              disabled:opacity-50
+            "
+          >
+            {loading ? (
+              <>
+                <Loader2
+                  size={17}
+                  className="animate-spin"
+                />
+                Signing in...
+              </>
+            ) : (
+              <>
+                <LogIn size={17} />
+                Sign in
+              </>
+            )}
+          </button>
+
+        </form>
+
+        {/* SIGN UP */}
+
+        <div className="mt-6 border-t border-zinc-800 pt-6 text-center text-sm text-zinc-500">
+          Don&apos;t have an account?{" "}
+
+          <Link
+            href="/auth/sign-up"
+            className="font-medium text-white transition hover:text-zinc-300"
+          >
+            Create account
+          </Link>
+        </div>
+
+      </div>
     </div>
   );
 }
