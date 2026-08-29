@@ -1,23 +1,25 @@
-import Link from "next/link";
-import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-
-import { Plus } from "lucide-react";
-
 import OrganizationsView from "./organizations-view";
 
 export default async function OrganizationsPage() {
-  await connection();
-
   const supabase = await createClient();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return null;
+  if (!user) {
+    return null;
+  }
 
-  const { data: organizations, error } = await supabase
+  /* =========================
+     ORGANIZATIONS
+  ========================= */
+
+  const {
+    data: organizations,
+    error: organizationsError,
+  } = await supabase
     .from("organizations")
     .select("*")
     .eq("owner_id", user.id)
@@ -25,62 +27,147 @@ export default async function OrganizationsPage() {
       ascending: false,
     });
 
-  if (error) {
-    console.error("Organizations error:", error);
+  if (organizationsError) {
+    console.error(
+      "Organizations error:",
+      organizationsError
+    );
   }
 
+  const organizationList =
+    organizations ?? [];
+
+  /* =========================
+     CLIENTS
+  ========================= */
+
+  const organizationIds =
+    organizationList.map(
+      (organization) =>
+        organization.id
+    );
+
+  let clients: {
+    id: string;
+    organization_id: string;
+  }[] = [];
+
+  if (
+    organizationIds.length > 0
+  ) {
+    const {
+      data: clientsData,
+      error: clientsError,
+    } = await supabase
+      .from("clients")
+      .select(`
+        id,
+        organization_id
+      `)
+      .in(
+        "organization_id",
+        organizationIds
+      );
+
+    if (clientsError) {
+      console.error(
+        "Clients error:",
+        clientsError
+      );
+    }
+
+    clients =
+      clientsData ?? [];
+  }
+
+  /* =========================
+     DEVICES
+  ========================= */
+
+  const clientIds =
+    clients.map(
+      (client) =>
+        client.id
+    );
+
+  let devices: {
+    id: string;
+    client_id: string;
+  }[] = [];
+
+  if (
+    clientIds.length > 0
+  ) {
+    const {
+      data: devicesData,
+      error: devicesError,
+    } = await supabase
+      .from("devices")
+      .select(`
+        id,
+        client_id
+      `)
+      .in(
+        "client_id",
+        clientIds
+      );
+
+    if (devicesError) {
+      console.error(
+        "Devices error:",
+        devicesError
+      );
+    }
+
+    devices =
+      devicesData ?? [];
+  }
+
+  /* =========================
+     COUNTS
+  ========================= */
+
+  const organizationsWithCounts =
+    organizationList.map(
+      (organization) => {
+        const organizationClients =
+          clients.filter(
+            (client) =>
+              client.organization_id ===
+              organization.id
+          );
+
+        const organizationClientIds =
+          organizationClients.map(
+            (client) =>
+              client.id
+          );
+
+        const organizationDevices =
+          devices.filter(
+            (device) =>
+              organizationClientIds.includes(
+                device.client_id
+              )
+          );
+
+        return {
+          ...organization,
+
+          clients_count:
+            organizationClients.length,
+
+          devices_count:
+            organizationDevices.length,
+        };
+      }
+    );
+
   return (
-    <main className="p-8">
-
-      <div className="mx-auto max-w-7xl">
-
-        {/* HEADER */}
-
-        <div className="mb-8 flex items-start justify-between gap-6">
-
-          <div>
-
-            <h1 className="text-3xl font-bold">
-              Organizations
-            </h1>
-
-            <p className="mt-2 text-zinc-400">
-              Manage customers, companies and infrastructure environments.
-            </p>
-
-          </div>
-
-          <Link
-            href="/dashboard/organizations/new"
-            className="
-              inline-flex
-              items-center
-              gap-2
-              rounded-xl
-              bg-white
-              px-4
-              py-2.5
-              text-sm
-              font-medium
-              text-black
-              transition
-              hover:bg-zinc-200
-            "
-          >
-            <Plus size={17} />
-
-            New organization
-          </Link>
-
-        </div>
-
-
-        <OrganizationsView
-          organizations={organizations ?? []}
-        />
-
-      </div>
-
-    </main>
+    <OrganizationsView
+      organizations={
+        organizationsWithCounts
+      }
+    />
   );
 }
