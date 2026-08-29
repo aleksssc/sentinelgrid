@@ -5,14 +5,15 @@ import { notFound } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 
+import OrganizationClients from "./organization-clients";
+
 import {
   ArrowLeft,
   Building2,
-  MapPin,
   Plus,
-  Server,
-  ChevronRight,
   Settings,
+  Server,
+  MapPin,
 } from "lucide-react";
 
 export default async function OrganizationDetailsPage({
@@ -26,68 +27,109 @@ export default async function OrganizationDetailsPage({
 
   const supabase = await createClient();
 
+  /* =========================
+     USER
+  ========================= */
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return null;
+  if (!user) {
+    return null;
+  }
 
+  /* =========================
+     ORGANIZATION
+  ========================= */
 
-  /* ORGANIZATION */
-
-  const { data: organization } = await supabase
+  const {
+    data: organization,
+    error: organizationError,
+  } = await supabase
     .from("organizations")
     .select("*")
     .eq("id", id)
     .eq("owner_id", user.id)
     .single();
 
+  if (organizationError) {
+    console.error(
+      "Organization error:",
+      organizationError
+    );
+  }
+
   if (!organization) {
     notFound();
   }
 
+  /* =========================
+     CLIENTS
+  ========================= */
 
-  /* SITES */
-
-  const { data: sites, error } = await supabase
-    .from("sites")
-    .select("*")
+  const {
+    data: clients,
+    error: clientsError,
+  } = await supabase
+    .from("clients")
+    .select("id, name, description, status")
     .eq("organization_id", organization.id)
     .order("created_at", {
       ascending: false,
     });
 
-  if (error) {
-    console.error("Organization sites error:", error);
+  if (clientsError) {
+    console.error(
+      "Organization clients error:",
+      clientsError
+    );
   }
 
-  const siteList = sites ?? [];
+  const clientList = clients ?? [];
 
+  /* =========================
+     STATS
+  ========================= */
+
+  const clientsCount = clientList.length;
+
+  /*
+    Por agora ficam a 0.
+    Depois ligamos aos sites/devices reais.
+  */
+
+  const sitesCount = 0;
+  const devicesCount = 0;
 
   return (
     <main className="p-8">
       <div className="mx-auto max-w-7xl">
 
-        {/* BACK */}
+        {/* =========================
+            BACK
+        ========================= */}
 
         <Link
           href="/dashboard/organizations"
           className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-500 transition hover:text-white"
         >
           <ArrowLeft size={16} />
-
           Back to organizations
         </Link>
 
-
-        {/* HEADER */}
+        {/* =========================
+            HEADER
+        ========================= */}
 
         <div className="mb-8 flex flex-wrap items-start justify-between gap-6">
 
-          <div className="flex items-start gap-4">
+          {/* LEFT */}
 
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400">
-              <Building2 size={22} />
+          <div className="flex items-start gap-5">
+
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-zinc-400">
+              <Building2 size={24} />
             </div>
 
             <div>
@@ -105,199 +147,173 @@ export default async function OrganizationDetailsPage({
 
           </div>
 
+          {/* RIGHT */}
 
-            <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-4">
 
-            {organization.owner_id === user.id && (
-                <Link
-                href={`/dashboard/organizations/${organization.id}/settings`}
-                className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
-                >
-                <Settings size={17} />
-                Settings
-                </Link>
-            )}
+            {/* =========================
+                COMPACT STATS
+            ========================= */}
 
-            <Link
-                href={`/dashboard/organizations/${organization.id}/sites/new`}
-                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
-            >
-                <Plus size={17} />
-                Add site
-            </Link>
+            <div className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-2.5">
+
+              {/* CLIENTS */}
+
+              <div className="flex items-center gap-2">
+
+                <Building2
+                  size={15}
+                  className="text-zinc-600"
+                />
+
+                <span className="text-sm text-zinc-500">
+                  Clients
+                </span>
+
+                <span className="text-sm font-semibold text-white">
+                  {clientsCount}
+                </span>
+
+              </div>
+
+              {/* DIVIDER */}
+
+              <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
+
+              {/* SITES */}
+
+              <div className="flex items-center gap-2">
+
+                <MapPin
+                  size={15}
+                  className="text-zinc-600"
+                />
+
+                <span className="text-sm text-zinc-500">
+                  Sites
+                </span>
+
+                <span className="text-sm font-semibold text-white">
+                  {sitesCount}
+                </span>
+
+              </div>
+
+              {/* DIVIDER */}
+
+              <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
+
+              {/* DEVICES */}
+
+              <div className="flex items-center gap-2">
+
+                <Server
+                  size={15}
+                  className="text-zinc-600"
+                />
+
+                <span className="text-sm text-zinc-500">
+                  Devices
+                </span>
+
+                <span className="text-sm font-semibold text-white">
+                  {devicesCount}
+                </span>
+
+              </div>
 
             </div>
 
-        </div>
+            {/* =========================
+                ACTIONS
+            ========================= */}
 
+            <div className="flex items-center gap-3">
 
-        {/* STATS */}
+              {organization.owner_id === user.id && (
+                <Link
+                  href={`/dashboard/organizations/${organization.id}/settings`}
+                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+                >
+                  <Settings size={17} />
+                  Settings
+                </Link>
+              )}
 
-        <div className="mb-8 grid gap-4 md:grid-cols-3">
+              <Link
+                href={`/dashboard/organizations/${organization.id}/clients/new`}
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
+              >
+                <Plus size={17} />
+                Add client
+              </Link>
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
-
-            <p className="text-sm text-zinc-400">
-              Sites
-            </p>
-
-            <p className="mt-3 text-3xl font-bold">
-              {siteList.length}
-            </p>
-
-            <p className="mt-2 text-xs text-zinc-600">
-              infrastructure locations
-            </p>
-
-          </div>
-
-
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
-
-            <p className="text-sm text-zinc-400">
-              Devices
-            </p>
-
-            <p className="mt-3 text-3xl font-bold">
-              0
-            </p>
-
-            <p className="mt-2 text-xs text-zinc-600">
-              registered agents
-            </p>
-
-          </div>
-
-
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
-
-            <p className="text-sm text-zinc-400">
-              Online
-            </p>
-
-            <p className="mt-3 text-3xl font-bold">
-              0
-            </p>
-
-            <p className="mt-2 text-xs text-zinc-600">
-              active devices
-            </p>
+            </div>
 
           </div>
 
         </div>
 
+        {/* =========================
+            CLIENTS
+        ========================= */}
 
-        {/* SITES */}
+        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
 
-        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+          {/* HEADER */}
 
-          <div className="border-b border-zinc-800 px-6 py-5">
+          <div className="mb-6">
 
-            <h2 className="font-semibold">
-              Sites
+            <h2 className="text-lg font-semibold">
+              Clients
             </h2>
 
             <p className="mt-1 text-sm text-zinc-500">
-              Locations and environments inside this organization.
+              Manage and access the clients connected to this
+              organization.
             </p>
 
           </div>
 
+          {/* EMPTY */}
 
-          {siteList.length === 0 ? (
+          {clientList.length === 0 ? (
 
-            <div className="flex flex-col items-center px-6 py-16 text-center">
+            <div className="flex flex-col items-center rounded-2xl border border-dashed border-zinc-800 px-6 py-14 text-center">
 
-              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500">
-                <MapPin size={21} />
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500">
+                <Building2 size={21} />
               </div>
 
-              <h3 className="font-semibold">
-                No sites configured
+              <h3 className="mt-5 font-semibold">
+                No clients configured
               </h3>
 
               <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">
-                Create a site to start deploying SentinelGrid agents
-                into this organization.
+                Create your first client to start managing
+                sites, devices and security monitoring.
               </p>
 
               <Link
-                href={`/dashboard/organizations/${organization.id}/sites/new`}
-                className="mt-6 inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-black"
+                href={`/dashboard/organizations/${organization.id}/clients/new`}
+                className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
               >
                 <Plus size={16} />
-
-                Create first site
+                Create first client
               </Link>
 
             </div>
 
           ) : (
 
-            <div className="divide-y divide-zinc-800">
-
-              {siteList.map((site) => (
-
-                <Link
-                  key={site.id}
-                  href={`/dashboard/organizations/${organization.id}/sites/${site.id}`}
-                  className="group flex items-center justify-between gap-6 px-6 py-5 transition hover:bg-zinc-800/40"
-                >
-
-                  <div className="flex min-w-0 items-center gap-4">
-
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400">
-                      <MapPin size={19} />
-                    </div>
-
-
-                    <div className="min-w-0">
-
-                      <p className="truncate font-medium">
-                        {site.name}
-                      </p>
-
-                      <p className="mt-1 truncate text-sm text-zinc-500">
-                        {site.location ||
-                          "No location specified"}
-                      </p>
-
-                    </div>
-
-                  </div>
-
-
-                  <div className="flex items-center gap-8">
-
-                    <div className="hidden text-right sm:block">
-
-                      <div className="flex items-center gap-2 text-zinc-500">
-                        <Server size={14} />
-
-                        <span className="text-sm">
-                          0 devices
-                        </span>
-                      </div>
-
-                    </div>
-
-                    <ChevronRight
-                      size={18}
-                      className="text-zinc-700 transition group-hover:translate-x-1 group-hover:text-zinc-400"
-                    />
-
-                  </div>
-
-                </Link>
-
-              ))}
-
-            </div>
+            <OrganizationClients
+              organizationId={organization.id}
+              clients={clientList}
+            />
 
           )}
 
-        </div>
+        </section>
 
       </div>
     </main>
