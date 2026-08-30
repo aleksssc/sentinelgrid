@@ -14,6 +14,9 @@ import {
   AlertTriangle,
   Building2,
   Check,
+  CheckCircle2,
+  ChevronDown,
+  CircleAlert,
   MapPin,
   Monitor,
   Pencil,
@@ -105,8 +108,12 @@ export default function ClientSettingsForm({
      GENERAL
   ========================= */
 
-  const [name, setName] =
-    useState(client.name);
+  const [
+    name,
+    setName,
+  ] = useState(
+    client.name
+  );
 
   const [
     description,
@@ -132,14 +139,23 @@ export default function ClientSettingsForm({
     setMessage,
   ] = useState("");
 
+  const [
+    messageType,
+    setMessageType,
+  ] = useState<
+    "success" | "error" | null
+  >(null);
+
   /* =========================
      SITES
   ========================= */
 
-  const [sites, setSites] =
-    useState<Site[]>(
-      initialSites
-    );
+  const [
+    sites,
+    setSites,
+  ] = useState<Site[]>(
+    initialSites
+  );
 
   const [
     siteModalOpen,
@@ -256,11 +272,18 @@ export default function ClientSettingsForm({
         "Client name is required."
       );
 
+      setMessageType(
+        "error"
+      );
+
       return;
     }
 
     setSaving(true);
+
     setMessage("");
+
+    setMessageType(null);
 
     const {
       error,
@@ -296,6 +319,10 @@ export default function ClientSettingsForm({
         "Could not update client."
       );
 
+      setMessageType(
+        "error"
+      );
+
       setSaving(false);
 
       return;
@@ -303,6 +330,10 @@ export default function ClientSettingsForm({
 
     setMessage(
       "Client updated successfully."
+    );
+
+    setMessageType(
+      "success"
     );
 
     setSaving(false);
@@ -380,6 +411,7 @@ export default function ClientSettingsForm({
     }
 
     setSavingSite(true);
+
     setSiteError("");
 
     /* =========================
@@ -534,7 +566,10 @@ export default function ClientSettingsForm({
 
     setSites(
       (current) =>
-        [...current, data].sort(
+        [
+          ...current,
+          data,
+        ].sort(
           (a, b) =>
             a.name.localeCompare(
               b.name
@@ -583,17 +618,12 @@ export default function ClientSettingsForm({
 
     setSavingDevices(true);
 
-    /* DEVICES CURRENTLY
-       ASSIGNED TO SITE */
-
     const currentlyAssigned =
       devices.filter(
         (device) =>
           device.site_id ===
           manageSite.id
       );
-
-    /* REMOVE DEVICES */
 
     const removeIds =
       currentlyAssigned
@@ -641,8 +671,6 @@ export default function ClientSettingsForm({
       }
     }
 
-    /* ASSIGN DEVICES */
-
     if (
       selectedDevices.length >
       0
@@ -677,8 +705,6 @@ export default function ClientSettingsForm({
       }
     }
 
-    /* LOCAL STATE */
-
     setDevices(
       (current) =>
         current.map(
@@ -690,6 +716,7 @@ export default function ClientSettingsForm({
             ) {
               return {
                 ...device,
+
                 site_id:
                   manageSite.id,
               };
@@ -701,6 +728,7 @@ export default function ClientSettingsForm({
             ) {
               return {
                 ...device,
+
                 site_id:
                   null,
               };
@@ -768,6 +796,7 @@ export default function ClientSettingsForm({
             deleteSite.id
               ? {
                   ...device,
+
                   site_id:
                     null,
                 }
@@ -841,7 +870,8 @@ export default function ClientSettingsForm({
     return (
       sites.find(
         (site) =>
-          site.id === siteId
+          site.id ===
+          siteId
       )?.name ?? null
     );
   }
@@ -865,14 +895,15 @@ export default function ClientSettingsForm({
             />
 
             <div>
+
               <h2 className="font-semibold">
                 General
               </h2>
 
               <p className="mt-1 text-sm text-zinc-500">
-                Basic information
-                about this client.
+                Basic information about this client.
               </p>
+
             </div>
 
           </div>
@@ -884,6 +915,7 @@ export default function ClientSettingsForm({
           {/* NAME */}
 
           <div>
+
             <label className="mb-2 block text-sm font-medium text-zinc-300">
               Client name
             </label>
@@ -891,18 +923,25 @@ export default function ClientSettingsForm({
             <input
               type="text"
               value={name}
-              onChange={(e) =>
+              onChange={(e) => {
                 setName(
                   e.target.value
-                )
-              }
+                );
+
+                if (message) {
+                  setMessage("");
+                  setMessageType(null);
+                }
+              }}
               className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition hover:border-zinc-700 focus:border-zinc-600"
             />
+
           </div>
 
           {/* DESCRIPTION */}
 
           <div>
+
             <label className="mb-2 block text-sm font-medium text-zinc-300">
               Description
             </label>
@@ -911,54 +950,142 @@ export default function ClientSettingsForm({
               value={
                 description
               }
-              onChange={(e) =>
+              onChange={(e) => {
                 setDescription(
                   e.target.value
-                )
-              }
+                );
+
+                if (message) {
+                  setMessage("");
+                  setMessageType(null);
+                }
+              }}
               rows={3}
               className="w-full resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition hover:border-zinc-700 focus:border-zinc-600"
             />
+
           </div>
 
           {/* STATUS */}
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-zinc-300">
+
+            <label
+              htmlFor="status"
+              className="mb-2 block text-sm font-medium text-zinc-300"
+            >
               Status
             </label>
 
-            <select
-              value={status}
-              onChange={(e) =>
-                setStatus(
-                  e.target
-                    .value as
-                    | "active"
-                    | "inactive"
-                )
-              }
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition hover:border-zinc-700 focus:border-zinc-600"
-            >
-              <option value="active">
-                Active
-              </option>
+            <div className="relative">
 
-              <option value="inactive">
-                Inactive
-              </option>
-            </select>
-          </div>
+              <select
+                id="status"
+                name="status"
+                value={status}
+                onChange={(e) => {
+                  setStatus(
+                    e.target.value as
+                      | "active"
+                      | "inactive"
+                  );
 
-          {message && (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-zinc-400">
-              {message}
+                  if (message) {
+                    setMessage("");
+                    setMessageType(null);
+                  }
+                }}
+                className="
+                  w-full
+                  appearance-none
+                  rounded-xl
+                  border
+                  border-zinc-800
+                  bg-zinc-950
+                  px-4
+                  py-3
+                  pr-11
+                  text-sm
+                  text-white
+                  outline-none
+                  transition
+                  hover:border-zinc-700
+                  focus:border-blue-500/50
+                  focus:ring-2
+                  focus:ring-blue-500/10
+                "
+              >
+                <option value="active">
+                  Active
+                </option>
+
+                <option value="inactive">
+                  Inactive
+                </option>
+
+              </select>
+
+              <ChevronDown
+                size={16}
+                className="
+                  pointer-events-none
+                  absolute
+                  right-4
+                  top-1/2
+                  -translate-y-1/2
+                  text-zinc-500
+                "
+              />
+
             </div>
-          )}
+
+          </div>
 
         </div>
 
-        <div className="flex justify-end border-t border-zinc-800 px-6 py-5">
+        {/* =========================
+            GENERAL FOOTER
+        ========================= */}
+
+        <div className="flex min-h-[78px] flex-wrap items-center justify-between gap-4 border-t border-zinc-800 px-6 py-5">
+
+          {/* MESSAGE */}
+
+          <div className="min-h-5">
+
+            {message && (
+              <div
+                className={`flex items-center gap-2 text-sm ${
+                  messageType ===
+                  "success"
+                    ? "text-emerald-400"
+                    : "text-red-400"
+                }`}
+              >
+
+                {messageType ===
+                "success" ? (
+                  <CheckCircle2
+                    size={16}
+                    className="shrink-0"
+                  />
+                ) : (
+                  <CircleAlert
+                    size={16}
+                    className="shrink-0"
+                  />
+                )}
+
+                <span>
+                  {message}
+                </span>
+
+              </div>
+            )}
+
+          </div>
+
+          {/* SAVE */}
 
           <button
             type="button"
@@ -970,11 +1097,15 @@ export default function ClientSettingsForm({
             }
             className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Save size={16} />
+
+            <Save
+              size={16}
+            />
 
             {saving
               ? "Saving..."
               : "Save changes"}
+
           </button>
 
         </div>
@@ -987,8 +1118,6 @@ export default function ClientSettingsForm({
 
       <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
 
-        {/* HEADER */}
-
         <div className="flex flex-wrap items-center justify-between gap-5 border-b border-zinc-800 px-6 py-5">
 
           <div className="flex items-center gap-3">
@@ -999,15 +1128,15 @@ export default function ClientSettingsForm({
             />
 
             <div>
+
               <h2 className="font-semibold">
                 Sites
               </h2>
 
               <p className="mt-1 text-sm text-zinc-500">
-                Locations used to
-                organize and filter
-                devices.
+                Locations used to organize and filter devices.
               </p>
+
             </div>
 
           </div>
@@ -1025,8 +1154,6 @@ export default function ClientSettingsForm({
 
         </div>
 
-        {/* EMPTY */}
-
         {sites.length === 0 ? (
 
           <div className="flex items-center gap-4 px-6 py-6">
@@ -1036,14 +1163,15 @@ export default function ClientSettingsForm({
             </div>
 
             <div>
+
               <p className="text-sm font-medium">
                 No sites configured
               </p>
 
               <p className="mt-1 text-xs text-zinc-500">
-                Add a site to group
-                and filter devices.
+                Add a site to group and filter devices.
               </p>
+
             </div>
 
           </div>
@@ -1069,24 +1197,18 @@ export default function ClientSettingsForm({
                     className="flex flex-wrap items-center justify-between gap-5 px-6 py-4"
                   >
 
-                    {/* INFO */}
-
                     <div className="flex min-w-0 items-center gap-4">
 
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500">
                         <MapPin
-                          size={
-                            18
-                          }
+                          size={18}
                         />
                       </div>
 
                       <div className="min-w-0">
 
                         <p className="truncate text-sm font-medium">
-                          {
-                            site.name
-                          }
+                          {site.name}
                         </p>
 
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
@@ -1101,9 +1223,7 @@ export default function ClientSettingsForm({
                           </span>
 
                           <span>
-                            {
-                              siteDevices.length
-                            }{" "}
+                            {siteDevices.length}{" "}
                             {siteDevices.length ===
                             1
                               ? "device"
@@ -1115,8 +1235,6 @@ export default function ClientSettingsForm({
                       </div>
 
                     </div>
-
-                    {/* ACTIONS */}
 
                     <div className="flex items-center gap-2">
 
@@ -1130,9 +1248,7 @@ export default function ClientSettingsForm({
                         className="inline-flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-400 transition hover:bg-zinc-800 hover:text-white"
                       >
                         <Monitor
-                          size={
-                            14
-                          }
+                          size={14}
                         />
 
                         Manage devices
@@ -1149,9 +1265,7 @@ export default function ClientSettingsForm({
                         className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-800 hover:text-white"
                       >
                         <Pencil
-                          size={
-                            16
-                          }
+                          size={16}
                         />
                       </button>
 
@@ -1166,9 +1280,7 @@ export default function ClientSettingsForm({
                         className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-red-950/40 hover:text-red-400"
                       >
                         <Trash2
-                          size={
-                            16
-                          }
+                          size={16}
                         />
                       </button>
 
@@ -1202,16 +1314,15 @@ export default function ClientSettingsForm({
             </div>
 
             <div>
+
               <h2 className="font-semibold text-red-400">
                 Delete client
               </h2>
 
               <p className="mt-1 max-w-xl text-sm leading-6 text-zinc-500">
-                Permanently delete
-                this client and all
-                associated sites,
-                devices and data.
+                Permanently delete this client and all associated sites, devices and data.
               </p>
+
             </div>
 
           </div>
@@ -1219,9 +1330,7 @@ export default function ClientSettingsForm({
           <button
             type="button"
             onClick={() => {
-              setDeleteConfirm(
-                ""
-              );
+              setDeleteConfirm("");
 
               setDeleteOpen(
                 true
@@ -1258,6 +1367,7 @@ export default function ClientSettingsForm({
             <div className="flex items-start justify-between gap-5 border-b border-zinc-800 px-6 py-5">
 
               <div>
+
                 <h2 className="text-lg font-semibold">
                   {editingSite
                     ? "Edit site"
@@ -1269,6 +1379,7 @@ export default function ClientSettingsForm({
                     ? "Update this site."
                     : "Create a location used to group devices."}
                 </p>
+
               </div>
 
               <button
@@ -1286,6 +1397,7 @@ export default function ClientSettingsForm({
             <div className="space-y-5 p-6">
 
               <div>
+
                 <label className="mb-2 block text-sm font-medium text-zinc-300">
                   Site name
                 </label>
@@ -1304,9 +1416,11 @@ export default function ClientSettingsForm({
                   autoFocus
                   className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-zinc-600"
                 />
+
               </div>
 
               <div>
+
                 <label className="mb-2 block text-sm font-medium text-zinc-300">
                   Location
                 </label>
@@ -1324,9 +1438,11 @@ export default function ClientSettingsForm({
                   placeholder="Lisbon, Portugal"
                   className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-zinc-600"
                 />
+
               </div>
 
               <div>
+
                 <label className="mb-2 block text-sm font-medium text-zinc-300">
                   Description
                 </label>
@@ -1344,6 +1460,7 @@ export default function ClientSettingsForm({
                   placeholder="Optional notes..."
                   className="w-full resize-none rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-zinc-600"
                 />
+
               </div>
 
               {siteError && (
@@ -1412,24 +1529,23 @@ export default function ClientSettingsForm({
 
           <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-32px)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
 
-            {/* HEADER */}
-
             <div className="flex items-start justify-between gap-5 border-b border-zinc-800 px-6 py-5">
 
               <div>
+
                 <h2 className="text-lg font-semibold">
                   Manage devices
                 </h2>
 
                 <p className="mt-1 text-sm text-zinc-500">
                   Assign devices to{" "}
+
                   <span className="text-zinc-300">
-                    {
-                      manageSite.name
-                    }
+                    {manageSite.name}
                   </span>
                   .
                 </p>
+
               </div>
 
               <button
@@ -1445,8 +1561,6 @@ export default function ClientSettingsForm({
               </button>
 
             </div>
-
-            {/* DEVICES */}
 
             <div className="max-h-[450px] overflow-y-auto p-4">
 
@@ -1464,9 +1578,7 @@ export default function ClientSettingsForm({
                   </p>
 
                   <p className="mt-2 text-xs text-zinc-500">
-                    Devices must first
-                    be registered for
-                    this client.
+                    Devices must first be registered for this client.
                   </p>
 
                 </div>
@@ -1506,8 +1618,6 @@ export default function ClientSettingsForm({
 
                           <div className="flex min-w-0 items-center gap-3">
 
-                            {/* CUSTOM CHECK */}
-
                             <div
                               className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
                                 checked
@@ -1517,9 +1627,7 @@ export default function ClientSettingsForm({
                             >
                               {checked && (
                                 <Check
-                                  size={
-                                    13
-                                  }
+                                  size={13}
                                 />
                               )}
                             </div>
@@ -1568,16 +1676,12 @@ export default function ClientSettingsForm({
                               </p>
 
                               <p className="mt-1 truncate text-xs text-zinc-500">
-                                {
-                                  device.hostname
-                                }
+                                {device.hostname}
                               </p>
 
                             </div>
 
                           </div>
-
-                          {/* CURRENT SITE */}
 
                           <div className="shrink-0 text-right">
 
@@ -1615,14 +1719,10 @@ export default function ClientSettingsForm({
 
             </div>
 
-            {/* FOOTER */}
-
             <div className="flex items-center justify-between gap-4 border-t border-zinc-800 px-6 py-5">
 
               <p className="text-xs text-zinc-600">
-                {
-                  selectedDevices.length
-                }{" "}
+                {selectedDevices.length}{" "}
                 selected
               </p>
 
@@ -1687,7 +1787,9 @@ export default function ClientSettingsForm({
             <div className="p-6">
 
               <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-950 bg-red-950/20 text-red-500">
-                <Trash2 size={18} />
+                <Trash2
+                  size={18}
+                />
               </div>
 
               <h2 className="mt-5 text-lg font-semibold">
@@ -1696,14 +1798,12 @@ export default function ClientSettingsForm({
 
               <p className="mt-2 text-sm leading-6 text-zinc-500">
                 Delete{" "}
+
                 <span className="font-medium text-zinc-200">
                   {deleteSite.name}
                 </span>
-                ? Devices assigned
-                to this site will
-                remain registered,
-                but will no longer
-                have a site.
+
+                ? Devices assigned to this site will remain registered, but will no longer have a site.
               </p>
 
             </div>
@@ -1732,7 +1832,9 @@ export default function ClientSettingsForm({
                 }
                 className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-500 disabled:opacity-50"
               >
-                <Trash2 size={16} />
+                <Trash2
+                  size={16}
+                />
 
                 {deletingSite
                   ? "Deleting..."
@@ -1766,20 +1868,19 @@ export default function ClientSettingsForm({
 
           <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-32px)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-red-950 bg-zinc-950 shadow-2xl">
 
-            {/* HEADER */}
-
             <div className="flex items-start justify-between gap-5 border-b border-zinc-800 px-6 py-5">
 
               <div>
+
                 <h2 className="text-lg font-semibold">
                   Delete{" "}
                   {client.name}?
                 </h2>
 
                 <p className="mt-2 text-sm text-zinc-500">
-                  This action cannot
-                  be undone.
+                  This action cannot be undone.
                 </p>
+
               </div>
 
               <button
@@ -1796,8 +1897,6 @@ export default function ClientSettingsForm({
 
             </div>
 
-            {/* CONTENT */}
-
             <div className="p-6">
 
               <div className="rounded-xl border border-red-950 bg-red-950/20 p-4">
@@ -1810,12 +1909,7 @@ export default function ClientSettingsForm({
                   />
 
                   <p className="text-sm leading-6 text-red-300">
-                    All devices,
-                    sites and related
-                    data belonging to
-                    this client may be
-                    permanently
-                    deleted.
+                    All devices, sites and related data belonging to this client may be permanently deleted.
                   </p>
 
                 </div>
@@ -1826,9 +1920,11 @@ export default function ClientSettingsForm({
 
                 <label className="mb-2 block text-sm text-zinc-400">
                   Type{" "}
+
                   <span className="font-semibold text-white">
                     {client.name}
                   </span>{" "}
+
                   to confirm.
                 </label>
 
@@ -1848,8 +1944,6 @@ export default function ClientSettingsForm({
               </div>
 
             </div>
-
-            {/* FOOTER */}
 
             <div className="flex justify-end gap-3 border-t border-zinc-800 px-6 py-5">
 
@@ -1877,7 +1971,9 @@ export default function ClientSettingsForm({
                 }
                 className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <Trash2 size={16} />
+                <Trash2
+                  size={16}
+                />
 
                 {deleting
                   ? "Deleting..."

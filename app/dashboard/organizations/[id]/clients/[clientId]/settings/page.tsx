@@ -22,25 +22,30 @@ export default async function ClientSettingsPage({
 }) {
   await connection();
 
-  const { id, clientId } = await params;
+  const {
+    id,
+    clientId,
+  } = await params;
 
-  const supabase = await createClient();
+  const supabase =
+    await createClient();
 
-  /* =========================
-     USER
-  ========================= */
+  /* =========================================================
+                          USER
+  ========================================================== */
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } =
+    await supabase.auth.getUser();
 
   if (!user) {
     return null;
   }
 
-  /* =========================
-     ORGANIZATION
-  ========================= */
+  /* =========================================================
+                      ORGANIZATION
+  ========================================================== */
 
   const {
     data: organization,
@@ -49,23 +54,23 @@ export default async function ClientSettingsPage({
     .from("organizations")
     .select("*")
     .eq("id", id)
-    .eq("owner_id", user.id)
     .single();
 
-  if (organizationError) {
+  if (
+    organizationError ||
+    !organization
+  ) {
     console.error(
       "Organization error:",
       organizationError
     );
-  }
 
-  if (!organization) {
     notFound();
   }
 
-  /* =========================
-     CLIENT
-  ========================= */
+  /* =========================================================
+                          CLIENT
+  ========================================================== */
 
   const {
     data: client,
@@ -78,7 +83,10 @@ export default async function ClientSettingsPage({
       description,
       status
     `)
-    .eq("id", clientId)
+    .eq(
+      "id",
+      clientId
+    )
     .eq(
       "organization_id",
       organization.id
@@ -96,9 +104,9 @@ export default async function ClientSettingsPage({
     notFound();
   }
 
-  /* =========================
-     SITES
-  ========================= */
+  /* =========================================================
+                          SITES
+  ========================================================== */
 
   const {
     data: sites,
@@ -112,10 +120,16 @@ export default async function ClientSettingsPage({
       description,
       client_id
     `)
-    .eq("client_id", client.id)
-    .order("name", {
-      ascending: true,
-    });
+    .eq(
+      "client_id",
+      client.id
+    )
+    .order(
+      "name",
+      {
+        ascending: true,
+      }
+    );
 
   if (sitesError) {
     console.error(
@@ -124,9 +138,9 @@ export default async function ClientSettingsPage({
     );
   }
 
-  /* =========================
-     DEVICES
-  ========================= */
+  /* =========================================================
+                          DEVICES
+  ========================================================== */
 
   const {
     data: devices,
@@ -140,10 +154,16 @@ export default async function ClientSettingsPage({
       site_id,
       status
     `)
-    .eq("client_id", client.id)
-    .order("hostname", {
-      ascending: true,
-    });
+    .eq(
+      "client_id",
+      client.id
+    )
+    .order(
+      "hostname",
+      {
+        ascending: true,
+      }
+    );
 
   if (devicesError) {
     console.error(
@@ -152,49 +172,87 @@ export default async function ClientSettingsPage({
     );
   }
 
+  /* =========================================================
+                            PAGE
+  ========================================================== */
+
   return (
     <main className="p-8">
+
       <div className="mx-auto max-w-4xl">
 
-        {/* BACK */}
+        {/* =====================================================
+                            BACK
+        ====================================================== */}
 
         <Link
           href={`/dashboard/organizations/${organization.id}/clients/${client.id}`}
-          className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-500 transition hover:text-white"
+          className="
+            mb-6
+            inline-flex
+            items-center
+            gap-2
+            text-sm
+            text-zinc-500
+            transition
+            hover:text-white
+          "
         >
           <ArrowLeft size={16} />
-          Back to client
+
+          Back to {client.name}
         </Link>
 
-        {/* HEADER */}
+        {/* =====================================================
+                            HEADER
+        ====================================================== */}
 
-        <div className="mb-8 flex items-start gap-4">
+        <div className="mb-8">
 
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400">
-            <Settings size={21} />
+          <div
+            className="
+              mb-5
+              flex
+              h-12
+              w-12
+              items-center
+              justify-center
+              rounded-xl
+              border
+              border-zinc-800
+              bg-zinc-900
+              text-zinc-400
+            "
+          >
+            <Settings size={22} />
           </div>
 
-          <div>
-            <h1 className="text-3xl font-bold">
-              Client settings
-            </h1>
+          <h1 className="text-3xl font-bold">
+            Client settings
+          </h1>
 
-            <p className="mt-2 text-zinc-400">
-              Manage settings for{" "}
-              <span className="text-zinc-200">
-                {client.name}
-              </span>
-              .
-            </p>
-          </div>
+          <p className="mt-2 text-zinc-400">
+            Manage settings for{" "}
+
+            <span className="text-zinc-200">
+              {client.name}
+            </span>
+            .
+          </p>
 
         </div>
+
+        {/* =====================================================
+                        SETTINGS FORM
+        ====================================================== */}
 
         <ClientSettingsForm
           organizationId={
             organization.id
           }
-          client={client}
+          client={
+            client
+          }
           initialSites={
             sites ?? []
           }
@@ -204,6 +262,7 @@ export default async function ClientSettingsPage({
         />
 
       </div>
+
     </main>
   );
 }

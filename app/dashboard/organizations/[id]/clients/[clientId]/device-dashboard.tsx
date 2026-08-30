@@ -1,6 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  useMemo,
+  useState,
+} from "react";
 
 import {
   ChevronDown,
@@ -12,7 +15,6 @@ import {
   MemoryStick,
   Monitor,
   Network,
-  Power,
   RotateCcw,
   Search,
   Server,
@@ -32,26 +34,46 @@ type Device = {
 
   hostname: string;
 
-  display_name: string | null;
+  display_name:
+    | string
+    | null;
 
-  os: string | null;
-  os_version: string | null;
+  os:
+    | string
+    | null;
 
-  local_ip: string | null;
-  public_ip: string | null;
+  os_version:
+    | string
+    | null;
 
-  mac_address: string | null;
+  local_ip:
+    | string
+    | null;
+
+  public_ip:
+    | string
+    | null;
+
+  mac_address:
+    | string
+    | null;
 
   status:
     | "online"
     | "offline"
     | "warning";
 
-  agent_id: string | null;
+  agent_id:
+    | string
+    | null;
 
-  last_seen: string | null;
+  last_seen:
+    | string
+    | null;
 
-  site_id: string | null;
+  site_id:
+    | string
+    | null;
 
   sites:
     | Site
@@ -61,16 +83,26 @@ type Device = {
 
 type Props = {
   devices: Device[];
+
+  sites: Site[];
+
+  canManage: boolean;
 };
 
 export default function DeviceDashboard({
   devices,
+  sites,
+  canManage,
 }: Props) {
-  const [search, setSearch] =
-    useState("");
+  const [
+    search,
+    setSearch,
+  ] = useState("");
 
-  const [siteFilter, setSiteFilter] =
-    useState("all");
+  const [
+    siteFilter,
+    setSiteFilter,
+  ] = useState("all");
 
   const [
     statusFilter,
@@ -81,13 +113,14 @@ export default function DeviceDashboard({
     selectedDevice,
     setSelectedDevice,
   ] =
-    useState<Device | null>(null);
+    useState<Device | null>(
+      null
+    );
 
   const [
     actionMessage,
     setActionMessage,
-  ] =
-    useState("");
+  ] = useState("");
 
   /* =========================
      HELPERS
@@ -101,7 +134,9 @@ export default function DeviceDashboard({
     }
 
     if (
-      Array.isArray(device.sites)
+      Array.isArray(
+        device.sites
+      )
     ) {
       return (
         device.sites[0] ??
@@ -113,73 +148,61 @@ export default function DeviceDashboard({
   }
 
   /* =========================
-     SITES
-  ========================= */
-
-  const sites = useMemo(() => {
-    const map =
-      new Map<string, Site>();
-
-    devices.forEach((device) => {
-      const site =
-        getSite(device);
-
-      if (site) {
-        map.set(
-          site.id,
-          site
-        );
-      }
-    });
-
-    return Array.from(
-      map.values()
-    ).sort((a, b) =>
-      a.name.localeCompare(
-        b.name
-      )
-    );
-  }, [devices]);
-
-  /* =========================
-     FILTER
+     FILTERED DEVICES
   ========================= */
 
   const filteredDevices =
     useMemo(() => {
-      const query = search
-        .trim()
-        .toLowerCase();
+      const query =
+        search
+          .trim()
+          .toLowerCase();
 
       return devices.filter(
         (device) => {
           const site =
-            getSite(device);
+            getSite(
+              device
+            );
 
           const matchesSearch =
             !query ||
             device.hostname
               .toLowerCase()
-              .includes(query) ||
+              .includes(
+                query
+              ) ||
             device.display_name
               ?.toLowerCase()
-              .includes(query) ||
+              .includes(
+                query
+              ) ||
             device.local_ip
               ?.toLowerCase()
-              .includes(query) ||
+              .includes(
+                query
+              ) ||
             device.public_ip
               ?.toLowerCase()
-              .includes(query) ||
+              .includes(
+                query
+              ) ||
             device.os
               ?.toLowerCase()
-              .includes(query) ||
+              .includes(
+                query
+              ) ||
             site?.name
               .toLowerCase()
-              .includes(query);
+              .includes(
+                query
+              );
 
           const matchesSite =
             siteFilter ===
               "all" ||
+            device.site_id ===
+              siteFilter ||
             site?.id ===
               siteFilter;
 
@@ -210,6 +233,10 @@ export default function DeviceDashboard({
   function runAction(
     action: string
   ) {
+    if (!canManage) {
+      return;
+    }
+
     setActionMessage(
       `${action} is ready for the SentinelGrid Agent integration.`
     );
@@ -246,7 +273,9 @@ export default function DeviceDashboard({
 
         </div>
 
-        {/* SITE */}
+        {/* =========================
+            SITE FILTER
+        ========================= */}
 
         <div className="relative">
 
@@ -268,14 +297,20 @@ export default function DeviceDashboard({
               All sites
             </option>
 
-            {sites.map((site) => (
-              <option
-                key={site.id}
-                value={site.id}
-              >
-                {site.name}
-              </option>
-            ))}
+            {sites.map(
+              (site) => (
+                <option
+                  key={
+                    site.id
+                  }
+                  value={
+                    site.id
+                  }
+                >
+                  {site.name}
+                </option>
+              )
+            )}
 
           </select>
 
@@ -286,7 +321,9 @@ export default function DeviceDashboard({
 
         </div>
 
-        {/* STATUS */}
+        {/* =========================
+            STATUS FILTER
+        ========================= */}
 
         <div className="relative">
 
@@ -327,14 +364,18 @@ export default function DeviceDashboard({
 
       </div>
 
-      {/* RESULT COUNT */}
+      {/* =========================
+          RESULT COUNT
+      ========================= */}
 
       <div className="mb-4 flex items-center justify-between">
 
         <p className="text-xs text-zinc-600">
           Showing{" "}
           {filteredDevices.length}{" "}
-          of {devices.length} devices
+          of{" "}
+          {devices.length}{" "}
+          devices
         </p>
 
         {(search ||
@@ -346,9 +387,11 @@ export default function DeviceDashboard({
             type="button"
             onClick={() => {
               setSearch("");
+
               setSiteFilter(
                 "all"
               );
+
               setStatusFilter(
                 "all"
               );
@@ -370,7 +413,9 @@ export default function DeviceDashboard({
         <div className="flex flex-col items-center rounded-2xl border border-dashed border-zinc-800 px-6 py-16 text-center">
 
           <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500">
-            <Monitor size={21} />
+            <Monitor
+              size={21}
+            />
           </div>
 
           <h3 className="mt-5 font-semibold">
@@ -378,10 +423,18 @@ export default function DeviceDashboard({
           </h3>
 
           <p className="mt-2 max-w-lg text-sm leading-6 text-zinc-500">
-            Devices will appear here once a
-            SentinelGrid agent is deployed
-            and linked to this client.
+            Devices will appear here once a SentinelGrid agent is deployed and linked to this client.
           </p>
+
+          {sites.length > 0 && (
+            <p className="mt-3 text-xs text-zinc-600">
+              {sites.length}{" "}
+              {sites.length === 1
+                ? "site is"
+                : "sites are"}{" "}
+              currently configured for this client.
+            </p>
+          )}
 
         </div>
 
@@ -400,8 +453,7 @@ export default function DeviceDashboard({
           </h3>
 
           <p className="mt-2 text-sm text-zinc-500">
-            Try changing your search or
-            filters.
+            Try changing your search or filters.
           </p>
 
         </div>
@@ -443,7 +495,9 @@ export default function DeviceDashboard({
             {filteredDevices.map(
               (device) => {
                 const site =
-                  getSite(device);
+                  getSite(
+                    device
+                  );
 
                 return (
                   <button
@@ -469,9 +523,7 @@ export default function DeviceDashboard({
 
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400">
                         <Monitor
-                          size={
-                            18
-                          }
+                          size={18}
                         />
                       </div>
 
@@ -506,6 +558,7 @@ export default function DeviceDashboard({
                     {/* OS */}
 
                     <p className="hidden truncate text-sm text-zinc-400 lg:block">
+
                       {device.os
                         ? `${device.os}${
                             device.os_version
@@ -513,6 +566,7 @@ export default function DeviceDashboard({
                               : ""
                           }`
                         : "Unknown OS"}
+
                     </p>
 
                     {/* STATUS */}
@@ -576,7 +630,7 @@ export default function DeviceDashboard({
 
           <aside className="fixed bottom-0 right-0 top-0 z-50 w-full overflow-y-auto border-l border-zinc-800 bg-zinc-950 shadow-2xl sm:w-[520px]">
 
-            {/* DRAWER HEADER */}
+            {/* HEADER */}
 
             <div className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/95 px-6 py-5 backdrop-blur">
 
@@ -616,7 +670,9 @@ export default function DeviceDashboard({
                   }
                   className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-900 hover:text-white"
                 >
-                  <X size={18} />
+                  <X
+                    size={18}
+                  />
                 </button>
 
               </div>
@@ -673,111 +729,113 @@ export default function DeviceDashboard({
 
               {/* =========================
                   QUICK ACTIONS
+                  OWNER + ADMIN ONLY
               ========================= */}
 
-              <div>
+              {canManage && (
+                <div>
 
-                <h3 className="text-sm font-semibold">
-                  Quick actions
-                </h3>
+                  <h3 className="text-sm font-semibold">
+                    Quick actions
+                  </h3>
 
-                <p className="mt-1 text-xs text-zinc-600">
-                  Remote management tools for
-                  this endpoint.
-                </p>
+                  <p className="mt-1 text-xs text-zinc-600">
+                    Remote management tools for this endpoint.
+                  </p>
 
-                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="mt-4 grid grid-cols-2 gap-3">
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      runAction(
-                        "Remote Desktop"
-                      )
-                    }
-                    className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
-                  >
-                    <ExternalLink
-                      size={18}
-                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runAction(
+                          "Remote Desktop"
+                        )
+                      }
+                      className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
+                    >
+                      <ExternalLink
+                        size={18}
+                      />
 
-                    <span className="text-sm font-medium">
-                      Remote Desktop
-                    </span>
-                  </button>
+                      <span className="text-sm font-medium">
+                        Remote Desktop
+                      </span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      runAction(
-                        "PowerShell"
-                      )
-                    }
-                    className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
-                  >
-                    <Terminal
-                      size={18}
-                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runAction(
+                          "PowerShell"
+                        )
+                      }
+                      className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
+                    >
+                      <Terminal
+                        size={18}
+                      />
 
-                    <span className="text-sm font-medium">
-                      PowerShell
-                    </span>
-                  </button>
+                      <span className="text-sm font-medium">
+                        PowerShell
+                      </span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      runAction(
-                        "CMD"
-                      )
-                    }
-                    className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
-                  >
-                    <Command
-                      size={18}
-                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runAction(
+                          "CMD"
+                        )
+                      }
+                      className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
+                    >
+                      <Command
+                        size={18}
+                      />
 
-                    <span className="text-sm font-medium">
-                      CMD
-                    </span>
-                  </button>
+                      <span className="text-sm font-medium">
+                        CMD
+                      </span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      runAction(
-                        "Restart"
-                      )
-                    }
-                    className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
-                  >
-                    <RotateCcw
-                      size={18}
-                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runAction(
+                          "Restart"
+                        )
+                      }
+                      className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
+                    >
+                      <RotateCcw
+                        size={18}
+                      />
 
-                    <span className="text-sm font-medium">
-                      Restart
-                    </span>
-                  </button>
-
-                </div>
-
-                {actionMessage && (
-                  <div className="mt-3 flex items-start gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-xs text-zinc-500">
-
-                    <CircleAlert
-                      size={15}
-                      className="mt-0.5 shrink-0"
-                    />
-
-                    {
-                      actionMessage
-                    }
+                      <span className="text-sm font-medium">
+                        Restart
+                      </span>
+                    </button>
 
                   </div>
-                )}
 
-              </div>
+                  {actionMessage && (
+                    <div className="mt-3 flex items-start gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-xs text-zinc-500">
+
+                      <CircleAlert
+                        size={15}
+                        className="mt-0.5 shrink-0"
+                      />
+
+                      {
+                        actionMessage
+                      }
+
+                    </div>
+                  )}
+
+                </div>
+              )}
 
               {/* =========================
                   SYSTEM INFO
@@ -880,7 +938,9 @@ export default function DeviceDashboard({
 
               </div>
 
-              {/* FUTURE METRICS */}
+              {/* =========================
+                  PERFORMANCE
+              ========================= */}
 
               <div>
 
@@ -924,7 +984,9 @@ export default function DeviceDashboard({
 
               </div>
 
-              {/* LAST SEEN */}
+              {/* =========================
+                  LAST SEEN
+              ========================= */}
 
               <div className="border-t border-zinc-800 pt-5">
 
@@ -969,13 +1031,11 @@ function InfoRow({
     <div className="flex items-center justify-between gap-5 border-b border-zinc-800 px-4 py-3.5 last:border-b-0">
 
       <div className="flex items-center gap-3 text-zinc-500">
-
         {icon}
 
         <span className="text-sm">
           {label}
         </span>
-
       </div>
 
       <span className="max-w-[55%] truncate text-right text-sm text-zinc-300">

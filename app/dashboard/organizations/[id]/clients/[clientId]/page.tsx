@@ -54,19 +54,70 @@ export default async function ClientDetailsPage({
     .from("organizations")
     .select("*")
     .eq("id", id)
-    .eq("owner_id", user.id)
     .single();
 
-  if (organizationError) {
+  if (
+    organizationError ||
+    !organization
+  ) {
     console.error(
       "Organization error:",
       organizationError
     );
-  }
 
-  if (!organization) {
     notFound();
   }
+
+  /* =========================
+     ACCESS / ROLE
+  ========================= */
+
+  const isOwner =
+    organization.owner_id === user.id;
+
+  let memberRole: string | null = null;
+
+  if (!isOwner) {
+    const {
+      data: membership,
+      error: membershipError,
+    } = await supabase
+      .from("organization_members")
+      .select("role")
+      .eq(
+        "organization_id",
+        organization.id
+      )
+      .eq(
+        "user_id",
+        user.id
+      )
+      .maybeSingle();
+
+    if (membershipError) {
+      console.error(
+        "Membership error:",
+        membershipError
+      );
+    }
+
+    memberRole =
+      membership?.role ?? null;
+  }
+
+  const isAdmin =
+    memberRole === "admin";
+
+  /*
+    Owner + Admin
+    = infrastructure management
+
+    Member
+    = read-only
+  */
+
+  const canManageInfrastructure =
+    isOwner || isAdmin;
 
   /* =========================
      CLIENT
@@ -78,7 +129,10 @@ export default async function ClientDetailsPage({
   } = await supabase
     .from("clients")
     .select("*")
-    .eq("id", clientId)
+    .eq(
+      "id",
+      clientId
+    )
     .eq(
       "organization_id",
       organization.id
@@ -95,6 +149,40 @@ export default async function ClientDetailsPage({
   if (!client) {
     notFound();
   }
+
+  /* =========================
+     SITES
+  ========================= */
+
+  const {
+    data: sites,
+    error: sitesError,
+  } = await supabase
+    .from("sites")
+    .select(`
+      id,
+      name
+    `)
+    .eq(
+      "client_id",
+      client.id
+    )
+    .order(
+      "name",
+      {
+        ascending: true,
+      }
+    );
+
+  if (sitesError) {
+    console.error(
+      "Sites error:",
+      sitesError
+    );
+  }
+
+  const siteList =
+    sites ?? [];
 
   /* =========================
      DEVICES
@@ -128,9 +216,12 @@ export default async function ClientDetailsPage({
       "client_id",
       client.id
     )
-    .order("created_at", {
-      ascending: false,
-    });
+    .order(
+      "created_at",
+      {
+        ascending: false,
+      }
+    );
 
   if (devicesError) {
     console.error(
@@ -201,9 +292,7 @@ export default async function ClientDetailsPage({
           <div className="flex items-start gap-5">
 
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-zinc-400">
-              <Building2
-                size={24}
-              />
+              <Building2 size={24} />
             </div>
 
             <div>
@@ -243,15 +332,11 @@ export default async function ClientDetailsPage({
 
           </div>
 
-          {/* =========================
-              RIGHT
-          ========================= */}
+          {/* RIGHT */}
 
           <div className="flex flex-wrap items-center justify-end gap-4">
 
-            {/* =========================
-                COMPACT STATS
-            ========================= */}
+            {/* STATS */}
 
             <div className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-2.5">
 
@@ -345,18 +430,19 @@ export default async function ClientDetailsPage({
 
             {/* =========================
                 SETTINGS
+                OWNER + ADMIN ONLY
             ========================= */}
 
-            <Link
-              href={`/dashboard/organizations/${organization.id}/clients/${client.id}/settings`}
-              className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
-            >
-              <Settings
-                size={17}
-              />
+            {canManageInfrastructure && (
+              <Link
+                href={`/dashboard/organizations/${organization.id}/clients/${client.id}/settings`}
+                className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+              >
+                <Settings size={17} />
 
-              Settings
-            </Link>
+                Settings
+              </Link>
+            )}
 
           </div>
 
@@ -368,8 +454,6 @@ export default async function ClientDetailsPage({
 
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
 
-          {/* SECTION HEADER */}
-
           <div className="mb-6">
 
             <h2 className="text-lg font-semibold">
@@ -377,19 +461,19 @@ export default async function ClientDetailsPage({
             </h2>
 
             <p className="mt-1 text-sm text-zinc-500">
-              Monitor and manage the
-              devices registered for this
-              client.
+              {canManageInfrastructure
+                ? "Monitor and manage the devices registered for this client."
+                : "View, search and filter the devices registered for this client."}
             </p>
 
           </div>
 
-          {/* =========================
-              INTERACTIVE DASHBOARD
-          ========================= */}
-
           <DeviceDashboard
             devices={deviceList}
+            sites={siteList}
+            canManage={
+              canManageInfrastructure
+            }
           />
 
         </section>
