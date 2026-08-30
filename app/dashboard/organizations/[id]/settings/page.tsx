@@ -10,16 +10,31 @@ import {
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { RemoveMemberButton } from "@/components/organization/remove-member-button";
 
 import {
   ArrowLeft,
   Building2,
   Settings,
   Users,
+  Crown,
+  ShieldCheck,
+  UserRound,
 } from "lucide-react";
 
-import { InviteMemberButton } from "@/components/invite-member-button";
-import { DeleteOrganizationButton } from "@/components/delete-organization-button";
+import { InviteMemberButton } from "@/components/organization/invite-member-button";
+import { DeleteOrganizationButton } from "@/components/organization/delete-organization-button";
+
+
+type TeamMember = {
+  id: string;
+  user_id: string;
+  role: string;
+  joined_at: string | null;
+  display_name: string;
+  display_email: string;
+};
 
 
 export default async function OrganizationSettingsPage({
@@ -31,7 +46,11 @@ export default async function OrganizationSettingsPage({
 
   const { id } = await params;
 
-  const supabase = await createClient();
+  const supabase =
+    await createClient();
+
+  const admin =
+    createAdminClient();
 
 
   /* =========================================================
@@ -71,6 +90,45 @@ export default async function OrganizationSettingsPage({
 
 
   /* =========================================================
+                          OWNER USER
+  ========================================================== */
+
+  const {
+    data: ownerAuthData,
+    error: ownerAuthError,
+  } =
+    await admin.auth.admin.getUserById(
+      organization.owner_id
+    );
+
+
+  if (ownerAuthError) {
+    console.error(
+      "Owner auth error:",
+      ownerAuthError
+    );
+  }
+
+
+  const ownerAuthUser =
+    ownerAuthData?.user ?? null;
+
+
+  const ownerDisplayName =
+    ownerAuthUser?.user_metadata
+      ?.full_name ||
+    ownerAuthUser?.user_metadata
+      ?.name ||
+    ownerAuthUser?.email
+      ?.split("@")[0] ||
+    "Organization owner";
+
+
+  const ownerDisplayEmail =
+    ownerAuthUser?.email ?? "";
+
+
+  /* =========================================================
                           MEMBERS
   ========================================================== */
 
@@ -79,7 +137,12 @@ export default async function OrganizationSettingsPage({
     error: membersError,
   } = await supabase
     .from("organization_members")
-    .select("*")
+    .select(`
+      id,
+      user_id,
+      role,
+      joined_at
+    `)
     .eq(
       "organization_id",
       organization.id
@@ -98,6 +161,74 @@ export default async function OrganizationSettingsPage({
 
 
   /* =========================================================
+                    MEMBER USER DETAILS
+  ========================================================== */
+
+  const membersWithUsers: TeamMember[] =
+    await Promise.all(
+      (members ?? [])
+        .filter(
+          (member) =>
+            member.user_id !==
+            organization.owner_id
+        )
+        .map(
+          async (member) => {
+            const {
+              data,
+              error,
+            } =
+              await admin.auth.admin.getUserById(
+                member.user_id
+              );
+
+
+            if (
+              error ||
+              !data.user
+            ) {
+              console.error(
+                "Member auth user error:",
+                error
+              );
+
+              return {
+                ...member,
+
+                display_name:
+                  "Unknown user",
+
+                display_email:
+                  "",
+              };
+            }
+
+
+            const authUser =
+              data.user;
+
+
+            return {
+              ...member,
+
+              display_name:
+                authUser.user_metadata
+                  ?.full_name ||
+                authUser.user_metadata
+                  ?.name ||
+                authUser.email
+                  ?.split("@")[0] ||
+                "User",
+
+              display_email:
+                authUser.email ?? "",
+            };
+          }
+        )
+    );
+
+
+  /* =========================================================
                       PENDING INVITES
   ========================================================== */
 
@@ -106,12 +237,22 @@ export default async function OrganizationSettingsPage({
     error: invitesError,
   } = await supabase
     .from("organization_invites")
-    .select("*")
+    .select(`
+      id,
+      email,
+      role,
+      status,
+      created_at,
+      expires_at
+    `)
     .eq(
       "organization_id",
       organization.id
     )
-    .eq("status", "pending")
+    .eq(
+      "status",
+      "pending"
+    )
     .order("created_at", {
       ascending: false,
     });
@@ -137,9 +278,11 @@ export default async function OrganizationSettingsPage({
     const supabase =
       await createClient();
 
+
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } =
+      await supabase.auth.getUser();
 
 
     if (!user) {
@@ -147,23 +290,26 @@ export default async function OrganizationSettingsPage({
     }
 
 
-    const organizationId = String(
-      formData.get(
-        "organization_id"
-      ) || ""
-    );
+    const organizationId =
+      String(
+        formData.get(
+          "organization_id"
+        ) || ""
+      );
 
 
-    const name = String(
-      formData.get("name") || ""
-    ).trim();
+    const name =
+      String(
+        formData.get("name") || ""
+      ).trim();
 
 
-    const description = String(
-      formData.get(
-        "description"
-      ) || ""
-    ).trim();
+    const description =
+      String(
+        formData.get(
+          "description"
+        ) || ""
+      ).trim();
 
 
     if (!name) {
@@ -194,7 +340,7 @@ export default async function OrganizationSettingsPage({
     }
 
 
-    /* CHECK DUPLICATE NAME */
+    /* CHECK DUPLICATE */
 
     const {
       data: duplicateOrganization,
@@ -227,24 +373,26 @@ export default async function OrganizationSettingsPage({
 
     /* UPDATE */
 
-    const { error } = await supabase
-      .from("organizations")
-      .update({
-        name,
-        description:
-          description || null,
+    const { error } =
+      await supabase
+        .from("organizations")
+        .update({
+          name,
 
-        updated_at:
-          new Date().toISOString(),
-      })
-      .eq(
-        "id",
-        organizationId
-      )
-      .eq(
-        "owner_id",
-        user.id
-      );
+          description:
+            description || null,
+
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          "id",
+          organizationId
+        )
+        .eq(
+          "owner_id",
+          user.id
+        );
 
 
     if (error) {
@@ -284,10 +432,14 @@ export default async function OrganizationSettingsPage({
     const supabase =
       await createClient();
 
+    const admin =
+      createAdminClient();
+
 
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } =
+      await supabase.auth.getUser();
 
 
     if (!user) {
@@ -295,24 +447,27 @@ export default async function OrganizationSettingsPage({
     }
 
 
-    const organizationId = String(
-      formData.get(
-        "organization_id"
-      ) || ""
-    );
+    const organizationId =
+      String(
+        formData.get(
+          "organization_id"
+        ) || ""
+      );
 
 
-    const email = String(
-      formData.get("email") || ""
-    )
-      .trim()
-      .toLowerCase();
+    const email =
+      String(
+        formData.get("email") || ""
+      )
+        .trim()
+        .toLowerCase();
 
 
-    const role = String(
-      formData.get("role") ||
-      "member"
-    );
+    const role =
+      String(
+        formData.get("role") ||
+        "member"
+      );
 
 
     if (!email) {
@@ -322,7 +477,8 @@ export default async function OrganizationSettingsPage({
 
     if (
       role !== "member" &&
-      role !== "admin"
+      role !== "admin" &&
+      role !== "viewer"
     ) {
       return;
     }
@@ -334,7 +490,10 @@ export default async function OrganizationSettingsPage({
       data: ownedOrganization,
     } = await supabase
       .from("organizations")
-      .select("id")
+      .select(`
+        id,
+        owner_id
+      `)
       .eq(
         "id",
         organizationId
@@ -351,30 +510,81 @@ export default async function OrganizationSettingsPage({
     }
 
 
-    /* ALREADY MEMBER */
+    /* =====================================================
+       FIND AUTH USER
+    ====================================================== */
 
     const {
-      data: existingMember,
-    } = await supabase
-      .from("organization_members")
-      .select("id")
-      .eq(
-        "organization_id",
-        organizationId
-      )
-      .ilike(
-        "email",
-        email
-      )
-      .maybeSingle();
+      data: authUsersData,
+      error: authUsersError,
+    } =
+      await admin.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000,
+      });
 
 
-    if (existingMember) {
+    if (authUsersError) {
       console.error(
-        "User is already a member."
+        "Auth users error:",
+        authUsersError
       );
 
       return;
+    }
+
+
+    const existingAuthUser =
+      authUsersData.users.find(
+        (authUser) =>
+          authUser.email
+            ?.toLowerCase() ===
+          email
+      );
+
+
+    /* OWNER EMAIL */
+
+    if (
+      existingAuthUser?.id ===
+      ownedOrganization.owner_id
+    ) {
+      console.error(
+        "This user is already the organization owner."
+      );
+
+      return;
+    }
+
+
+    /* ALREADY MEMBER */
+
+    if (existingAuthUser) {
+      const {
+        data: existingMember,
+      } = await supabase
+        .from(
+          "organization_members"
+        )
+        .select("id")
+        .eq(
+          "organization_id",
+          organizationId
+        )
+        .eq(
+          "user_id",
+          existingAuthUser.id
+        )
+        .maybeSingle();
+
+
+      if (existingMember) {
+        console.error(
+          "User is already a member."
+        );
+
+        return;
+      }
     }
 
 
@@ -383,7 +593,9 @@ export default async function OrganizationSettingsPage({
     const {
       data: existingInvite,
     } = await supabase
-      .from("organization_invites")
+      .from(
+        "organization_invites"
+      )
       .select("id")
       .eq(
         "organization_id",
@@ -411,19 +623,43 @@ export default async function OrganizationSettingsPage({
 
     /* CREATE INVITE */
 
-    const { error } = await supabase
-      .from("organization_invites")
-      .insert({
-        organization_id:
-          organizationId,
+    const expiresAt =
+      new Date(
+        Date.now() +
+          7 *
+            24 *
+            60 *
+            60 *
+            1000
+      ).toISOString();
 
-        email,
 
-        role,
+    const { error } =
+      await supabase
+        .from(
+          "organization_invites"
+        )
+        .insert({
+          organization_id:
+            organizationId,
 
-        invited_by:
-          user.id,
-      });
+          email,
+
+          role,
+
+          invited_by:
+            user.id,
+
+          invited_user_id:
+            existingAuthUser?.id ??
+            null,
+
+          status:
+            "pending",
+
+          expires_at:
+            expiresAt,
+        });
 
 
     if (error) {
@@ -440,12 +676,123 @@ export default async function OrganizationSettingsPage({
       `/dashboard/organizations/${organizationId}/settings`
     );
 
+    revalidatePath(
+      "/dashboard",
+      "layout"
+    );
+
 
     redirect(
       `/dashboard/organizations/${organizationId}/settings`
     );
   }
 
+/* =========================================================
+                    REMOVE MEMBER
+========================================================= */
+
+async function removeMember(
+  formData: FormData
+) {
+  "use server";
+
+  const supabase =
+    await createClient();
+
+  const {
+    data: { user },
+  } =
+    await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/auth/login");
+  }
+
+  const organizationId =
+    String(
+      formData.get(
+        "organization_id"
+      ) || ""
+    );
+
+  const memberId =
+    String(
+      formData.get(
+        "member_id"
+      ) || ""
+    );
+
+  if (
+    !organizationId ||
+    !memberId
+  ) {
+    return;
+  }
+
+  /* =========================
+     CONFIRM OWNER
+  ========================= */
+
+  const {
+    data: ownedOrganization,
+  } = await supabase
+    .from("organizations")
+    .select("id")
+    .eq(
+      "id",
+      organizationId
+    )
+    .eq(
+      "owner_id",
+      user.id
+    )
+    .maybeSingle();
+
+  if (!ownedOrganization) {
+    return;
+  }
+
+  /* =========================
+     DELETE MEMBERSHIP
+  ========================= */
+
+  const {
+    error,
+  } = await supabase
+    .from(
+      "organization_members"
+    )
+    .delete()
+    .eq(
+      "id",
+      memberId
+    )
+    .eq(
+      "organization_id",
+      organizationId
+    );
+
+  if (error) {
+    console.error(
+      "Remove member error:",
+      error
+    );
+
+    return;
+  }
+
+  revalidatePath(
+    `/dashboard/organizations/${organizationId}/settings`
+  );
+
+  revalidatePath(
+    `/dashboard/organizations/${organizationId}`
+  );
+
+  revalidatePath(
+    "/dashboard/organizations"
+  );
+}
 
   /* =========================================================
                     DELETE ORGANIZATION
@@ -460,7 +807,8 @@ export default async function OrganizationSettingsPage({
 
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } =
+      await supabase.auth.getUser();
 
 
     if (!user) {
@@ -468,17 +816,18 @@ export default async function OrganizationSettingsPage({
     }
 
 
-    const { error } = await supabase
-      .from("organizations")
-      .delete()
-      .eq(
-        "id",
-        id
-      )
-      .eq(
-        "owner_id",
-        user.id
-      );
+    const { error } =
+      await supabase
+        .from("organizations")
+        .delete()
+        .eq(
+          "id",
+          id
+        )
+        .eq(
+          "owner_id",
+          user.id
+        );
 
 
     if (error) {
@@ -511,23 +860,13 @@ export default async function OrganizationSettingsPage({
 
       <div className="mx-auto max-w-4xl">
 
-
         {/* =====================================================
                             BACK
         ====================================================== */}
 
         <Link
           href={`/dashboard/organizations/${organization.id}`}
-          className="
-            mb-6
-            inline-flex
-            items-center
-            gap-2
-            text-sm
-            text-zinc-500
-            transition
-            hover:text-white
-          "
+          className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-500 transition hover:text-white"
         >
           <ArrowLeft size={16} />
 
@@ -541,22 +880,10 @@ export default async function OrganizationSettingsPage({
 
         <div className="mb-8">
 
-          <div
-            className="
-              mb-5
-              flex
-              h-12
-              w-12
-              items-center
-              justify-center
-              rounded-xl
-              border
-              border-zinc-800
-              bg-zinc-900
-              text-zinc-400
-            "
-          >
+          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400">
+
             <Settings size={22} />
+
           </div>
 
 
@@ -570,7 +897,8 @@ export default async function OrganizationSettingsPage({
 
             <span className="text-zinc-200">
               {organization.name}
-            </span>.
+            </span>
+            .
           </p>
 
         </div>
@@ -580,24 +908,20 @@ export default async function OrganizationSettingsPage({
                             GENERAL
         ====================================================== */}
 
-        <section
-          className="
-            overflow-hidden
-            rounded-2xl
-            border
-            border-zinc-800
-            bg-zinc-900
-          "
-        >
+        <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/70">
 
           <div className="border-b border-zinc-800 px-6 py-5">
 
             <div className="flex items-center gap-3">
 
-              <Building2
-                size={18}
-                className="text-zinc-500"
-              />
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-500/10">
+
+                <Building2
+                  size={17}
+                  className="text-blue-400"
+                />
+
+              </div>
 
 
               <div>
@@ -617,18 +941,12 @@ export default async function OrganizationSettingsPage({
           </div>
 
 
-          <form
-            action={
-              updateOrganization
-            }
-          >
+          <form action={updateOrganization}>
 
             <input
               type="hidden"
               name="organization_id"
-              value={
-                organization.id
-              }
+              value={organization.id}
             />
 
 
@@ -640,7 +958,7 @@ export default async function OrganizationSettingsPage({
 
                 <label
                   htmlFor="name"
-                  className="mb-2 block text-sm font-medium"
+                  className="mb-2 block text-sm font-medium text-zinc-300"
                 >
                   Organization name
                 </label>
@@ -653,20 +971,7 @@ export default async function OrganizationSettingsPage({
                   defaultValue={
                     organization.name
                   }
-                  className="
-                    w-full
-                    rounded-xl
-                    border
-                    border-zinc-800
-                    bg-zinc-950
-                    px-4
-                    py-3
-                    text-sm
-                    text-white
-                    outline-none
-                    transition
-                    focus:border-zinc-600
-                  "
+                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-700 focus:border-blue-500/50"
                 />
 
               </div>
@@ -678,7 +983,7 @@ export default async function OrganizationSettingsPage({
 
                 <label
                   htmlFor="description"
-                  className="mb-2 block text-sm font-medium"
+                  className="mb-2 block text-sm font-medium text-zinc-300"
                 >
                   Description
                 </label>
@@ -692,22 +997,7 @@ export default async function OrganizationSettingsPage({
                     ""
                   }
                   placeholder="Organization description..."
-                  className="
-                    w-full
-                    resize-none
-                    rounded-xl
-                    border
-                    border-zinc-800
-                    bg-zinc-950
-                    px-4
-                    py-3
-                    text-sm
-                    text-white
-                    outline-none
-                    transition
-                    placeholder:text-zinc-700
-                    focus:border-zinc-600
-                  "
+                  className="w-full resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-700 focus:border-blue-500/50"
                 />
 
               </div>
@@ -715,30 +1005,11 @@ export default async function OrganizationSettingsPage({
             </div>
 
 
-            <div
-              className="
-                flex
-                justify-end
-                border-t
-                border-zinc-800
-                px-6
-                py-4
-              "
-            >
+            <div className="flex justify-end border-t border-zinc-800 px-6 py-4">
 
               <button
                 type="submit"
-                className="
-                  rounded-lg
-                  bg-white
-                  px-4
-                  py-2.5
-                  text-sm
-                  font-medium
-                  text-black
-                  transition
-                  hover:bg-zinc-200
-                "
+                className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
               >
                 Save changes
               </button>
@@ -754,38 +1025,22 @@ export default async function OrganizationSettingsPage({
                             MEMBERS
         ====================================================== */}
 
-        <section
-          className="
-            mt-8
-            overflow-hidden
-            rounded-2xl
-            border
-            border-zinc-800
-            bg-zinc-900
-          "
-        >
+        <section className="mt-8 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/70">
 
           {/* HEADER */}
 
-          <div
-            className="
-              flex
-              items-center
-              justify-between
-              gap-6
-              border-b
-              border-zinc-800
-              px-6
-              py-5
-            "
-          >
+          <div className="flex items-center justify-between gap-6 border-b border-zinc-800 px-6 py-5">
 
             <div className="flex items-center gap-3">
 
-              <Users
-                size={18}
-                className="text-zinc-500"
-              />
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-violet-500/20 bg-violet-500/10">
+
+                <Users
+                  size={17}
+                  className="text-violet-400"
+                />
+
+              </div>
 
 
               <div>
@@ -815,56 +1070,121 @@ export default async function OrganizationSettingsPage({
           </div>
 
 
-          {/* CURRENT MEMBERS */}
+          {/* ===================================================
+                              OWNER
+          ==================================================== */}
 
-          <div>
+          <div className="flex items-center justify-between gap-6 border-b border-zinc-800 px-6 py-4">
 
-            {!members?.length ? (
+            <div className="flex min-w-0 items-center gap-3">
 
-              <div className="px-6 py-10 text-center text-sm text-zinc-500">
-                No members found.
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-red-500/20 bg-red-500/10">
+
+                <Crown
+                  size={15}
+                  className="text-red-400"
+                />
+
               </div>
 
-            ) : (
 
-              members.map(
-                (member) => (
+              <div className="min-w-0">
 
-                  <div
-                    key={
-                      member.id
-                    }
-                    className="
-                      flex
-                      items-center
-                      justify-between
-                      gap-6
-                      border-b
-                      border-zinc-800
-                      px-6
-                      py-4
-                      last:border-b-0
-                    "
-                  >
+                <p className="truncate text-sm font-medium text-white">
+                  {ownerDisplayName}
+                </p>
 
-                    <div className="min-w-0">
+                {ownerDisplayEmail && (
+                  <p className="mt-0.5 truncate text-xs text-zinc-500">
+                    {ownerDisplayEmail}
+                  </p>
+                )}
 
-                      <p className="truncate text-sm font-medium">
-                        {member.email ||
-                          "Unknown user"}
-                      </p>
+              </div>
+
+            </div>
 
 
-                      <p className="mt-1 text-xs text-zinc-600">
-                        Joined{" "}
+            <RoleBadge role="owner" />
 
-                        {new Date(
-                          member.joined_at
-                        ).toLocaleDateString()}
-                      </p>
+          </div>
+
+
+          {/* ===================================================
+                        CURRENT MEMBERS
+          ==================================================== */}
+
+          {membersWithUsers.length ===
+          0 ? (
+
+            <div className="px-6 py-8 text-center">
+
+              <UserRound
+                size={20}
+                className="mx-auto text-zinc-700"
+              />
+
+              <p className="mt-3 text-sm text-zinc-500">
+                No additional members yet.
+              </p>
+
+            </div>
+
+          ) : (
+
+            membersWithUsers.map(
+              (member) => (
+
+                <div
+                  key={member.id}
+                  className="flex items-center justify-between gap-6 border-b border-zinc-800 px-6 py-4 last:border-b-0"
+                >
+
+                  <div className="flex min-w-0 items-center gap-3">
+
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950">
+
+                      <UserRound
+                        size={15}
+                        className="text-zinc-500"
+                      />
 
                     </div>
 
+
+                    <div className="min-w-0">
+
+                      <p className="truncate text-sm font-medium text-white">
+                        {
+                          member.display_name
+                        }
+                      </p>
+
+
+                      {member.display_email && (
+                        <p className="mt-0.5 truncate text-xs text-zinc-500">
+                          {
+                            member.display_email
+                          }
+                        </p>
+                      )}
+
+
+                      {member.joined_at && (
+                        <p className="mt-1 text-[11px] text-zinc-600">
+                          Joined{" "}
+                          {new Date(
+                            member.joined_at
+                          ).toLocaleDateString()}
+                        </p>
+                      )}
+
+                    </div>
+
+                  </div>
+
+
+                  <div className="flex items-center gap-3">
 
                     <RoleBadge
                       role={
@@ -872,14 +1192,29 @@ export default async function OrganizationSettingsPage({
                       }
                     />
 
+                    <RemoveMemberButton
+                      memberName={
+                        member.display_name
+                      }
+                      memberId={
+                        member.id
+                      }
+                      organizationId={
+                        organization.id
+                      }
+                      action={
+                        removeMember
+                      }
+                    />
+
                   </div>
 
-                )
+                </div>
+
               )
+            )
 
-            )}
-
-          </div>
+          )}
 
 
           {/* ===================================================
@@ -889,25 +1224,9 @@ export default async function OrganizationSettingsPage({
           {!!invites?.length && (
             <>
 
-              <div
-                className="
-                  border-y
-                  border-zinc-800
-                  bg-zinc-950/40
-                  px-6
-                  py-3
-                "
-              >
+              <div className="border-y border-zinc-800 bg-zinc-950/50 px-6 py-3">
 
-                <p
-                  className="
-                    text-xs
-                    font-medium
-                    uppercase
-                    tracking-wider
-                    text-zinc-600
-                  "
-                >
+                <p className="text-xs font-medium uppercase tracking-wider text-zinc-600">
                   Pending invitations
                 </p>
 
@@ -918,20 +1237,8 @@ export default async function OrganizationSettingsPage({
                 (invite) => (
 
                   <div
-                    key={
-                      invite.id
-                    }
-                    className="
-                      flex
-                      items-center
-                      justify-between
-                      gap-6
-                      border-b
-                      border-zinc-800
-                      px-6
-                      py-4
-                      last:border-b-0
-                    "
+                    key={invite.id}
+                    className="flex items-center justify-between gap-6 border-b border-zinc-800 px-6 py-4 last:border-b-0"
                   >
 
                     <div className="min-w-0">
@@ -941,7 +1248,7 @@ export default async function OrganizationSettingsPage({
                       </p>
 
 
-                      <p className="mt-1 text-xs text-zinc-600">
+                      <p className="mt-1 text-xs capitalize text-zinc-600">
                         Invited as{" "}
                         {invite.role}
                       </p>
@@ -949,17 +1256,7 @@ export default async function OrganizationSettingsPage({
                     </div>
 
 
-                    <span
-                      className="
-                        rounded-full
-                        bg-yellow-500/10
-                        px-3
-                        py-1
-                        text-xs
-                        font-medium
-                        text-yellow-400
-                      "
-                    >
+                    <span className="rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-xs font-medium text-yellow-400">
                       Pending
                     </span>
 
@@ -978,25 +1275,9 @@ export default async function OrganizationSettingsPage({
                         DANGER ZONE
         ====================================================== */}
 
-        <section
-          className="
-            mt-8
-            overflow-hidden
-            rounded-2xl
-            border
-            border-red-500/20
-            bg-red-500/[0.02]
-          "
-        >
+        <section className="mt-8 overflow-hidden rounded-2xl border border-red-500/20 bg-red-500/[0.025]">
 
-          <div
-            className="
-              border-b
-              border-red-500/10
-              px-6
-              py-5
-            "
-          >
+          <div className="border-b border-red-500/10 px-6 py-5">
 
             <h2 className="font-semibold text-red-400">
               Danger zone
@@ -1009,15 +1290,7 @@ export default async function OrganizationSettingsPage({
           </div>
 
 
-          <div
-            className="
-              flex
-              items-center
-              justify-between
-              gap-6
-              p-6
-            "
-          >
+          <div className="flex items-center justify-between gap-6 p-6">
 
             <div>
 
@@ -1026,17 +1299,9 @@ export default async function OrganizationSettingsPage({
               </p>
 
 
-              <p
-                className="
-                  mt-1
-                  max-w-xl
-                  text-sm
-                  leading-6
-                  text-zinc-500
-                "
-              >
+              <p className="mt-1 max-w-xl text-sm leading-6 text-zinc-500">
                 Permanently delete this organization and all associated
-                sites, devices and monitoring data.
+                clients, sites, devices and monitoring data.
               </p>
 
             </div>
@@ -1071,27 +1336,61 @@ function RoleBadge({
 }: {
   role: string;
 }) {
+
+  /* OWNER */
+
   if (role === "owner") {
     return (
-      <span className="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-400">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-red-500/25 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-400">
+
+        <Crown size={12} />
+
         Owner
+
       </span>
     );
   }
 
+
+  /* ADMIN */
 
   if (role === "admin") {
     return (
-      <span className="rounded-full bg-purple-500/10 px-3 py-1 text-xs font-medium text-purple-400">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-400">
+
+        <ShieldCheck size={12} />
+
         Admin
+
       </span>
     );
   }
 
 
+  /* VIEWER */
+
+  if (role === "viewer") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-500/25 bg-zinc-500/10 px-3 py-1 text-xs font-medium text-zinc-400">
+
+        <ShieldCheck size={12} />
+
+        Viewer
+
+      </span>
+    );
+  }
+
+
+  /* MEMBER */
+
   return (
-    <span className="rounded-full bg-zinc-800 px-3 py-1 text-xs font-medium text-zinc-400">
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/25 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-400">
+
+      <ShieldCheck size={12} />
+
       Member
+
     </span>
   );
 }

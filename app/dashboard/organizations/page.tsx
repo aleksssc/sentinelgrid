@@ -14,6 +14,10 @@ export default async function OrganizationsPage() {
 
   /* =========================
      ORGANIZATIONS
+
+     RLS devolve:
+     - Organizations onde sou Owner
+     - Organizations onde sou Member
   ========================= */
 
   const {
@@ -22,7 +26,6 @@ export default async function OrganizationsPage() {
   } = await supabase
     .from("organizations")
     .select("*")
-    .eq("owner_id", user.id)
     .order("created_at", {
       ascending: false,
     });
@@ -52,9 +55,7 @@ export default async function OrganizationsPage() {
     organization_id: string;
   }[] = [];
 
-  if (
-    organizationIds.length > 0
-  ) {
+  if (organizationIds.length > 0) {
     const {
       data: clientsData,
       error: clientsError,
@@ -95,9 +96,7 @@ export default async function OrganizationsPage() {
     client_id: string;
   }[] = [];
 
-  if (
-    clientIds.length > 0
-  ) {
+  if (clientIds.length > 0) {
     const {
       data: devicesData,
       error: devicesError,

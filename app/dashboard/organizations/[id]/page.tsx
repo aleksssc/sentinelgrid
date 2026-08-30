@@ -14,6 +14,7 @@ import {
   Settings,
   Server,
   MapPin,
+  ShieldCheck,
 } from "lucide-react";
 
 export default async function OrganizationDetailsPage({
@@ -41,6 +42,10 @@ export default async function OrganizationDetailsPage({
 
   /* =========================
      ORGANIZATION
+
+     RLS controla o acesso:
+     - Owner
+     - Organization Member
   ========================= */
 
   const {
@@ -50,7 +55,6 @@ export default async function OrganizationDetailsPage({
     .from("organizations")
     .select("*")
     .eq("id", id)
-    .eq("owner_id", user.id)
     .single();
 
   if (organizationError) {
@@ -65,6 +69,61 @@ export default async function OrganizationDetailsPage({
   }
 
   /* =========================
+     ACCESS / ROLE
+  ========================= */
+
+  const isOwner =
+    organization.owner_id === user.id;
+
+  let memberRole: string | null = null;
+
+  if (!isOwner) {
+    const {
+      data: membership,
+      error: membershipError,
+    } = await supabase
+      .from("organization_members")
+      .select("role")
+      .eq(
+        "organization_id",
+        organization.id
+      )
+      .eq(
+        "user_id",
+        user.id
+      )
+      .maybeSingle();
+
+    if (membershipError) {
+      console.error(
+        "Membership error:",
+        membershipError
+      );
+    }
+
+    memberRole =
+      membership?.role ?? null;
+  }
+
+  /* =========================
+     PERMISSIONS
+
+     Por agora:
+     Owner = gestão completa
+
+     Admin / Member / Viewer
+     = acesso à organization
+
+     Depois refinamos:
+     Admin -> gestão operacional
+     Member -> operações permitidas
+     Viewer -> read only
+  ========================= */
+
+  const canManageOrganization =
+    isOwner;
+
+  /* =========================
      CLIENTS
   ========================= */
 
@@ -73,8 +132,16 @@ export default async function OrganizationDetailsPage({
     error: clientsError,
   } = await supabase
     .from("clients")
-    .select("id, name, description, status")
-    .eq("organization_id", organization.id)
+    .select(`
+      id,
+      name,
+      description,
+      status
+    `)
+    .eq(
+      "organization_id",
+      organization.id
+    )
     .order("created_at", {
       ascending: false,
     });
@@ -86,17 +153,19 @@ export default async function OrganizationDetailsPage({
     );
   }
 
-  const clientList = clients ?? [];
+  const clientList =
+    clients ?? [];
 
   /* =========================
      STATS
   ========================= */
 
-  const clientsCount = clientList.length;
+  const clientsCount =
+    clientList.length;
 
   /*
     Por agora ficam a 0.
-    Depois ligamos aos sites/devices reais.
+    Depois ligamos aos Sites e Devices reais.
   */
 
   const sitesCount = 0;
@@ -104,6 +173,7 @@ export default async function OrganizationDetailsPage({
 
   return (
     <main className="p-8">
+
       <div className="mx-auto max-w-7xl">
 
         {/* =========================
@@ -115,8 +185,10 @@ export default async function OrganizationDetailsPage({
           className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-500 transition hover:text-white"
         >
           <ArrowLeft size={16} />
+
           Back to organizations
         </Link>
+
 
         {/* =========================
             HEADER
@@ -129,14 +201,77 @@ export default async function OrganizationDetailsPage({
           <div className="flex items-start gap-5">
 
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-zinc-400">
+
               <Building2 size={24} />
+
             </div>
+
 
             <div>
 
-              <h1 className="text-3xl font-bold">
-                {organization.name}
-              </h1>
+              <div className="flex flex-wrap items-center gap-3">
+
+                <h1 className="text-3xl font-bold">
+                  {organization.name}
+                </h1>
+
+
+                {/* =========================
+                    ROLE BADGE
+                ========================= */}
+
+                {isOwner ? (
+
+                  /* OWNER */
+
+                  <div className="flex items-center gap-1.5 rounded-full border border-red-500/25 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-400">
+
+                    <ShieldCheck size={12} />
+
+                    Owner
+
+                  </div>
+
+                ) : memberRole === "admin" ? (
+
+                  /* ADMIN */
+
+                  <div className="flex items-center gap-1.5 rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1 text-xs font-medium text-violet-400">
+
+                    <ShieldCheck size={12} />
+
+                    Admin
+
+                  </div>
+
+                ) : memberRole === "viewer" ? (
+
+                  /* VIEWER */
+
+                  <div className="flex items-center gap-1.5 rounded-full border border-zinc-500/25 bg-zinc-500/10 px-2.5 py-1 text-xs font-medium text-zinc-400">
+
+                    <ShieldCheck size={12} />
+
+                    Viewer
+
+                  </div>
+
+                ) : memberRole ? (
+
+                  /* MEMBER */
+
+                  <div className="flex items-center gap-1.5 rounded-full border border-blue-500/25 bg-blue-500/10 px-2.5 py-1 text-xs font-medium capitalize text-blue-400">
+
+                    <ShieldCheck size={12} />
+
+                    {memberRole}
+
+                  </div>
+
+                ) : null}
+
+              </div>
+
 
               <p className="mt-2 max-w-2xl text-zinc-400">
                 {organization.description ||
@@ -146,6 +281,7 @@ export default async function OrganizationDetailsPage({
             </div>
 
           </div>
+
 
           {/* RIGHT */}
 
@@ -176,9 +312,11 @@ export default async function OrganizationDetailsPage({
 
               </div>
 
+
               {/* DIVIDER */}
 
               <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
+
 
               {/* SITES */}
 
@@ -199,9 +337,11 @@ export default async function OrganizationDetailsPage({
 
               </div>
 
+
               {/* DIVIDER */}
 
               <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
+
 
               {/* DEVICES */}
 
@@ -224,35 +364,40 @@ export default async function OrganizationDetailsPage({
 
             </div>
 
+
             {/* =========================
-                ACTIONS
+                OWNER ACTIONS
             ========================= */}
 
-            <div className="flex items-center gap-3">
+            {canManageOrganization && (
+              <div className="flex items-center gap-3">
 
-              {organization.owner_id === user.id && (
                 <Link
                   href={`/dashboard/organizations/${organization.id}/settings`}
                   className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                 >
                   <Settings size={17} />
+
                   Settings
                 </Link>
-              )}
 
-              <Link
-                href={`/dashboard/organizations/${organization.id}/clients/new`}
-                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
-              >
-                <Plus size={17} />
-                Add client
-              </Link>
 
-            </div>
+                <Link
+                  href={`/dashboard/organizations/${organization.id}/clients/new`}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
+                >
+                  <Plus size={17} />
+
+                  Add client
+                </Link>
+
+              </div>
+            )}
 
           </div>
 
         </div>
+
 
         {/* =========================
             CLIENTS
@@ -269,11 +414,11 @@ export default async function OrganizationDetailsPage({
             </h2>
 
             <p className="mt-1 text-sm text-zinc-500">
-              Manage and access the clients connected to this
-              organization.
+              Manage and access the clients connected to this organization.
             </p>
 
           </div>
+
 
           {/* EMPTY */}
 
@@ -282,33 +427,48 @@ export default async function OrganizationDetailsPage({
             <div className="flex flex-col items-center rounded-2xl border border-dashed border-zinc-800 px-6 py-14 text-center">
 
               <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500">
+
                 <Building2 size={21} />
+
               </div>
+
 
               <h3 className="mt-5 font-semibold">
                 No clients configured
               </h3>
 
+
               <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">
-                Create your first client to start managing
-                sites, devices and security monitoring.
+                {canManageOrganization
+                  ? "Create your first client to start managing sites, devices and security monitoring."
+                  : "This organization does not have any clients configured yet."}
               </p>
 
-              <Link
-                href={`/dashboard/organizations/${organization.id}/clients/new`}
-                className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
-              >
-                <Plus size={16} />
-                Create first client
-              </Link>
+
+              {/* OWNER ONLY */}
+
+              {canManageOrganization && (
+                <Link
+                  href={`/dashboard/organizations/${organization.id}/clients/new`}
+                  className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
+                >
+                  <Plus size={16} />
+
+                  Create first client
+                </Link>
+              )}
 
             </div>
 
           ) : (
 
             <OrganizationClients
-              organizationId={organization.id}
-              clients={clientList}
+              organizationId={
+                organization.id
+              }
+              clients={
+                clientList
+              }
             />
 
           )}
@@ -316,6 +476,7 @@ export default async function OrganizationDetailsPage({
         </section>
 
       </div>
+
     </main>
   );
 }

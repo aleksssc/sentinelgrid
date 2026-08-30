@@ -4,7 +4,7 @@ import { connection } from "next/server";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
-import { OrganizationSubmitButton } from "@/components/organization-submit-button";
+import { OrganizationSubmitButton } from "@/components/organization/organization-submit-button";
 
 import {
   ArrowLeft,
