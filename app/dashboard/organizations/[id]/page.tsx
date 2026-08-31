@@ -42,11 +42,6 @@ export default async function OrganizationDetailsPage({
 
   /* =========================
      ORGANIZATION
-
-     RLS controla acesso:
-     - Owner
-     - Admin
-     - Member
   ========================= */
 
   const {
@@ -112,25 +107,12 @@ export default async function OrganizationDetailsPage({
   const isMember =
     memberRole === "member";
 
-  /*
-    ORGANIZATION MANAGEMENT
-    Owner only:
-    - Organization settings
-    - Members
-    - Billing
-    - Delete organization
-  */
+  /* =========================
+     PERMISSIONS
+  ========================= */
 
   const canManageOrganization =
     isOwner;
-
-  /*
-    INFRASTRUCTURE MANAGEMENT
-    Owner + Admin:
-    - Clients
-    - Sites
-    - Devices
-  */
 
   const canManageInfrastructure =
     isOwner || isAdmin;
@@ -263,7 +245,6 @@ export default async function OrganizationDetailsPage({
           Back to organizations
         </Link>
 
-
         {/* =========================
             HEADER
         ========================= */}
@@ -274,10 +255,9 @@ export default async function OrganizationDetailsPage({
 
           <div className="flex items-start gap-5">
 
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-zinc-400">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-[#0d0f12] text-zinc-400">
               <Building2 size={24} />
             </div>
-
 
             <div>
 
@@ -286,7 +266,6 @@ export default async function OrganizationDetailsPage({
                 <h1 className="text-3xl font-bold">
                   {organization.name}
                 </h1>
-
 
                 {/* =========================
                     ROLE BADGE
@@ -317,7 +296,6 @@ export default async function OrganizationDetailsPage({
 
               </div>
 
-
               <p className="mt-2 max-w-2xl text-zinc-400">
                 {organization.description ||
                   "No description provided."}
@@ -327,7 +305,6 @@ export default async function OrganizationDetailsPage({
 
           </div>
 
-
           {/* RIGHT */}
 
           <div className="flex flex-wrap items-center justify-end gap-4">
@@ -336,7 +313,7 @@ export default async function OrganizationDetailsPage({
                 STATS
             ========================= */}
 
-            <div className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-800 bg-[#0d0f12] px-4 py-2.5">
 
               {/* CLIENTS */}
 
@@ -357,9 +334,7 @@ export default async function OrganizationDetailsPage({
 
               </div>
 
-
               <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
-
 
               {/* SITES */}
 
@@ -380,9 +355,7 @@ export default async function OrganizationDetailsPage({
 
               </div>
 
-
               <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
-
 
               {/* DEVICES */}
 
@@ -405,7 +378,6 @@ export default async function OrganizationDetailsPage({
 
             </div>
 
-
             {/* =========================
                 ACTIONS
             ========================= */}
@@ -417,14 +389,13 @@ export default async function OrganizationDetailsPage({
               {canManageOrganization && (
                 <Link
                   href={`/dashboard/organizations/${organization.id}/settings`}
-                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-[#0d0f12] px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                 >
                   <Settings size={17} />
 
                   Settings
                 </Link>
               )}
-
 
               {/* OWNER + ADMIN */}
 
@@ -445,12 +416,11 @@ export default async function OrganizationDetailsPage({
 
         </div>
 
-
         {/* =========================
             CLIENTS
         ========================= */}
 
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
+        <section className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-6">
 
           {/* HEADER */}
 
@@ -468,29 +438,25 @@ export default async function OrganizationDetailsPage({
 
           </div>
 
-
           {/* EMPTY */}
 
           {clientList.length === 0 ? (
 
-            <div className="flex flex-col items-center rounded-2xl border border-dashed border-zinc-800 px-6 py-14 text-center">
+            <div className="flex flex-col items-center rounded-2xl border border-dashed border-zinc-800 bg-[#090a0c] px-6 py-14 text-center">
 
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-[#070809] text-zinc-500">
                 <Building2 size={21} />
               </div>
-
 
               <h3 className="mt-5 font-semibold">
                 No clients configured
               </h3>
-
 
               <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">
                 {canManageInfrastructure
                   ? "Create your first client to start managing sites, devices and security monitoring."
                   : "This organization does not have any clients configured yet."}
               </p>
-
 
               {canManageInfrastructure && (
                 <Link

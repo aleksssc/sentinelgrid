@@ -112,11 +112,13 @@ export default function OrganizationClients({
       );
     }, [clients, search]);
 
-  /* evita diferença entre SSR/client */
+  /* =========================
+     LOADING
+  ========================= */
 
   if (!mounted) {
     return (
-      <div className="h-40 animate-pulse rounded-2xl border border-zinc-800 bg-zinc-900/40" />
+      <div className="h-40 animate-pulse rounded-2xl border border-zinc-800 bg-[#0d0f12]" />
     );
   }
 
@@ -147,7 +149,7 @@ export default function OrganizationClients({
                 e.target.value
               )
             }
-            className="w-full rounded-xl border border-zinc-800 bg-zinc-950 py-2.5 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 hover:border-zinc-700 focus:border-zinc-600"
+            className="w-full rounded-xl border border-zinc-800 bg-[#090a0c] py-2.5 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 hover:border-zinc-700 focus:border-zinc-600"
           />
 
         </div>
@@ -158,7 +160,7 @@ export default function OrganizationClients({
 
           {/* VIEW TOGGLE */}
 
-          <div className="flex items-center rounded-xl border border-zinc-800 bg-zinc-950 p-1">
+          <div className="flex items-center rounded-xl border border-zinc-800 bg-[#090a0c] p-1">
 
             <button
               type="button"
@@ -169,7 +171,7 @@ export default function OrganizationClients({
               className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${
                 viewMode === "grid"
                   ? "bg-zinc-800 text-white"
-                  : "text-zinc-600 hover:text-zinc-300"
+                  : "text-zinc-600 hover:bg-zinc-900 hover:text-zinc-300"
               }`}
             >
               <LayoutGrid
@@ -186,7 +188,7 @@ export default function OrganizationClients({
               className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${
                 viewMode === "list"
                   ? "bg-zinc-800 text-white"
-                  : "text-zinc-600 hover:text-zinc-300"
+                  : "text-zinc-600 hover:bg-zinc-900 hover:text-zinc-300"
               }`}
             >
               <List size={16} />
@@ -205,7 +207,7 @@ export default function OrganizationClients({
       {filteredClients.length ===
       0 ? (
 
-        <div className="rounded-2xl border border-dashed border-zinc-800 px-6 py-12 text-center">
+        <div className="rounded-2xl border border-dashed border-zinc-800 bg-[#090a0c] px-6 py-12 text-center">
 
           <Building2
             size={24}
@@ -217,8 +219,7 @@ export default function OrganizationClients({
           </h3>
 
           <p className="mt-2 text-sm text-zinc-500">
-            Try searching for
-            another client.
+            Try searching for another client.
           </p>
 
         </div>
@@ -238,14 +239,14 @@ export default function OrganizationClients({
               <Link
                 key={client.id}
                 href={`/dashboard/organizations/${organizationId}/clients/${client.id}`}
-                className="group flex min-h-56 flex-col rounded-2xl border border-zinc-800 bg-zinc-900 p-5 transition hover:border-zinc-700 hover:bg-zinc-800/60"
+                className="group flex min-h-56 flex-col rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5 transition hover:border-zinc-700 hover:bg-[#14161a]"
               >
 
                 {/* TOP */}
 
                 <div className="flex items-start justify-between gap-4">
 
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-[#090a0c] text-zinc-400">
                     <Building2
                       size={19}
                     />
@@ -312,7 +313,7 @@ export default function OrganizationClients({
             LIST VIEW
         ========================= */
 
-        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
 
           <div className="divide-y divide-zinc-800">
 
@@ -322,14 +323,14 @@ export default function OrganizationClients({
                 <Link
                   key={client.id}
                   href={`/dashboard/organizations/${organizationId}/clients/${client.id}`}
-                  className="group flex items-center justify-between gap-6 px-5 py-4 transition hover:bg-zinc-800/50"
+                  className="group flex items-center justify-between gap-6 bg-[#0d0f12] px-5 py-4 transition hover:bg-[#14161a]"
                 >
 
                   {/* LEFT */}
 
                   <div className="flex min-w-0 items-center gap-4">
 
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-[#090a0c] text-zinc-400">
                       <Building2
                         size={18}
                       />

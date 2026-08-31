@@ -44,6 +44,13 @@ type ViewMode =
   | "grid";
 
 /* =========================
+   STORAGE
+========================= */
+
+const STORAGE_KEY =
+  "sentinelgrid-organizations-view";
+
+/* =========================
    COMPONENT
 ========================= */
 
@@ -70,7 +77,7 @@ export default function OrganizationsView({
   useEffect(() => {
     const stored =
       localStorage.getItem(
-        "sentinelgrid-organizations-view"
+        STORAGE_KEY
       );
 
     if (
@@ -91,7 +98,7 @@ export default function OrganizationsView({
     setViewMode(mode);
 
     localStorage.setItem(
-      "sentinelgrid-organizations-view",
+      STORAGE_KEY,
       mode
     );
   }
@@ -116,7 +123,8 @@ export default function OrganizationsView({
           organization
         ) => {
           const name =
-            organization.name.toLowerCase();
+            organization.name
+              .toLowerCase();
 
           const description =
             (
@@ -140,7 +148,8 @@ export default function OrganizationsView({
     ]);
 
   return (
-    <main className="p-8">
+    <main className="relative z-10 p-8">
+
       <div className="mx-auto max-w-7xl">
 
         {/* =========================
@@ -150,7 +159,8 @@ export default function OrganizationsView({
         <div className="mb-8 flex flex-wrap items-start justify-between gap-6">
 
           <div>
-            <h1 className="text-3xl font-bold">
+
+            <h1 className="text-3xl font-bold tracking-tight text-white">
               Organizations
             </h1>
 
@@ -158,6 +168,7 @@ export default function OrganizationsView({
               Manage your organizations,
               clients and devices.
             </p>
+
           </div>
 
           <Link
@@ -201,14 +212,14 @@ export default function OrganizationsView({
                 )
               }
               placeholder="Search organizations..."
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-3 pl-11 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 hover:border-zinc-700 focus:border-zinc-600"
+              className="w-full rounded-xl border border-zinc-800 bg-[#111214] py-3 pl-11 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 hover:border-zinc-700 focus:border-zinc-600"
             />
 
           </div>
 
           {/* VIEW TOGGLE */}
 
-          <div className="flex items-center rounded-xl border border-zinc-800 bg-zinc-900 p-1">
+          <div className="flex items-center rounded-xl border border-zinc-800 bg-[#111214] p-1">
 
             <button
               type="button"
@@ -222,7 +233,7 @@ export default function OrganizationsView({
                 viewMode ===
                 "list"
                   ? "bg-zinc-800 text-white"
-                  : "text-zinc-600 hover:text-zinc-300"
+                  : "text-zinc-600 hover:bg-zinc-900 hover:text-zinc-300"
               }`}
             >
               <List
@@ -242,7 +253,7 @@ export default function OrganizationsView({
                 viewMode ===
                 "grid"
                   ? "bg-zinc-800 text-white"
-                  : "text-zinc-600 hover:text-zinc-300"
+                  : "text-zinc-600 hover:bg-zinc-900 hover:text-zinc-300"
               }`}
             >
               <Grid2X2
@@ -255,21 +266,23 @@ export default function OrganizationsView({
         </div>
 
         {/* =========================
-            EMPTY
+            EMPTY ORGANIZATIONS
         ========================= */}
 
         {organizations.length ===
         0 ? (
 
-          <section className="rounded-2xl border border-zinc-800 bg-zinc-900/50 px-6 py-16 text-center">
+          <section className="rounded-2xl border border-zinc-800 bg-[#0d0f12] px-6 py-16 text-center">
 
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-600">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-[#08090b] text-zinc-600">
+
               <Building2
                 size={21}
               />
+
             </div>
 
-            <h2 className="mt-5 font-semibold">
+            <h2 className="mt-5 font-semibold text-white">
               No organizations yet
             </h2>
 
@@ -296,14 +309,18 @@ export default function OrganizationsView({
         ) : filteredOrganizations.length ===
           0 ? (
 
-          <section className="rounded-2xl border border-zinc-800 bg-zinc-900/50 px-6 py-14 text-center">
+          /* =========================
+             NO SEARCH RESULTS
+          ========================= */
+
+          <section className="rounded-2xl border border-zinc-800 bg-[#0d0f12] px-6 py-14 text-center">
 
             <Search
               size={21}
               className="mx-auto text-zinc-600"
             />
 
-            <h2 className="mt-4 font-semibold">
+            <h2 className="mt-4 font-semibold text-white">
               No organizations found
             </h2>
 
@@ -320,11 +337,13 @@ export default function OrganizationsView({
              LIST VIEW
           ========================= */
 
-          <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/60">
+          <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
 
-            {/* HEADER */}
+            {/* =========================
+                TABLE HEADER
+            ========================= */}
 
-            <div className="grid grid-cols-[1fr_190px_190px_100px] items-center border-b border-zinc-800 px-8 py-4">
+            <div className="grid grid-cols-[1fr_190px_190px_100px] items-center border-b border-zinc-800 bg-[#0d0f12] px-8 py-4">
 
               <p className="text-xs font-medium uppercase tracking-[0.08em] text-zinc-600">
                 Organization
@@ -342,9 +361,11 @@ export default function OrganizationsView({
 
             </div>
 
-            {/* ROWS */}
+            {/* =========================
+                ROWS
+            ========================= */}
 
-            <div className="divide-y divide-zinc-800">
+            <div className="divide-y divide-zinc-800 bg-[#0d0f12]">
 
               {filteredOrganizations.map(
                 (
@@ -355,7 +376,7 @@ export default function OrganizationsView({
                     key={
                       organization.id
                     }
-                    className="group grid grid-cols-[1fr_190px_190px_100px] items-center px-8 py-7 transition hover:bg-zinc-900"
+                    className="group grid grid-cols-[1fr_190px_190px_100px] items-center bg-[#0d0f12] px-8 py-7 transition-colors duration-200 hover:bg-[#15171a]"
                   >
 
                     {/* ORGANIZATION */}
@@ -365,10 +386,12 @@ export default function OrganizationsView({
                       className="flex min-w-0 items-center gap-5"
                     >
 
-                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950 text-zinc-500 transition group-hover:border-zinc-700 group-hover:text-zinc-300">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-[#08090b] text-zinc-500 transition group-hover:border-zinc-700 group-hover:text-zinc-300">
+
                         <Building2
                           size={22}
                         />
+
                       </div>
 
                       <div className="min-w-0">
@@ -474,22 +497,26 @@ export default function OrganizationsView({
                   key={
                     organization.id
                   }
-                  className="group overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/60 transition hover:border-zinc-700 hover:bg-zinc-900"
+                  className="group overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12] transition-colors duration-200 hover:border-zinc-700 hover:bg-[#15171a]"
                 >
 
-                  {/* CARD MAIN */}
+                  {/* =========================
+                      CARD MAIN
+                  ========================= */}
 
                   <Link
                     href={`/dashboard/organizations/${organization.id}`}
-                    className="block p-6"
+                    className="block bg-[#0d0f12] p-6 transition-colors group-hover:bg-[#15171a]"
                   >
 
                     <div className="flex items-start justify-between gap-4">
 
-                      <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 transition group-hover:text-zinc-300">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-[#08090b] text-zinc-500 transition group-hover:border-zinc-700 group-hover:text-zinc-300">
+
                         <Building2
                           size={20}
                         />
+
                       </div>
 
                       <ChevronRight
@@ -499,7 +526,7 @@ export default function OrganizationsView({
 
                     </div>
 
-                    <h2 className="mt-5 truncate text-lg font-semibold">
+                    <h2 className="mt-5 truncate text-lg font-semibold text-white">
                       {
                         organization.name
                       }
@@ -512,13 +539,15 @@ export default function OrganizationsView({
 
                   </Link>
 
-                  {/* STATS */}
+                  {/* =========================
+                      STATS
+                  ========================= */}
 
-                  <div className="grid grid-cols-2 border-t border-zinc-800">
+                  <div className="grid grid-cols-2 border-t border-zinc-800 bg-[#0d0f12]">
 
                     {/* CLIENTS */}
 
-                    <div className="border-r border-zinc-800 px-5 py-4">
+                    <div className="border-r border-zinc-800 bg-[#0d0f12] px-5 py-4">
 
                       <div className="flex items-center gap-2 text-zinc-600">
 
@@ -543,7 +572,7 @@ export default function OrganizationsView({
 
                     {/* DEVICES */}
 
-                    <div className="px-5 py-4">
+                    <div className="bg-[#0d0f12] px-5 py-4">
 
                       <div className="flex items-center gap-2 text-zinc-600">
 
@@ -568,9 +597,11 @@ export default function OrganizationsView({
 
                   </div>
 
-                  {/* FOOTER */}
+                  {/* =========================
+                      FOOTER
+                  ========================= */}
 
-                  <div className="flex justify-end border-t border-zinc-800 px-4 py-3">
+                  <div className="flex justify-end border-t border-zinc-800 bg-[#0d0f12] px-4 py-3">
 
                     <Link
                       href={`/dashboard/organizations/${organization.id}/settings`}
@@ -595,6 +626,7 @@ export default function OrganizationsView({
         )}
 
       </div>
+
     </main>
   );
 }

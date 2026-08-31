@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   Building2,
   Monitor,
+  Plus,
   Settings,
   ShieldAlert,
   Wifi,
@@ -336,9 +337,11 @@ export default async function ClientDetailsPage({
 
           <div className="flex flex-wrap items-center justify-end gap-4">
 
-            {/* STATS */}
+            {/* =========================
+                STATS
+            ========================= */}
 
-            <div className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-800 bg-[#0d0f12] px-4 py-2.5">
 
               {/* DEVICES */}
 
@@ -429,19 +432,36 @@ export default async function ClientDetailsPage({
             </div>
 
             {/* =========================
-                SETTINGS
-                OWNER + ADMIN ONLY
+                ACTIONS
+                OWNER + ADMIN
             ========================= */}
 
             {canManageInfrastructure && (
-              <Link
-                href={`/dashboard/organizations/${organization.id}/clients/${client.id}/settings`}
-                className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
-              >
-                <Settings size={17} />
+              <div className="flex items-center gap-3">
 
-                Settings
-              </Link>
+                {/* SETTINGS */}
+
+                <Link
+                  href={`/dashboard/organizations/${organization.id}/clients/${client.id}/settings`}
+                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+                >
+                  <Settings size={17} />
+
+                  Settings
+                </Link>
+
+                {/* ADD DEVICE */}
+
+                <Link
+                  href={`/dashboard/organizations/${organization.id}/clients/${client.id}/devices/new`}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
+                >
+                  <Plus size={17} />
+
+                  Add device
+                </Link>
+
+              </div>
             )}
 
           </div>
@@ -452,7 +472,7 @@ export default async function ClientDetailsPage({
             DEVICES AREA
         ========================= */}
 
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
+        <section className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-6">
 
           <div className="mb-6">
 
