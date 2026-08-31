@@ -209,7 +209,7 @@ The current development phase focuses on building the core platform foundation.
 * [x] Organization invitations
 * [x] Member management
 * [x] Monitor management
-* [ ] Notification center
+* [x] Notification center
 * [ ] Advanced alerts
 * [ ] Monitoring history improvements
 * [ ] Security analytics
