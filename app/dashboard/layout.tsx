@@ -4,7 +4,7 @@ import DashboardSidebar from "@/components/dashboard/dashboard-sidebar";
 import DashboardBackground from "@/components/dashboard/dashboard-background";
 
 import NotificationsBell from "@/components/dashboard/notifications/notifications-bell";
-import { LogoutButton } from "@/components/logout-button";
+import { UserMenu } from "@/components/user-menu";
 
 import {
   Search,
@@ -137,7 +137,7 @@ export default function DashboardLayout({
 
             <div className="mx-1 h-5 w-px bg-white/[0.07]" />
 
-            <LogoutButton />
+            <UserMenu />
 
           </div>
 
