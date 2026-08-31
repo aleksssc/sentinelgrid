@@ -613,23 +613,20 @@ export default function DeviceDashboard({
       {selectedDevice && (
         <>
 
-          {/* OVERLAY */}
+      {/* OVERLAY */}
 
-          <button
-            type="button"
-            aria-label="Close device"
-            onClick={() =>
-              setSelectedDevice(
-                null
-              )
-            }
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
-          />
+      <button
+        type="button"
+        aria-label="Close device"
+        onClick={() =>
+          setSelectedDevice(null)
+        }
+        className="fixed bottom-0 left-0 right-0 top-16 z-30 bg-black/40 backdrop-blur-[2px]"
+      />
 
-          {/* DRAWER */}
+      {/* DRAWER */}
 
-          <aside className="fixed bottom-0 right-0 top-0 z-50 w-full overflow-y-auto border-l border-zinc-800 bg-zinc-950 shadow-2xl sm:w-[520px]">
-
+      <aside className="fixed bottom-0 right-0 top-16 z-40 w-full overflow-y-auto border-l border-zinc-800 bg-zinc-950 shadow-2xl sm:w-[520px]">
             {/* HEADER */}
 
             <div className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/95 px-6 py-5 backdrop-blur">
