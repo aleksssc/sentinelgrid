@@ -1,18 +1,14 @@
-import Link from "next/link";
-import Image from "next/image";
+import "./dashboard-background.css";
+
+import DashboardSidebar from "@/components/dashboard/dashboard-sidebar";
+import DashboardBackground from "@/components/dashboard/dashboard-background";
 
 import NotificationsBell from "@/components/dashboard/notifications/notifications-bell";
 import { LogoutButton } from "@/components/logout-button";
 
 import {
-  LayoutDashboard,
-  Activity,
-  Server,
-  Globe,
-  TriangleAlert,
-  Bell,
-  Bot,
-  Wrench,
+  Search,
+  Command,
 } from "lucide-react";
 
 export default function DashboardLayout({
@@ -21,143 +17,125 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex h-screen overflow-hidden bg-zinc-950 text-white">
+    <div className="relative flex h-screen overflow-hidden bg-[#0a0a0c] text-white">
+
+      {/* =========================
+          ANIMATED BACKGROUND
+      ========================= */}
+
+      <DashboardBackground />
+
 
       {/* =========================
           SIDEBAR
       ========================= */}
 
-      <aside className="relative z-30 flex h-screen w-64 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 shadow-[8px_0_24px_rgba(0,0,0,0.18)]">
-
-        {/* =========================
-            LOGO
-        ========================= */}
-
-        <div className="shrink-0 px-7 py-7">
-
-          <Link
-            href="/"
-            className="flex items-center gap-2 font-bold"
-          >
-            <Image
-              src="/logos/sentinelgrid_png.png"
-              alt="SentinelGrid"
-              width={32}
-              height={32}
-              className="h-8 w-8 object-contain"
-            />
-
-            <span className="text-lg">
-              SentinelGrid
-            </span>
-          </Link>
-
-        </div>
-
-
-        {/* =========================
-            NAVIGATION
-        ========================= */}
-
-        <nav className="flex-1 space-y-1 overflow-y-auto px-4">
-
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-300 transition hover:bg-zinc-900 hover:text-white"
-          >
-            <LayoutDashboard size={18} />
-            Dashboard
-          </Link>
-
-
-          <Link
-            href="/dashboard/monitors"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-300 transition hover:bg-zinc-900 hover:text-white"
-          >
-            <Activity size={18} />
-            Monitors
-          </Link>
-
-
-          <Link
-            href="/dashboard/organizations"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-300 transition hover:bg-zinc-900 hover:text-white"
-          >
-            <Server size={18} />
-            Organizations
-          </Link>
-
-
-          <Link
-            href="/dashboard/domains"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-300 transition hover:bg-zinc-900 hover:text-white"
-          >
-            <Globe size={18} />
-            Domains & DNS
-          </Link>
-
-
-          <Link
-            href="/dashboard/incidents"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-300 transition hover:bg-zinc-900 hover:text-white"
-          >
-            <TriangleAlert size={18} />
-            Incidents
-          </Link>
-
-
-          <Link
-            href="/dashboard/alerts"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-300 transition hover:bg-zinc-900 hover:text-white"
-          >
-            <Bell size={18} />
-            Alerts
-          </Link>
-
-
-          <Link
-            href="/dashboard/agents"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-300 transition hover:bg-zinc-900 hover:text-white"
-          >
-            <Bot size={18} />
-            Agents
-          </Link>
-
-
-          <Link
-            href="/dashboard/tools"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-300 transition hover:bg-zinc-900 hover:text-white"
-          >
-            <Wrench size={18} />
-            Tools
-          </Link>
-
-        </nav>
-
-      </aside>
+      <DashboardSidebar />
 
 
       {/* =========================
           RIGHT SIDE
       ========================= */}
 
-      <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
-
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col">
 
         {/* =========================
             TOPBAR
         ========================= */}
 
-        <header className="relative z-20 flex h-16 shrink-0 items-center justify-end border-b border-zinc-800 bg-zinc-950/95 px-6 shadow-[0_8px_24px_rgba(0,0,0,0.16)] backdrop-blur-xl">
+        <header
+          className="
+            relative z-30
+            flex h-[72px] shrink-0 items-center
 
-          <div className="flex items-center gap-3">
+            border-b border-white/[0.07]
 
-            {/* NOTIFICATIONS */}
+            bg-[#0d0d0f]/75
+
+            px-6
+
+            backdrop-blur-xl
+          "
+        >
+          {/* =========================
+              SEARCH
+          ========================= */}
+
+          <div className="flex flex-1 items-center">
+
+            <button
+              type="button"
+              className="
+                group
+
+                flex h-9 w-full max-w-[360px]
+                items-center gap-2.5
+
+                rounded-xl
+
+                border border-white/[0.07]
+
+                bg-white/[0.035]
+
+                px-3
+
+                text-left
+
+                transition-all duration-200
+
+                hover:border-white/[0.12]
+                hover:bg-white/[0.055]
+              "
+            >
+              <Search
+                size={15}
+                className="
+                  shrink-0
+                  text-zinc-500
+
+                  transition-colors
+
+                  group-hover:text-zinc-300
+                "
+              />
+
+              <span className="flex-1 text-sm text-zinc-500">
+                Search infrastructure...
+              </span>
+
+              <div
+                className="
+                  flex items-center gap-1
+
+                  rounded-md
+
+                  border border-white/[0.07]
+                  bg-white/[0.04]
+
+                  px-1.5 py-1
+
+                  text-[10px]
+                  text-zinc-500
+                "
+              >
+                <Command size={10} />
+
+                K
+              </div>
+            </button>
+
+          </div>
+
+
+          {/* =========================
+              ACCOUNT
+          ========================= */}
+
+          <div className="flex items-center gap-2">
 
             <NotificationsBell />
 
-
-            {/* USER / ACCOUNT MENU */}
+            <div className="mx-1 h-5 w-px bg-white/[0.07]" />
 
             <LogoutButton />
 
@@ -170,10 +148,17 @@ export default function DashboardLayout({
             PAGE CONTENT
         ========================= */}
 
-        <main className="relative z-0 min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <main
+          className="
+            relative z-10
 
+            min-h-0 flex-1
+
+            overflow-y-auto
+            overflow-x-hidden
+          "
+        >
           {children}
-
         </main>
 
       </div>
