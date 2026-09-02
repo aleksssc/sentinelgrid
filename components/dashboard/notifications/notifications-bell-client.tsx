@@ -24,7 +24,7 @@ import {
 
 import type {
   OrganizationInviteNotification,
-} from "../../notifications-bell";
+} from "./notifications-bell";
 
 
 export default function NotificationsBellClient({

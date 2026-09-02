@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { Suspense } from "react";
 import { AuthButton } from "@/components/auth-button";
 
 export default function MarketingLayout({
@@ -65,7 +66,13 @@ export default function MarketingLayout({
           </div>
 
           {/* AUTH */}
-          <AuthButton />
+          <Suspense
+            fallback={
+              <div className="h-10 w-24 animate-pulse rounded-lg bg-white/5" />
+            }
+          >
+            <AuthButton />
+          </Suspense>
 
         </nav>
       </header>
@@ -75,10 +82,9 @@ export default function MarketingLayout({
       <footer className="border-t border-zinc-800">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-8 text-sm text-zinc-600">
 
-          <span>
-            © {new Date().getFullYear()} SentinelGrid
-          </span>
-
+        <span>
+          © 2026 SentinelGrid
+        </span>
           <span>
             Infrastructure Monitoring Platform
           </span>

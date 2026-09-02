@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 
 import InviteSetupForm from "./invite-setup-form";
 
+export const instant = false;
+
 export default async function InvitePage() {
   const supabase =
     await createClient();

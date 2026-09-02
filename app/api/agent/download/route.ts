@@ -1,18 +1,21 @@
 import {
-  readFile,
-  stat,
-} from "fs/promises";
-
-import path from "path";
-
-import {
   NextRequest,
   NextResponse,
+  connection,
 } from "next/server";
+
+import path from "node:path";
+
+import {
+  readFile,
+  stat,
+} from "node:fs/promises";
 
 export async function GET(
   request: NextRequest
 ) {
+  await connection();
+
   try {
     const token =
       request.nextUrl.searchParams.get(

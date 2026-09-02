@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
 import { createClient } from "@/lib/supabase/server";
 
+export const instant = false;
+
 export default async function LoginPage() {
   const supabase = await createClient();
 

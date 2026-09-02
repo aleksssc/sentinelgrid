@@ -11,6 +11,8 @@ import {
   Command,
 } from "lucide-react";
 
+export const instant = false;
+
 export default function DashboardLayout({
   children,
 }: {
