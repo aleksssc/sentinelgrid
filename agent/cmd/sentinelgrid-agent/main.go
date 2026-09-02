@@ -434,7 +434,7 @@ func main() {
 	serverURL :=
 		flag.String(
 			"server",
-			"http://localhost:3000",
+			"https://sentinelgrid-one.vercel.app",
 			"SentinelGrid server URL",
 		)
 
