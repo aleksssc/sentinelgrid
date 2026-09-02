@@ -1,11 +1,21 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
 
 import {
+  useRouter,
+} from "next/navigation";
+
+import {
+  createClient,
+} from "@/lib/supabase/client";
+
+import {
+  Check,
   ChevronDown,
   CircleAlert,
   Command,
@@ -20,9 +30,14 @@ import {
   Server,
   ShieldCheck,
   Terminal,
+  Trash2,
   Wifi,
   X,
 } from "lucide-react";
+
+/* =========================
+   TYPES
+========================= */
 
 type Site = {
   id: string;
@@ -89,11 +104,126 @@ type Props = {
   canManage: boolean;
 };
 
+/* =========================
+   COMPONENT
+========================= */
+
 export default function DeviceDashboard({
   devices,
   sites,
   canManage,
 }: Props) {
+  const router =
+    useRouter();
+
+  const supabase =
+    createClient();
+
+  /* =========================
+     LOCAL DEVICES
+  ========================= */
+
+  const [
+    deviceList,
+    setDeviceList,
+  ] =
+    useState<Device[]>(
+      devices
+    );
+
+  /*
+    When router.refresh() gets fresh data
+    from the server, update our local list.
+  */
+
+  useEffect(() => {
+    setDeviceList(
+      devices
+    );
+
+    /*
+      Also update the currently opened
+      device with fresh last_seen etc.
+    */
+
+    setSelectedDevice(
+      (current) => {
+        if (!current) {
+          return null;
+        }
+
+        return (
+          devices.find(
+            (device) =>
+              device.id ===
+              current.id
+          ) ?? current
+        );
+      }
+    );
+  }, [devices]);
+
+  /* =========================
+     LIVE CLOCK
+  ========================= */
+
+  const [
+    now,
+    setNow,
+  ] = useState(
+    Date.now()
+  );
+
+  /*
+    Re-render relative times every 10 sec.
+  */
+
+  useEffect(() => {
+    const interval =
+      window.setInterval(
+        () => {
+          setNow(
+            Date.now()
+          );
+        },
+        10_000
+      );
+
+    return () => {
+      window.clearInterval(
+        interval
+      );
+    };
+  }, []);
+
+  /*
+    Fetch fresh last_seen/status values
+    from the server every 30 seconds.
+
+    The Agent heartbeat is also currently
+    running every 30 seconds.
+  */
+
+  useEffect(() => {
+    const interval =
+      window.setInterval(
+        () => {
+          router.refresh();
+        },
+        30_000
+      );
+
+    return () => {
+      window.clearInterval(
+        interval
+      );
+    };
+  }, [router]);
+
+  /* =========================
+     FILTERS
+  ========================= */
+
   const [
     search,
     setSearch,
@@ -110,6 +240,20 @@ export default function DeviceDashboard({
   ] = useState("all");
 
   const [
+    siteFilterOpen,
+    setSiteFilterOpen,
+  ] = useState(false);
+
+  const [
+    statusFilterOpen,
+    setStatusFilterOpen,
+  ] = useState(false);
+
+  /* =========================
+     DEVICE DRAWER
+  ========================= */
+
+  const [
     selectedDevice,
     setSelectedDevice,
   ] =
@@ -123,7 +267,26 @@ export default function DeviceDashboard({
   ] = useState("");
 
   /* =========================
-     HELPERS
+     DELETE DEVICE
+  ========================= */
+
+  const [
+    deleteOpen,
+    setDeleteOpen,
+  ] = useState(false);
+
+  const [
+    deletingDevice,
+    setDeletingDevice,
+  ] = useState(false);
+
+  const [
+    deleteError,
+    setDeleteError,
+  ] = useState("");
+
+  /* =========================
+     SITE HELPER
   ========================= */
 
   function getSite(
@@ -148,6 +311,18 @@ export default function DeviceDashboard({
   }
 
   /* =========================
+     SELECTED DEVICE STATUS
+  ========================= */
+
+  const selectedDeviceStatus =
+    selectedDevice
+      ? getEffectiveStatus(
+          selectedDevice,
+          now
+        )
+      : null;
+
+  /* =========================
      FILTERED DEVICES
   ========================= */
 
@@ -158,11 +333,17 @@ export default function DeviceDashboard({
           .trim()
           .toLowerCase();
 
-      return devices.filter(
+      return deviceList.filter(
         (device) => {
           const site =
             getSite(
               device
+            );
+
+          const effectiveStatus =
+            getEffectiveStatus(
+              device,
+              now
             );
 
           const matchesSearch =
@@ -209,7 +390,7 @@ export default function DeviceDashboard({
           const matchesStatus =
             statusFilter ===
               "all" ||
-            device.status ===
+            effectiveStatus ===
               statusFilter;
 
           return (
@@ -220,10 +401,11 @@ export default function DeviceDashboard({
         }
       );
     }, [
-      devices,
+      deviceList,
       search,
       siteFilter,
       statusFilter,
+      now,
     ]);
 
   /* =========================
@@ -240,6 +422,112 @@ export default function DeviceDashboard({
     setActionMessage(
       `${action} is ready for the SentinelGrid Agent integration.`
     );
+  }
+
+  /* =========================
+     DELETE DEVICE
+  ========================= */
+
+  function openDeleteDevice() {
+    if (
+      !selectedDevice ||
+      !canManage
+    ) {
+      return;
+    }
+
+    setDeleteError("");
+
+    setDeleteOpen(
+      true
+    );
+  }
+
+  function closeDeleteDevice() {
+    if (deletingDevice) {
+      return;
+    }
+
+    setDeleteOpen(
+      false
+    );
+
+    setDeleteError("");
+  }
+
+  async function deleteDevice() {
+    if (
+      !selectedDevice ||
+      !canManage ||
+      deletingDevice
+    ) {
+      return;
+    }
+
+    const deviceId =
+      selectedDevice.id;
+
+    setDeletingDevice(
+      true
+    );
+
+    setDeleteError("");
+
+    const {
+      error,
+    } = await supabase
+      .from("devices")
+      .delete()
+      .eq(
+        "id",
+        deviceId
+      );
+
+    if (error) {
+      console.error(
+        "Could not delete device:",
+        error
+      );
+
+      setDeleteError(
+        "Could not delete this device."
+      );
+
+      setDeletingDevice(
+        false
+      );
+
+      return;
+    }
+
+    /*
+      Remove immediately from the UI.
+    */
+
+    setDeviceList(
+      (current) =>
+        current.filter(
+          (device) =>
+            device.id !==
+            deviceId
+        )
+    );
+
+    setDeletingDevice(
+      false
+    );
+
+    setDeleteOpen(
+      false
+    );
+
+    setSelectedDevice(
+      null
+    );
+
+    setActionMessage("");
+
+    router.refresh();
   }
 
   return (
@@ -279,45 +567,157 @@ export default function DeviceDashboard({
 
         <div className="relative">
 
-          <MapPin
-            size={15}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600"
-          />
+          <button
+            type="button"
+            onClick={() => {
+              setSiteFilterOpen(
+                (current) =>
+                  !current
+              );
 
-          <select
-            value={siteFilter}
-            onChange={(e) =>
-              setSiteFilter(
-                e.target.value
-              )
-            }
-            className="appearance-none rounded-xl border border-zinc-800 bg-zinc-950 py-2.5 pl-9 pr-10 text-sm text-zinc-300 outline-none transition hover:border-zinc-700 focus:border-zinc-600"
+              setStatusFilterOpen(
+                false
+              );
+            }}
+            className={`flex min-w-[160px] items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-sm transition ${
+              siteFilterOpen
+                ? "border-zinc-600 bg-[#101114]"
+                : "border-zinc-800 bg-zinc-950 hover:border-zinc-700"
+            }`}
           >
-            <option value="all">
-              All sites
-            </option>
 
-            {sites.map(
-              (site) => (
-                <option
-                  key={
-                    site.id
-                  }
-                  value={
-                    site.id
-                  }
-                >
-                  {site.name}
-                </option>
-              )
-            )}
+            <div className="flex min-w-0 items-center gap-2.5">
 
-          </select>
+              <MapPin
+                size={15}
+                className="shrink-0 text-zinc-600"
+              />
 
-          <ChevronDown
-            size={14}
-            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600"
-          />
+              <span className="max-w-[150px] truncate text-zinc-300">
+                {siteFilter ===
+                "all"
+                  ? "All sites"
+                  : sites.find(
+                      (site) =>
+                        site.id ===
+                        siteFilter
+                    )?.name ??
+                    "All sites"}
+              </span>
+
+            </div>
+
+            <ChevronDown
+              size={14}
+              className={`shrink-0 text-zinc-600 transition-transform duration-200 ${
+                siteFilterOpen
+                  ? "rotate-180"
+                  : ""
+              }`}
+            />
+
+          </button>
+
+          {siteFilterOpen && (
+
+            <div className="absolute right-0 top-full z-30 mt-2 min-w-full overflow-hidden rounded-xl border border-zinc-800 bg-[#111214] shadow-2xl">
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSiteFilter(
+                    "all"
+                  );
+
+                  setSiteFilterOpen(
+                    false
+                  );
+                }}
+                className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm transition ${
+                  siteFilter ===
+                  "all"
+                    ? "bg-zinc-800 text-white"
+                    : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                }`}
+              >
+
+                <div className="flex items-center gap-3">
+
+                  <MapPin
+                    size={15}
+                    className="text-zinc-600"
+                  />
+
+                  <span>
+                    All sites
+                  </span>
+
+                </div>
+
+                {siteFilter ===
+                  "all" && (
+                  <Check
+                    size={14}
+                    className="text-zinc-300"
+                  />
+                )}
+
+              </button>
+
+              {sites.map(
+                (site) => (
+
+                  <button
+                    key={site.id}
+                    type="button"
+                    onClick={() => {
+                      setSiteFilter(
+                        site.id
+                      );
+
+                      setSiteFilterOpen(
+                        false
+                      );
+                    }}
+                    className={`flex w-full items-center justify-between gap-4 border-t border-zinc-800 px-4 py-3 text-left text-sm transition ${
+                      siteFilter ===
+                      site.id
+                        ? "bg-zinc-800 text-white"
+                        : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                    }`}
+                  >
+
+                    <div className="flex items-center gap-3">
+
+                      <MapPin
+                        size={15}
+                        className="text-zinc-600"
+                      />
+
+                      <span className="whitespace-nowrap">
+                        {
+                          site.name
+                        }
+                      </span>
+
+                    </div>
+
+                    {siteFilter ===
+                      site.id && (
+                      <Check
+                        size={14}
+                        className="text-zinc-300"
+                      />
+                    )}
+
+                  </button>
+
+                )
+              )}
+
+            </div>
+
+          )}
 
         </div>
 
@@ -327,38 +727,147 @@ export default function DeviceDashboard({
 
         <div className="relative">
 
-          <select
-            value={
-              statusFilter
-            }
-            onChange={(e) =>
-              setStatusFilter(
-                e.target.value
-              )
-            }
-            className="appearance-none rounded-xl border border-zinc-800 bg-zinc-950 py-2.5 pl-4 pr-10 text-sm text-zinc-300 outline-none transition hover:border-zinc-700 focus:border-zinc-600"
+          <button
+            type="button"
+            onClick={() => {
+              setStatusFilterOpen(
+                (current) =>
+                  !current
+              );
+
+              setSiteFilterOpen(
+                false
+              );
+            }}
+            className={`flex min-w-[150px] items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-sm transition ${
+              statusFilterOpen
+                ? "border-zinc-600 bg-[#101114]"
+                : "border-zinc-800 bg-zinc-950 hover:border-zinc-700"
+            }`}
           >
-            <option value="all">
-              All status
-            </option>
 
-            <option value="online">
-              Online
-            </option>
+            <div className="flex items-center gap-2.5">
 
-            <option value="offline">
-              Offline
-            </option>
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  statusFilter ===
+                  "online"
+                    ? "bg-emerald-500"
+                    : statusFilter ===
+                      "warning"
+                    ? "bg-amber-500"
+                    : statusFilter ===
+                      "offline"
+                    ? "bg-zinc-600"
+                    : "bg-zinc-500"
+                }`}
+              />
 
-            <option value="warning">
-              Warning
-            </option>
-          </select>
+              <span className="text-zinc-300">
+                {statusFilter ===
+                "online"
+                  ? "Online"
+                  : statusFilter ===
+                    "offline"
+                  ? "Offline"
+                  : statusFilter ===
+                    "warning"
+                  ? "Warning"
+                  : "All status"}
+              </span>
 
-          <ChevronDown
-            size={14}
-            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600"
-          />
+            </div>
+
+            <ChevronDown
+              size={14}
+              className={`text-zinc-600 transition-transform duration-200 ${
+                statusFilterOpen
+                  ? "rotate-180"
+                  : ""
+              }`}
+            />
+
+          </button>
+
+          {statusFilterOpen && (
+
+            <div className="absolute right-0 top-full z-30 mt-2 min-w-[180px] overflow-hidden rounded-xl border border-zinc-800 bg-[#111214] shadow-2xl">
+
+              <StatusFilterOption
+                label="All status"
+                color="bg-zinc-500"
+                active={
+                  statusFilter ===
+                  "all"
+                }
+                onClick={() => {
+                  setStatusFilter(
+                    "all"
+                  );
+
+                  setStatusFilterOpen(
+                    false
+                  );
+                }}
+              />
+
+              <StatusFilterOption
+                label="Online"
+                color="bg-emerald-500"
+                active={
+                  statusFilter ===
+                  "online"
+                }
+                onClick={() => {
+                  setStatusFilter(
+                    "online"
+                  );
+
+                  setStatusFilterOpen(
+                    false
+                  );
+                }}
+              />
+
+              <StatusFilterOption
+                label="Warning"
+                color="bg-amber-500"
+                active={
+                  statusFilter ===
+                  "warning"
+                }
+                onClick={() => {
+                  setStatusFilter(
+                    "warning"
+                  );
+
+                  setStatusFilterOpen(
+                    false
+                  );
+                }}
+              />
+
+              <StatusFilterOption
+                label="Offline"
+                color="bg-zinc-600"
+                active={
+                  statusFilter ===
+                  "offline"
+                }
+                onClick={() => {
+                  setStatusFilter(
+                    "offline"
+                  );
+
+                  setStatusFilterOpen(
+                    false
+                  );
+                }}
+              />
+
+            </div>
+
+          )}
 
         </div>
 
@@ -372,9 +881,13 @@ export default function DeviceDashboard({
 
         <p className="text-xs text-zinc-600">
           Showing{" "}
-          {filteredDevices.length}{" "}
+          {
+            filteredDevices.length
+          }{" "}
           of{" "}
-          {devices.length}{" "}
+          {
+            deviceList.length
+          }{" "}
           devices
         </p>
 
@@ -383,6 +896,7 @@ export default function DeviceDashboard({
             "all" ||
           statusFilter !==
             "all") && (
+
           <button
             type="button"
             onClick={() => {
@@ -395,11 +909,20 @@ export default function DeviceDashboard({
               setStatusFilter(
                 "all"
               );
+
+              setSiteFilterOpen(
+                false
+              );
+
+              setStatusFilterOpen(
+                false
+              );
             }}
             className="text-xs text-zinc-500 transition hover:text-white"
           >
             Clear filters
           </button>
+
         )}
 
       </div>
@@ -408,14 +931,17 @@ export default function DeviceDashboard({
           EMPTY
       ========================= */}
 
-      {devices.length === 0 ? (
+      {deviceList.length ===
+      0 ? (
 
         <div className="flex flex-col items-center rounded-2xl border border-dashed border-zinc-800 px-6 py-16 text-center">
 
           <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500">
+
             <Monitor
               size={21}
             />
+
           </div>
 
           <h3 className="mt-5 font-semibold">
@@ -427,6 +953,7 @@ export default function DeviceDashboard({
           </p>
 
           {sites.length > 0 && (
+
             <p className="mt-3 text-xs text-zinc-600">
               {sites.length}{" "}
               {sites.length === 1
@@ -434,6 +961,7 @@ export default function DeviceDashboard({
                 : "sites are"}{" "}
               currently configured for this client.
             </p>
+
           )}
 
         </div>
@@ -464,11 +992,11 @@ export default function DeviceDashboard({
             DEVICE TABLE
         ========================= */
 
-        <div className="overflow-hidden rounded-2xl border border-zinc-800">
+        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
 
           {/* HEADER */}
 
-          <div className="hidden grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(150px,1fr)_120px] gap-6 border-b border-zinc-800 bg-zinc-900 px-5 py-3 text-xs uppercase tracking-wide text-zinc-600 lg:grid">
+          <div className="hidden grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(150px,1fr)_120px] gap-6 border-b border-zinc-800 bg-[#111214] px-5 py-3 text-xs uppercase tracking-wide text-zinc-600 lg:grid">
 
             <span>
               Device
@@ -490,7 +1018,7 @@ export default function DeviceDashboard({
 
           {/* ROWS */}
 
-          <div className="divide-y divide-zinc-800">
+          <div className="divide-y divide-zinc-800 bg-[#0d0f12]">
 
             {filteredDevices.map(
               (device) => {
@@ -499,7 +1027,14 @@ export default function DeviceDashboard({
                     device
                   );
 
+                const effectiveStatus =
+                  getEffectiveStatus(
+                    device,
+                    now
+                  );
+
                 return (
+
                   <button
                     key={
                       device.id
@@ -513,18 +1048,28 @@ export default function DeviceDashboard({
                       setActionMessage(
                         ""
                       );
+
+                      setSiteFilterOpen(
+                        false
+                      );
+
+                      setStatusFilterOpen(
+                        false
+                      );
                     }}
-                    className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-6 px-5 py-4 text-left transition hover:bg-zinc-800/50 lg:grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(150px,1fr)_120px]"
+                    className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-6 bg-[#0d0f12] px-5 py-4 text-left transition hover:bg-[#15171a] lg:grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(150px,1fr)_120px]"
                   >
 
                     {/* DEVICE */}
 
                     <div className="flex min-w-0 items-center gap-4">
 
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-[#08090b] text-zinc-400">
+
                         <Monitor
                           size={18}
                         />
+
                       </div>
 
                       <div className="min-w-0">
@@ -571,31 +1116,41 @@ export default function DeviceDashboard({
 
                     {/* STATUS */}
 
-                    <div className="flex justify-end lg:justify-start">
+                    <div className="flex flex-col items-end lg:items-start">
 
                       <span
                         className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          device.status ===
+                          effectiveStatus ===
                           "online"
                             ? "bg-emerald-500/10 text-emerald-400"
-                            : device.status ===
+                            : effectiveStatus ===
                               "warning"
                             ? "bg-amber-500/10 text-amber-400"
                             : "bg-zinc-800 text-zinc-500"
                         }`}
                       >
-                        {device.status ===
+                        {effectiveStatus ===
                         "online"
                           ? "Online"
-                          : device.status ===
+                          : effectiveStatus ===
                             "warning"
                           ? "Warning"
                           : "Offline"}
                       </span>
 
+                      <span className="mt-1.5 text-[11px] text-zinc-600">
+                        {device.last_seen
+                          ? `Last seen ${getRelativeLastSeen(
+                              device.last_seen,
+                              now
+                            )}`
+                          : "Never seen"}
+                      </span>
+
                     </div>
 
                   </button>
+
                 );
               }
             )}
@@ -613,20 +1168,23 @@ export default function DeviceDashboard({
       {selectedDevice && (
         <>
 
-      {/* OVERLAY */}
+          {/* OVERLAY */}
 
-      <button
-        type="button"
-        aria-label="Close device"
-        onClick={() =>
-          setSelectedDevice(null)
-        }
-        className="fixed bottom-0 left-0 right-0 top-16 z-30 bg-black/40 backdrop-blur-[2px]"
-      />
+          <button
+            type="button"
+            aria-label="Close device"
+            onClick={() =>
+              setSelectedDevice(
+                null
+              )
+            }
+            className="fixed bottom-0 left-0 right-0 top-16 z-30 bg-black/40 backdrop-blur-[2px]"
+          />
 
-      {/* DRAWER */}
+          {/* DRAWER */}
 
-      <aside className="fixed bottom-0 right-0 top-16 z-40 w-full overflow-y-auto border-l border-zinc-800 bg-zinc-950 shadow-2xl sm:w-[520px]">
+          <aside className="fixed bottom-0 right-0 top-16 z-40 w-full overflow-y-auto border-l border-zinc-800 bg-zinc-950 shadow-2xl sm:w-[520px]">
+
             {/* HEADER */}
 
             <div className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/95 px-6 py-5 backdrop-blur">
@@ -636,9 +1194,11 @@ export default function DeviceDashboard({
                 <div className="flex min-w-0 items-start gap-4">
 
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400">
+
                     <Monitor
                       size={19}
                     />
+
                   </div>
 
                   <div className="min-w-0">
@@ -678,7 +1238,9 @@ export default function DeviceDashboard({
 
             <div className="space-y-6 p-6">
 
-              {/* STATUS */}
+              {/* =========================
+                  STATUS
+              ========================= */}
 
               <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900 p-4">
 
@@ -692,10 +1254,10 @@ export default function DeviceDashboard({
 
                     <span
                       className={`h-2 w-2 rounded-full ${
-                        selectedDevice.status ===
+                        selectedDeviceStatus ===
                         "online"
                           ? "bg-emerald-400"
-                          : selectedDevice.status ===
+                          : selectedDeviceStatus ===
                             "warning"
                           ? "bg-amber-400"
                           : "bg-zinc-600"
@@ -704,20 +1266,32 @@ export default function DeviceDashboard({
 
                     <span className="text-sm font-medium capitalize">
                       {
-                        selectedDevice.status
+                        selectedDeviceStatus
                       }
                     </span>
 
                   </div>
+
+                  <p className="mt-1.5 text-xs text-zinc-500">
+                    {selectedDevice.last_seen
+                      ? `Last seen ${getRelativeLastSeen(
+                          selectedDevice.last_seen,
+                          now
+                        )}`
+                      : "Never seen"}
+                  </p>
 
                 </div>
 
                 <Wifi
                   size={19}
                   className={
-                    selectedDevice.status ===
+                    selectedDeviceStatus ===
                     "online"
                       ? "text-emerald-500"
+                      : selectedDeviceStatus ===
+                        "warning"
+                      ? "text-amber-500"
                       : "text-zinc-700"
                   }
                 />
@@ -726,7 +1300,6 @@ export default function DeviceDashboard({
 
               {/* =========================
                   QUICK ACTIONS
-                  OWNER + ADMIN ONLY
               ========================= */}
 
               {canManage && (
@@ -982,7 +1555,7 @@ export default function DeviceDashboard({
               </div>
 
               {/* =========================
-                  LAST SEEN
+                  LAST SEEN DETAIL
               ========================= */}
 
               <div className="border-t border-zinc-800 pt-5">
@@ -1001,14 +1574,341 @@ export default function DeviceDashboard({
 
               </div>
 
+              {/* =========================
+                  DELETE DEVICE
+              ========================= */}
+
+              {canManage && (
+
+                <div className="border-t border-zinc-800 pt-6">
+
+                  <div className="flex items-center justify-between gap-5">
+
+                    <div>
+
+                      <p className="text-sm font-medium text-red-400">
+                        Delete device
+                      </p>
+
+                      <p className="mt-1 text-xs leading-5 text-zinc-600">
+                        Remove this device from SentinelGrid.
+                      </p>
+
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={
+                        openDeleteDevice
+                      }
+                      className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-red-950 bg-[#120b0d] px-4 py-2.5 text-sm font-medium text-red-400 transition hover:border-red-900 hover:bg-[#1a0d10] hover:text-red-300"
+                    >
+                      <Trash2
+                        size={15}
+                      />
+
+                      Delete
+                    </button>
+
+                  </div>
+
+                </div>
+
+              )}
+
             </div>
 
           </aside>
 
         </>
       )}
+
+      {/* =========================
+          DELETE DEVICE MODAL
+      ========================= */}
+
+      {deleteOpen &&
+        selectedDevice && (
+        <>
+
+          {/* MODAL OVERLAY */}
+
+          <button
+            type="button"
+            aria-label="Close delete confirmation"
+            onClick={
+              closeDeleteDevice
+            }
+            className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm"
+          />
+
+          {/* MODAL */}
+
+          <div className="fixed left-1/2 top-1/2 z-[70] w-[calc(100%-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12] shadow-2xl">
+
+            {/* HEADER */}
+
+            <div className="flex items-start justify-between gap-5 border-b border-zinc-800 px-6 py-5">
+
+              <div className="flex items-start gap-4">
+
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-950 bg-[#160c0f] text-red-500">
+
+                  <Trash2
+                    size={17}
+                  />
+
+                </div>
+
+                <div>
+
+                  <h2 className="font-semibold">
+                    Delete device?
+                  </h2>
+
+                  <p className="mt-1 text-sm text-zinc-500">
+                    This action cannot be undone.
+                  </p>
+
+                </div>
+
+              </div>
+
+              <button
+                type="button"
+                onClick={
+                  closeDeleteDevice
+                }
+                disabled={
+                  deletingDevice
+                }
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-900 hover:text-white disabled:opacity-50"
+              >
+                <X
+                  size={18}
+                />
+              </button>
+
+            </div>
+
+            {/* CONTENT */}
+
+            <div className="p-6">
+
+              <p className="text-sm leading-6 text-zinc-400">
+                You are about to remove{" "}
+
+                <span className="font-medium text-white">
+                  {selectedDevice.display_name ||
+                    selectedDevice.hostname}
+                </span>{" "}
+
+                from SentinelGrid.
+              </p>
+
+              <div className="mt-5 rounded-xl border border-red-950 bg-[#120b0d] px-4 py-3">
+
+                <div className="flex items-start gap-3">
+
+                  <CircleAlert
+                    size={17}
+                    className="mt-0.5 shrink-0 text-red-500"
+                  />
+
+                  <p className="text-xs leading-5 text-red-300">
+                    The device record and its SentinelGrid agent credentials will be removed.
+                  </p>
+
+                </div>
+
+              </div>
+
+              {deleteError && (
+
+                <div className="mt-4 rounded-xl border border-red-950 bg-[#120b0d] px-4 py-3 text-sm text-red-400">
+                  {deleteError}
+                </div>
+
+              )}
+
+            </div>
+
+            {/* FOOTER */}
+
+            <div className="flex justify-end gap-3 border-t border-zinc-800 px-6 py-5">
+
+              <button
+                type="button"
+                onClick={
+                  closeDeleteDevice
+                }
+                disabled={
+                  deletingDevice
+                }
+                className="rounded-xl border border-zinc-800 px-4 py-2.5 text-sm text-zinc-300 transition hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={
+                  deleteDevice
+                }
+                disabled={
+                  deletingDevice
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2
+                  size={15}
+                />
+
+                {deletingDevice
+                  ? "Deleting..."
+                  : "Delete device"}
+              </button>
+
+            </div>
+
+          </div>
+
+        </>
+      )}
     </>
   );
+}
+
+/* =========================
+   DEVICE STATUS HELPERS
+========================= */
+
+function getRelativeLastSeen(
+  lastSeen: string | null,
+  now: number
+) {
+  if (!lastSeen) {
+    return "never";
+  }
+
+  const lastSeenTime =
+    new Date(
+      lastSeen
+    ).getTime();
+
+  if (
+    Number.isNaN(
+      lastSeenTime
+    )
+  ) {
+    return "unknown";
+  }
+
+  const diff =
+    Math.max(
+      0,
+      now -
+        lastSeenTime
+    );
+
+  const seconds =
+    Math.floor(
+      diff / 1000
+    );
+
+  if (seconds < 10) {
+    return "just now";
+  }
+
+  if (seconds < 60) {
+    return `${seconds}s ago`;
+  }
+
+  const minutes =
+    Math.floor(
+      seconds / 60
+    );
+
+  if (minutes < 60) {
+    if (minutes === 1) {
+      return "1 min ago";
+    }
+
+    return `${minutes} min ago`;
+  }
+
+  const hours =
+    Math.floor(
+      minutes / 60
+    );
+
+  if (hours < 24) {
+    if (hours === 1) {
+      return "1h ago";
+    }
+
+    return `${hours}h ago`;
+  }
+
+  const days =
+    Math.floor(
+      hours / 24
+    );
+
+  if (days === 1) {
+    return "1d ago";
+  }
+
+  return `${days}d ago`;
+}
+
+/* =========================
+   EFFECTIVE STATUS
+========================= */
+
+function getEffectiveStatus(
+  device: Device,
+  now: number
+):
+  | "online"
+  | "offline"
+  | "warning" {
+  if (!device.last_seen) {
+    return "offline";
+  }
+
+  const lastSeen =
+    new Date(
+      device.last_seen
+    ).getTime();
+
+  if (
+    Number.isNaN(
+      lastSeen
+    )
+  ) {
+    return "offline";
+  }
+
+  const diff =
+    now -
+    lastSeen;
+
+  /*
+    Heartbeat = 30 seconds.
+
+    We allow three missed heartbeats
+    before considering the device offline.
+  */
+
+  if (
+    diff >
+    90_000
+  ) {
+    return "offline";
+  }
+
+  return device.status;
 }
 
 /* =========================
@@ -1028,11 +1928,13 @@ function InfoRow({
     <div className="flex items-center justify-between gap-5 border-b border-zinc-800 px-4 py-3.5 last:border-b-0">
 
       <div className="flex items-center gap-3 text-zinc-500">
+
         {icon}
 
         <span className="text-sm">
           {label}
         </span>
+
       </div>
 
       <span className="max-w-[55%] truncate text-right text-sm text-zinc-300">
@@ -1044,7 +1946,7 @@ function InfoRow({
 }
 
 /* =========================
-   METRIC
+   METRIC CARD
 ========================= */
 
 function MetricCard({
@@ -1060,11 +1962,13 @@ function MetricCard({
     <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
 
       <div className="flex items-center gap-2 text-zinc-600">
+
         {icon}
 
         <span className="text-xs">
           {label}
         </span>
+
       </div>
 
       <p className="mt-3 text-xl font-semibold">
@@ -1072,5 +1976,56 @@ function MetricCard({
       </p>
 
     </div>
+  );
+}
+
+/* =========================
+   STATUS FILTER OPTION
+========================= */
+
+function StatusFilterOption({
+  label,
+  color,
+  active,
+  onClick,
+}: {
+  label: string;
+  color: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={
+        onClick
+      }
+      className={`flex w-full items-center justify-between gap-5 border-b border-zinc-800 px-4 py-3 text-left text-sm transition last:border-b-0 ${
+        active
+          ? "bg-zinc-800 text-white"
+          : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+      }`}
+    >
+
+      <div className="flex items-center gap-3">
+
+        <span
+          className={`h-2 w-2 rounded-full ${color}`}
+        />
+
+        <span>
+          {label}
+        </span>
+
+      </div>
+
+      {active && (
+        <Check
+          size={14}
+          className="text-zinc-300"
+        />
+      )}
+
+    </button>
   );
 }

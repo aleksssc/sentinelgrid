@@ -1,19 +1,47 @@
 import { updateSession } from "@/lib/supabase/proxy";
-import { type NextRequest } from "next/server";
+import {
+  NextResponse,
+  type NextRequest,
+} from "next/server";
 
-export async function proxy(request: NextRequest) {
-  return await updateSession(request);
+export async function proxy(
+  request: NextRequest
+) {
+  const pathname =
+    request.nextUrl.pathname;
+
+  /* =========================
+     SENTINELGRID AGENT API
+
+     Estas rotas não usam
+     sessão Supabase do browser.
+     Autenticam com tokens próprios.
+  ========================= */
+
+  if (
+    pathname === "/api/agent/enroll" ||
+    pathname === "/api/agent/heartbeat"
+  ) {
+    return NextResponse.next();
+  }
+
+  /* =========================
+     NORMAL APP AUTH
+  ========================= */
+
+  return await updateSession(
+    request
+  );
 }
 
 export const config = {
   matcher: [
     /*
      * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - images - .svg, .png, .jpg, .jpeg, .gif, .webp
-     * Feel free to modify this pattern to include more paths.
+     * - _next/static
+     * - _next/image
+     * - favicon.ico
+     * - image files
      */
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],

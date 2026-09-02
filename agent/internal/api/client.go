@@ -33,6 +33,18 @@ type EnrollmentResponse struct {
 	AgentToken string `json:"agent_token"`
 }
 
+type HeartbeatResponse struct {
+	OK bool `json:"ok"`
+
+	DeviceID string `json:"device_id"`
+
+	Hostname string `json:"hostname"`
+
+	Status string `json:"status"`
+
+	LastSeen string `json:"last_seen"`
+}
+
 func NewClient(baseURL string) *Client {
 	return &Client{
 		BaseURL: strings.TrimRight(
@@ -132,4 +144,91 @@ func (c *Client) Enroll(
 	}
 
 	return &enrollmentResponse, nil
+}
+
+func (c *Client) Heartbeat(
+	agentToken string,
+) (*HeartbeatResponse, error) {
+
+	req, err :=
+		http.NewRequest(
+			http.MethodPost,
+			c.BaseURL+
+				"/api/agent/heartbeat",
+			nil,
+		)
+
+	if err != nil {
+		return nil,
+			fmt.Errorf(
+				"could not create heartbeat request: %w",
+				err,
+			)
+	}
+
+	req.Header.Set(
+		"Authorization",
+		"Bearer "+agentToken,
+	)
+
+	req.Header.Set(
+		"Accept",
+		"application/json",
+	)
+
+	response, err :=
+		c.HTTPClient.Do(req)
+
+	if err != nil {
+		return nil,
+			fmt.Errorf(
+				"heartbeat request failed: %w",
+				err,
+			)
+	}
+
+	defer response.Body.Close()
+
+	body, err :=
+		io.ReadAll(
+			response.Body,
+		)
+
+	if err != nil {
+		return nil,
+			fmt.Errorf(
+				"could not read heartbeat response: %w",
+				err,
+			)
+	}
+
+	if response.StatusCode <
+		200 ||
+		response.StatusCode >=
+			300 {
+
+		return nil,
+			fmt.Errorf(
+				"heartbeat failed with HTTP %d: %s",
+				response.StatusCode,
+				string(body),
+			)
+	}
+
+	var result HeartbeatResponse
+
+	if err :=
+		json.Unmarshal(
+			body,
+			&result,
+		); err != nil {
+
+		return nil,
+			fmt.Errorf(
+				"could not decode heartbeat response: %w",
+				err,
+			)
+	}
+
+	return &result, nil
 }

@@ -10,6 +10,14 @@
 !.yarn/releases
 !.yarn/versions
 
+# SentinelGrid Agent build
+agent/SentinelGridAgent.exe
+
+# Windows installer build
+installer/windows/SentinelGridAgent.msi
+installer/windows/*.wixpdb
+installer/windows/*.cab
+
 # testing
 /coverage
 

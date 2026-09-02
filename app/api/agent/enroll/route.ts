@@ -2,9 +2,6 @@ import { NextResponse } from "next/server";
 
 import { enrollAgent } from "@/lib/agent/device-enrollment";
 
-export const runtime =
-  "nodejs";
-
 export async function POST(
   request: Request
 ) {
