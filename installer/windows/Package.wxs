@@ -1,0 +1,106 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+    Name="SentinelGrid Agent"
+    Manufacturer="SentinelGrid"
+    Version="0.1.0"
+    UpgradeCode="B632A689-8C9E-4E77-BF7C-5E9C4A012901"
+    Scope="perMachine">
+
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of SentinelGrid Agent is already installed."
+    />
+
+    <!--
+      Keep everything inside a single MSI.
+    -->
+
+    <MediaTemplate
+      EmbedCab="yes"
+    />
+
+    <StandardDirectory
+      Id="ProgramFiles6432Folder">
+
+      <Directory
+        Id="INSTALLFOLDER"
+        Name="SentinelGrid">
+
+        <Component
+          Id="SentinelGridAgentComponent"
+          Guid="*">
+
+          <File
+            Id="SentinelGridAgentExe"
+            Source="..\..\agent\SentinelGridAgent.exe"
+            KeyPath="yes"
+          />
+
+          <ServiceInstall
+            Id="SentinelGridAgentServiceInstall"
+            Name="SentinelGridAgent"
+            DisplayName="SentinelGrid Agent"
+            Description="SentinelGrid monitoring and remote management agent."
+            Type="ownProcess"
+            Start="auto"
+            ErrorControl="normal"
+            Account="LocalSystem"
+          />
+
+          <ServiceControl
+            Id="SentinelGridAgentServiceControl"
+            Name="SentinelGridAgent"
+            Start="install"
+            Stop="both"
+            Remove="uninstall"
+            Wait="yes"
+          />
+
+        </Component>
+
+      </Directory>
+
+    </StandardDirectory>
+
+    <!-- =========================
+         ENROLLMENT
+    ========================= -->
+
+    <CustomAction
+      Id="EnrollSentinelGridAgent"
+      FileRef="SentinelGridAgentExe"
+      ExeCommand='-server "http://localhost:3000" -installer "[OriginalDatabase]"'
+      Execute="deferred"
+      Impersonate="no"
+      Return="check"
+      HideTarget="yes"
+    />
+
+    <InstallExecuteSequence>
+
+      <Custom
+        Action="EnrollSentinelGridAgent"
+        After="InstallFiles"
+        Condition="NOT Installed"
+      />
+
+    </InstallExecuteSequence>
+
+    <!-- =========================
+         FEATURE
+    ========================= -->
+
+    <Feature
+      Id="MainFeature"
+      Title="SentinelGrid Agent"
+      Level="1">
+
+      <ComponentRef
+        Id="SentinelGridAgentComponent"
+      />
+
+    </Feature>
+
+  </Package>
+
+</Wix>
