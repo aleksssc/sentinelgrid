@@ -233,19 +233,6 @@ export default async function OrganizationDetailsPage({
       <div className="mx-auto max-w-7xl">
 
         {/* =========================
-            BACK
-        ========================= */}
-
-        <Link
-          href="/dashboard/organizations"
-          className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-500 transition hover:text-white"
-        >
-          <ArrowLeft size={16} />
-
-          Back to organizations
-        </Link>
-
-        {/* =========================
             HEADER
         ========================= */}
 

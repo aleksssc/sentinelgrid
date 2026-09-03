@@ -1,3 +1,7 @@
+import type {
+  ReactNode,
+} from "react";
+
 import {
   redirect,
 } from "next/navigation";
@@ -6,7 +10,11 @@ import {
   getOrganizationContext,
 } from "@/lib/organization-context";
 
-export default async function OrganizationsPage() {
+export default async function OrganizationGate({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const {
     user,
     organization,
@@ -25,7 +33,5 @@ export default async function OrganizationsPage() {
     );
   }
 
-  redirect(
-    `/dashboard/organizations/${organization.id}`
-  );
+  return children;
 }

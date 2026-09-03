@@ -1,5 +1,5 @@
 import "./dashboard-background.css";
-
+import OrganizationGate from "@/components/dashboard/organization-gate";
 import DashboardSidebar from "@/components/dashboard/dashboard-sidebar";
 import DashboardBackground from "@/components/dashboard/dashboard-background";
 import InfrastructureSearch from "@/components/infrastructure-search";
@@ -19,6 +19,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
+    <OrganizationGate>
     <div className="relative flex h-screen overflow-hidden bg-[#0a0a0c] text-white">
 
       {/* =========================
@@ -107,5 +108,6 @@ export default function DashboardLayout({
       </div>
 
     </div>
+    </OrganizationGate>
   );
 }
