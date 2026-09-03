@@ -28,7 +28,10 @@ export default async function ClientDetailsPage({
 }) {
   await connection();
 
-  const { id, clientId } = await params;
+  const {
+    id,
+    clientId,
+  } = await params;
 
   const supabase =
     await createClient();
@@ -39,7 +42,8 @@ export default async function ClientDetailsPage({
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } =
+    await supabase.auth.getUser();
 
   if (!user) {
     return null;
@@ -117,7 +121,8 @@ export default async function ClientDetailsPage({
     memberRole === "admin";
 
   const canManageInfrastructure =
-    isOwner || isAdmin;
+    isOwner ||
+    isAdmin;
 
   /* =========================
      CLIENT
@@ -260,6 +265,23 @@ export default async function ClientDetailsPage({
     devices ?? [];
 
   /* =========================
+     EFFECTIVE STATUS
+  ========================= */
+
+  const now =
+    Date.now();
+
+  const deviceStatuses =
+    deviceList.map(
+      (device) =>
+        getEffectiveStatus(
+          device.status,
+          device.last_seen,
+          now
+        )
+    );
+
+  /* =========================
      STATS
   ========================= */
 
@@ -267,23 +289,23 @@ export default async function ClientDetailsPage({
     deviceList.length;
 
   const onlineCount =
-    deviceList.filter(
-      (device) =>
-        device.status ===
+    deviceStatuses.filter(
+      (status) =>
+        status ===
         "online"
     ).length;
 
   const offlineCount =
-    deviceList.filter(
-      (device) =>
-        device.status ===
+    deviceStatuses.filter(
+      (status) =>
+        status ===
         "offline"
     ).length;
 
   const warningCount =
-    deviceList.filter(
-      (device) =>
-        device.status ===
+    deviceStatuses.filter(
+      (status) =>
+        status ===
         "warning"
     ).length;
 
@@ -292,6 +314,7 @@ export default async function ClientDetailsPage({
 
   return (
     <main className="p-8">
+
       <div className="mx-auto max-w-7xl">
 
         {/* =========================
@@ -320,9 +343,11 @@ export default async function ClientDetailsPage({
           <div className="flex items-start gap-5">
 
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-zinc-400">
+
               <Building2
                 size={24}
               />
+
             </div>
 
             <div>
@@ -330,7 +355,9 @@ export default async function ClientDetailsPage({
               <div className="flex flex-wrap items-center gap-3">
 
                 <h1 className="text-3xl font-bold">
-                  {client.name}
+                  {
+                    client.name
+                  }
                 </h1>
 
                 <span
@@ -368,9 +395,13 @@ export default async function ClientDetailsPage({
 
           <div className="flex flex-wrap items-center justify-end gap-4">
 
-            {/* STATS */}
+            {/* =========================
+                STATS
+            ========================= */}
 
             <div className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-800 bg-[#0d0f12] px-4 py-2.5">
+
+              {/* DEVICES */}
 
               <div className="flex items-center gap-2">
 
@@ -393,6 +424,8 @@ export default async function ClientDetailsPage({
 
               <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
 
+              {/* ONLINE */}
+
               <div className="flex items-center gap-2">
 
                 <Wifi
@@ -414,18 +447,32 @@ export default async function ClientDetailsPage({
 
               <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
 
+              {/* OFFLINE */}
+
               <div className="flex items-center gap-2">
 
                 <WifiOff
                   size={15}
-                  className="text-zinc-600"
+                  className={
+                    offlineCount >
+                    0
+                      ? "text-red-500/70"
+                      : "text-zinc-600"
+                  }
                 />
 
                 <span className="text-sm text-zinc-500">
                   Offline
                 </span>
 
-                <span className="text-sm font-semibold text-white">
+                <span
+                  className={`text-sm font-semibold ${
+                    offlineCount >
+                    0
+                      ? "text-red-400"
+                      : "text-white"
+                  }`}
+                >
                   {
                     offlineCount
                   }
@@ -434,6 +481,8 @@ export default async function ClientDetailsPage({
               </div>
 
               <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
+
+              {/* ALERTS */}
 
               <div className="flex items-center gap-2">
 
@@ -451,7 +500,14 @@ export default async function ClientDetailsPage({
                   Alerts
                 </span>
 
-                <span className="text-sm font-semibold text-white">
+                <span
+                  className={`text-sm font-semibold ${
+                    alertsCount >
+                    0
+                      ? "text-amber-400"
+                      : "text-white"
+                  }`}
+                >
                   {
                     alertsCount
                   }
@@ -461,7 +517,9 @@ export default async function ClientDetailsPage({
 
             </div>
 
-            {/* ACTIONS */}
+            {/* =========================
+                ACTIONS
+            ========================= */}
 
             {canManageInfrastructure && (
               <div className="flex items-center gap-3">
@@ -530,6 +588,64 @@ export default async function ClientDetailsPage({
         </section>
 
       </div>
+
     </main>
   );
+}
+
+/* =========================
+   EFFECTIVE DEVICE STATUS
+========================= */
+
+function getEffectiveStatus(
+  status: string | null,
+  lastSeen: string | null,
+  now: number
+):
+  | "online"
+  | "offline"
+  | "warning" {
+  if (!lastSeen) {
+    return "offline";
+  }
+
+  const lastSeenTime =
+    new Date(
+      lastSeen
+    ).getTime();
+
+  if (
+    Number.isNaN(
+      lastSeenTime
+    )
+  ) {
+    return "offline";
+  }
+
+  const diff =
+    now -
+    lastSeenTime;
+
+  /*
+    Agent heartbeat = 30 seconds.
+
+    After 3 missed heartbeats
+    the device is offline.
+  */
+
+  if (
+    diff >
+    90_000
+  ) {
+    return "offline";
+  }
+
+  if (
+    status ===
+    "warning"
+  ) {
+    return "warning";
+  }
+
+  return "online";
 }
