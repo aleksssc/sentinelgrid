@@ -47,8 +47,8 @@ export async function GET(
     const filePath =
       path.join(
         process.cwd(),
-        "installer",
-        "windows",
+        "public",
+        "downloads",
         "SentinelGridAgent.msi"
       );
 
