@@ -132,7 +132,7 @@ export function SignUpForm() {
               onChange={(event) =>
                 setName(event.target.value)
               }
-              placeholder="Alexandre Cardinha"
+              placeholder="Nome de Utilizador"
               className="
                 w-full rounded-xl
                 border border-zinc-700
