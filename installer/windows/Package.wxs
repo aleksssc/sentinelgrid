@@ -16,7 +16,7 @@
     />
 
     <!-- =========================
-         EMBED FILES
+         MEDIA
     ========================= -->
 
     <MediaTemplate
@@ -24,7 +24,7 @@
     />
 
     <!-- =========================
-         FILES + SERVICE
+         INSTALL DIRECTORY
     ========================= -->
 
     <StandardDirectory
@@ -34,15 +34,27 @@
         Id="INSTALLFOLDER"
         Name="SentinelGrid">
 
+        <!-- =========================
+             AGENT COMPONENT
+        ========================= -->
+
         <Component
           Id="SentinelGridAgentComponent"
           Guid="*">
+
+          <!-- =========================
+               AGENT EXE
+          ========================= -->
 
           <File
             Id="SentinelGridAgentExe"
             Source="..\..\agent\SentinelGridAgent.exe"
             KeyPath="yes"
           />
+
+          <!-- =========================
+               WINDOWS SERVICE
+          ========================= -->
 
           <ServiceInstall
             Id="SentinelGridAgentServiceInstall"
@@ -73,11 +85,13 @@
     <!-- =========================
          PREPARE ENROLLMENT
 
-         OriginalDatabase contains
-         the downloaded MSI path:
+         OriginalDatabase points to
+         the MSI the user launched.
+
+         Filename:
 
          SentinelGridAgent__
-         SG-ENROLL-xxxx.msi
+         SG-ENROLL-xxxxx.msi
     ========================= -->
 
     <SetProperty
@@ -88,7 +102,7 @@
     />
 
     <!-- =========================
-         ENROLL AGENT
+         ENROLLMENT ACTION
     ========================= -->
 
     <CustomAction
@@ -102,12 +116,12 @@
     />
 
     <!-- =========================
-         EXECUTION ORDER
+         INSTALL ORDER
 
-         1. Files installed
+         1. Agent EXE installed
          2. Enrollment runs
-         3. agent.json is created
-         4. Windows service starts
+         3. agent.json created
+         4. Service starts
     ========================= -->
 
     <InstallExecuteSequence>

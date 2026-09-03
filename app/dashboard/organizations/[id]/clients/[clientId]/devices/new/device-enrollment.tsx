@@ -34,8 +34,10 @@ export default function DeviceEnrollment({
   clientId,
   sites,
 }: Props) {
-  const [siteId, setSiteId] =
-    useState("");
+  const [
+    siteId,
+    setSiteId,
+  ] = useState("");
 
   const [
     operatingSystem,
@@ -45,23 +47,30 @@ export default function DeviceEnrollment({
       "windows"
     );
 
-  const [token, setToken] =
-    useState("");
+  const [
+    token,
+    setToken,
+  ] = useState("");
 
   const [
     expiresAt,
     setExpiresAt,
-  ] =
-    useState("");
+  ] = useState("");
 
-  const [loading, setLoading] =
-    useState(false);
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
 
-  const [error, setError] =
-    useState("");
+  const [
+    error,
+    setError,
+  ] = useState("");
 
-  const [siteOpen, setSiteOpen] =
-    useState(false);
+  const [
+    siteOpen,
+    setSiteOpen,
+  ] = useState(false);
 
   /* =========================
      GENERATE INSTALLER
@@ -344,7 +353,7 @@ export default function DeviceEnrollment({
                       className={`flex w-full items-center px-4 py-3 text-left text-sm transition ${
                         siteId === ""
                           ? "bg-zinc-800 text-white"
-                          : "text-zinc-400 hover:bg-zinc-800/70 hover:text-white"
+                          : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
                       }`}
                     >
                       No site
@@ -354,7 +363,9 @@ export default function DeviceEnrollment({
                       (site) => (
 
                         <button
-                          key={site.id}
+                          key={
+                            site.id
+                          }
                           type="button"
                           onClick={() => {
                             setSiteId(
@@ -369,10 +380,12 @@ export default function DeviceEnrollment({
                             siteId ===
                             site.id
                               ? "bg-zinc-800 text-white"
-                              : "text-zinc-400 hover:bg-zinc-800/70 hover:text-white"
+                              : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
                           }`}
                         >
-                          {site.name}
+                          {
+                            site.name
+                          }
                         </button>
 
                       )
@@ -392,7 +405,7 @@ export default function DeviceEnrollment({
 
             {error && (
 
-              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              <div className="rounded-xl border border-red-950 bg-[#120b0d] px-4 py-3 text-sm text-red-400">
                 {error}
               </div>
 
@@ -456,7 +469,7 @@ export default function DeviceEnrollment({
                 READY
             ========================= */}
 
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+            <div className="rounded-xl border border-emerald-950 bg-[#07130f] p-4">
 
               <div className="flex items-start gap-3">
 
@@ -565,8 +578,7 @@ export default function DeviceEnrollment({
                   size={15}
                 />
 
-                Generate another
-                installer
+                Generate another installer
 
               </button>
 
