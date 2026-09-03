@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
-	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kardianos/service"
 
@@ -18,6 +17,8 @@ import (
 
 const version = "0.1.0"
 
+const defaultServerURL = "https://sentinelgrid-one.vercel.app"
+
 /* =========================
    WINDOWS SERVICE
 ========================= */
@@ -27,9 +28,15 @@ type program struct {
 	done chan struct{}
 }
 
-func (p *program) Start(s service.Service) error {
-	p.stop = make(chan struct{})
-	p.done = make(chan struct{})
+func (p *program) Start(
+	s service.Service,
+) error {
+
+	p.stop =
+		make(chan struct{})
+
+	p.done =
+		make(chan struct{})
 
 	go p.run()
 
@@ -37,7 +44,10 @@ func (p *program) Start(s service.Service) error {
 }
 
 func (p *program) run() {
-	defer close(p.done)
+
+	defer close(
+		p.done,
+	)
 
 	log.Println(
 		"SentinelGrid Agent service started.",
@@ -51,6 +61,7 @@ func (p *program) run() {
 		config.Load()
 
 	if err != nil {
+
 		log.Printf(
 			"Agent configuration not available: %v",
 			err,
@@ -64,6 +75,7 @@ func (p *program) run() {
 	var client *api.Client
 
 	if cfg != nil {
+
 		client =
 			api.NewClient(
 				cfg.Server,
@@ -71,8 +83,7 @@ func (p *program) run() {
 	}
 
 	/* =========================
-	   SEND HEARTBEAT
-	   IMMEDIATELY
+	   INITIAL HEARTBEAT
 	========================= */
 
 	if cfg != nil &&
@@ -84,11 +95,14 @@ func (p *program) run() {
 			)
 
 		if err != nil {
+
 			log.Printf(
 				"Initial heartbeat failed: %v",
 				err,
 			)
+
 		} else {
+
 			log.Printf(
 				"Heartbeat sent successfully. Device: %s",
 				response.DeviceID,
@@ -108,26 +122,23 @@ func (p *program) run() {
 	defer ticker.Stop()
 
 	for {
+
 		select {
 
 		case <-ticker.C:
 
+			/* =========================
+			   LOAD CONFIG IF NEEDED
+			========================= */
+
 			if cfg == nil ||
 				client == nil {
-
-				/*
-					The machine may have been
-					enrolled after the service
-					started.
-
-					Try loading the configuration
-					again.
-				*/
 
 				loadedConfig, err :=
 					config.Load()
 
 				if err != nil {
+
 					log.Println(
 						"Waiting for Agent enrollment.",
 					)
@@ -159,6 +170,7 @@ func (p *program) run() {
 				)
 
 			if err != nil {
+
 				log.Printf(
 					"Heartbeat failed: %v",
 					err,
@@ -186,11 +198,16 @@ func (p *program) run() {
 func (p *program) Stop(
 	s service.Service,
 ) error {
+
 	if p.stop != nil {
-		close(p.stop)
+
+		close(
+			p.stop,
+		)
 	}
 
 	if p.done != nil {
+
 		<-p.done
 	}
 
@@ -207,6 +224,27 @@ func runCLI(
 	showInventory bool,
 ) error {
 
+	serverURL =
+		strings.TrimSpace(
+			serverURL,
+		)
+
+	enrollmentToken =
+		strings.TrimSpace(
+			enrollmentToken,
+		)
+
+	/* =========================
+	   VALIDATE SERVER
+	========================= */
+
+	if serverURL == "" {
+
+		return fmt.Errorf(
+			"SentinelGrid server URL is required",
+		)
+	}
+
 	/* =========================
 	   INVENTORY
 	========================= */
@@ -215,6 +253,7 @@ func runCLI(
 		inventory.Collect()
 
 	if err != nil {
+
 		return fmt.Errorf(
 			"could not collect inventory: %w",
 			err,
@@ -268,8 +307,19 @@ func runCLI(
 	========================= */
 
 	if enrollmentToken == "" {
+
 		return fmt.Errorf(
 			"enrollment token is required",
+		)
+	}
+
+	if !strings.HasPrefix(
+		enrollmentToken,
+		"SG-ENROLL-",
+	) {
+
+		return fmt.Errorf(
+			"invalid SentinelGrid enrollment token",
 		)
 	}
 
@@ -286,6 +336,11 @@ func runCLI(
 	   ENROLL DEVICE
 	========================= */
 
+	log.Printf(
+		"Enrolling device with SentinelGrid server: %s",
+		serverURL,
+	)
+
 	response, err :=
 		client.Enroll(
 			enrollmentToken,
@@ -293,6 +348,7 @@ func runCLI(
 		)
 
 	if err != nil {
+
 		return fmt.Errorf(
 			"enrollment failed: %w",
 			err,
@@ -321,6 +377,7 @@ func runCLI(
 		)
 
 	if err != nil {
+
 		return fmt.Errorf(
 			"could not save agent configuration: %w",
 			err,
@@ -363,64 +420,6 @@ func runCLI(
 	return nil
 }
 
-func enrollmentTokenFromInstallerPath(
-	installerPath string,
-) (string, error) {
-	if installerPath == "" {
-		return "",
-			fmt.Errorf(
-				"installer path is required",
-			)
-	}
-
-	fileName :=
-		filepath.Base(
-			installerPath,
-		)
-
-	const prefix =
-		"SentinelGridAgent__"
-
-	const suffix =
-		".msi"
-
-	if !strings.HasPrefix(
-		fileName,
-		prefix,
-	) {
-		return "",
-			fmt.Errorf(
-				"invalid SentinelGrid installer filename",
-			)
-	}
-
-	if !strings.HasSuffix(
-		strings.ToLower(
-			fileName,
-		),
-		suffix,
-	) {
-		return "",
-			fmt.Errorf(
-				"invalid installer extension",
-			)
-	}
-
-	token := fileName[len(prefix) : len(fileName)-len(suffix)]
-
-	if !strings.HasPrefix(
-		token,
-		"SG-ENROLL-",
-	) {
-		return "",
-			fmt.Errorf(
-				"invalid enrollment token",
-			)
-	}
-
-	return token, nil
-}
-
 /* =========================
    MAIN
 ========================= */
@@ -434,7 +433,7 @@ func main() {
 	serverURL :=
 		flag.String(
 			"server",
-			"https://sentinelgrid-one.vercel.app",
+			defaultServerURL,
 			"SentinelGrid server URL",
 		)
 
@@ -442,14 +441,7 @@ func main() {
 		flag.String(
 			"token",
 			"",
-			"Enrollment token",
-		)
-
-	installerPath :=
-		flag.String(
-			"installer",
-			"",
-			"Original SentinelGrid MSI path",
+			"SentinelGrid enrollment token",
 		)
 
 	showInventory :=
@@ -483,48 +475,7 @@ func main() {
 	}
 
 	/* =========================
-	MSI ENROLLMENT MODE
-	========================= */
-
-	if *installerPath != "" {
-
-		token, err :=
-			enrollmentTokenFromInstallerPath(
-				*installerPath,
-			)
-
-		if err != nil {
-			fmt.Fprintf(
-				os.Stderr,
-				"Installer enrollment error: %v\n",
-				err,
-			)
-
-			os.Exit(1)
-		}
-
-		err =
-			runCLI(
-				*serverURL,
-				token,
-				false,
-			)
-
-		if err != nil {
-			fmt.Fprintf(
-				os.Stderr,
-				"Enrollment error: %v\n",
-				err,
-			)
-
-			os.Exit(1)
-		}
-
-		return
-	}
-
-	/* =========================
-	   CLI MODE
+	   CLI / ENROLLMENT MODE
 	========================= */
 
 	if *showInventory ||
@@ -577,7 +528,10 @@ func main() {
 		)
 
 	if err != nil {
-		log.Fatal(err)
+
+		log.Fatal(
+			err,
+		)
 	}
 
 	/* =========================
@@ -587,6 +541,8 @@ func main() {
 	if err :=
 		svc.Run(); err != nil {
 
-		log.Fatal(err)
+		log.Fatal(
+			err,
+		)
 	}
 }

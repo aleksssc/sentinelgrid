@@ -11,13 +11,33 @@
       DowngradeErrorMessage="A newer version of SentinelGrid Agent is already installed."
     />
 
-    <!--
-      Keep everything inside a single MSI.
-    -->
+    <!-- =========================
+         EMBED EVERYTHING IN MSI
+    ========================= -->
 
     <MediaTemplate
       EmbedCab="yes"
     />
+
+    <!-- =========================
+         CONFIGURATION
+    ========================= -->
+
+    <Property
+      Id="ENROLLMENT_TOKEN"
+      Secure="yes"
+      Hidden="yes"
+    />
+
+    <Property
+      Id="SENTINELGRID_SERVER"
+      Value="https://sentinelgrid-one.vercel.app"
+      Secure="yes"
+    />
+
+    <!-- =========================
+         FILES + SERVICE
+    ========================= -->
 
     <StandardDirectory
       Id="ProgramFiles6432Folder">
@@ -69,7 +89,7 @@
     <CustomAction
       Id="EnrollSentinelGridAgent"
       FileRef="SentinelGridAgentExe"
-      ExeCommand='-server "http://localhost:3000" -installer "[OriginalDatabase]"'
+      ExeCommand='-server "[SENTINELGRID_SERVER]" -token "[ENROLLMENT_TOKEN]"'
       Execute="deferred"
       Impersonate="no"
       Return="check"
@@ -81,7 +101,7 @@
       <Custom
         Action="EnrollSentinelGridAgent"
         After="InstallFiles"
-        Condition="NOT Installed"
+        Condition="NOT Installed AND ENROLLMENT_TOKEN"
       />
 
     </InstallExecuteSequence>
