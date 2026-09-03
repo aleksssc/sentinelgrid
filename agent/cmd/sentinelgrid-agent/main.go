@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 	"sentinelgrid/agent/internal/inventory"
 )
 
-const version = "0.1.0"
+const version = "0.1.1"
 
 const defaultServerURL = "https://sentinelgrid-one.vercel.app"
 
@@ -128,7 +129,7 @@ func (p *program) run() {
 		case <-ticker.C:
 
 			/* =========================
-			   LOAD CONFIG IF NEEDED
+			   RELOAD CONFIG
 			========================= */
 
 			if cfg == nil ||
@@ -234,10 +235,6 @@ func runCLI(
 			enrollmentToken,
 		)
 
-	/* =========================
-	   VALIDATE SERVER
-	========================= */
-
 	if serverURL == "" {
 
 		return fmt.Errorf(
@@ -333,7 +330,7 @@ func runCLI(
 		)
 
 	/* =========================
-	   ENROLL DEVICE
+	   ENROLL
 	========================= */
 
 	log.Printf(
@@ -384,10 +381,6 @@ func runCLI(
 		)
 	}
 
-	/* =========================
-	   SUCCESS
-	========================= */
-
 	fmt.Println()
 
 	fmt.Println(
@@ -421,6 +414,76 @@ func runCLI(
 }
 
 /* =========================
+   TOKEN FROM MSI FILENAME
+========================= */
+
+func enrollmentTokenFromInstallerPath(
+	installerPath string,
+) (string, error) {
+
+	if strings.TrimSpace(
+		installerPath,
+	) == "" {
+
+		return "",
+			fmt.Errorf(
+				"installer path is required",
+			)
+	}
+
+	fileName :=
+		filepath.Base(
+			installerPath,
+		)
+
+	const prefix =
+		"SentinelGridAgent__"
+
+	const suffix =
+		".msi"
+
+	if !strings.HasPrefix(
+		fileName,
+		prefix,
+	) {
+
+		return "",
+			fmt.Errorf(
+				"invalid SentinelGrid installer filename: %s",
+				fileName,
+			)
+	}
+
+	if !strings.HasSuffix(
+		strings.ToLower(
+			fileName,
+		),
+		suffix,
+	) {
+
+		return "",
+			fmt.Errorf(
+				"invalid installer extension",
+			)
+	}
+
+	token := fileName[len(prefix) : len(fileName)-len(suffix)]
+
+	if !strings.HasPrefix(
+		token,
+		"SG-ENROLL-",
+	) {
+
+		return "",
+			fmt.Errorf(
+				"invalid enrollment token",
+			)
+	}
+
+	return token, nil
+}
+
+/* =========================
    MAIN
 ========================= */
 
@@ -442,6 +505,13 @@ func main() {
 			"token",
 			"",
 			"SentinelGrid enrollment token",
+		)
+
+	installerPath :=
+		flag.String(
+			"installer",
+			"",
+			"Original SentinelGrid MSI path",
 		)
 
 	showInventory :=
@@ -475,7 +545,50 @@ func main() {
 	}
 
 	/* =========================
-	   CLI / ENROLLMENT MODE
+	   MSI ENROLLMENT MODE
+	========================= */
+
+	if *installerPath != "" {
+
+		token, err :=
+			enrollmentTokenFromInstallerPath(
+				*installerPath,
+			)
+
+		if err != nil {
+
+			fmt.Fprintf(
+				os.Stderr,
+				"Installer enrollment error: %v\n",
+				err,
+			)
+
+			os.Exit(1)
+		}
+
+		err =
+			runCLI(
+				*serverURL,
+				token,
+				false,
+			)
+
+		if err != nil {
+
+			fmt.Fprintf(
+				os.Stderr,
+				"Enrollment error: %v\n",
+				err,
+			)
+
+			os.Exit(1)
+		}
+
+		return
+	}
+
+	/* =========================
+	   MANUAL CLI MODE
 	========================= */
 
 	if *showInventory ||
@@ -503,7 +616,7 @@ func main() {
 	}
 
 	/* =========================
-	   WINDOWS SERVICE MODE
+	   WINDOWS SERVICE
 	========================= */
 
 	serviceConfig :=
@@ -533,10 +646,6 @@ func main() {
 			err,
 		)
 	}
-
-	/* =========================
-	   RUN SERVICE
-	========================= */
 
 	if err :=
 		svc.Run(); err != nil {
