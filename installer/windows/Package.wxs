@@ -83,15 +83,7 @@
     </StandardDirectory>
 
     <!-- =========================
-         PREPARE ENROLLMENT
-
-         OriginalDatabase points to
-         the MSI the user launched.
-
-         Filename:
-
-         SentinelGridAgent__
-         SG-ENROLL-xxxxx.msi
+        PREPARE ENROLLMENT DATA
     ========================= -->
 
     <SetProperty
@@ -102,7 +94,7 @@
     />
 
     <!-- =========================
-         ENROLLMENT ACTION
+        ENROLL AGENT
     ========================= -->
 
     <CustomAction
@@ -116,12 +108,7 @@
     />
 
     <!-- =========================
-         INSTALL ORDER
-
-         1. Agent EXE installed
-         2. Enrollment runs
-         3. agent.json created
-         4. Service starts
+        EXECUTION ORDER
     ========================= -->
 
     <InstallExecuteSequence>
@@ -133,7 +120,6 @@
       />
 
     </InstallExecuteSequence>
-
     <!-- =========================
          FEATURE
     ========================= -->
