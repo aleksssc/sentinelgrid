@@ -7,13 +7,9 @@ import {
   type ReactNode,
 } from "react";
 
-import {
-  useRouter,
-} from "next/navigation";
+import { useRouter } from "next/navigation";
 
-import {
-  createClient,
-} from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/client";
 
 import {
   Activity,
@@ -56,10 +52,6 @@ type Device = {
     | string
     | null;
 
-  /* =========================
-     SYSTEM
-  ========================= */
-
   os:
     | string
     | null;
@@ -91,10 +83,6 @@ type Device = {
   cpu_name:
     | string
     | null;
-
-  /* =========================
-     PERFORMANCE
-  ========================= */
 
   cpu_usage:
     | number
@@ -128,10 +116,6 @@ type Device = {
     | number
     | null;
 
-  /* =========================
-     NETWORK
-  ========================= */
-
   local_ip:
     | string
     | null;
@@ -143,10 +127,6 @@ type Device = {
   mac_address:
     | string
     | null;
-
-  /* =========================
-     AGENT
-  ========================= */
 
   status:
     | "online"
@@ -165,10 +145,6 @@ type Device = {
     | string
     | null;
 
-  /* =========================
-     SITE
-  ========================= */
-
   site_id:
     | string
     | null;
@@ -181,7 +157,9 @@ type Device = {
 
 type Props = {
   devices: Device[];
+
   sites: Site[];
+
   canManage: boolean;
 };
 
@@ -220,6 +198,12 @@ export default function DeviceDashboard({
       null
     );
 
+  const [
+    drawerOpen,
+    setDrawerOpen,
+  ] =
+    useState(false);
+
   /* =========================
      SYNC DEVICES
   ========================= */
@@ -253,9 +237,10 @@ export default function DeviceDashboard({
   const [
     now,
     setNow,
-  ] = useState(
-    Date.now()
-  );
+  ] =
+    useState(
+      Date.now()
+    );
 
   useEffect(() => {
     const interval =
@@ -302,27 +287,32 @@ export default function DeviceDashboard({
   const [
     search,
     setSearch,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     siteFilter,
     setSiteFilter,
-  ] = useState("all");
+  ] =
+    useState("all");
 
   const [
     statusFilter,
     setStatusFilter,
-  ] = useState("all");
+  ] =
+    useState("all");
 
   const [
     siteFilterOpen,
     setSiteFilterOpen,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const [
     statusFilterOpen,
     setStatusFilterOpen,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   /* =========================
      ACTION MESSAGE
@@ -331,7 +321,8 @@ export default function DeviceDashboard({
   const [
     actionMessage,
     setActionMessage,
-  ] = useState("");
+  ] =
+    useState("");
 
   /* =========================
      DELETE
@@ -340,17 +331,20 @@ export default function DeviceDashboard({
   const [
     deleteOpen,
     setDeleteOpen,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const [
     deletingDevice,
     setDeletingDevice,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const [
     deleteError,
     setDeleteError,
-  ] = useState("");
+  ] =
+    useState("");
 
   /* =========================
      SITE HELPER
@@ -491,6 +485,65 @@ export default function DeviceDashboard({
     ]);
 
   /* =========================
+     OPEN DEVICE
+  ========================= */
+
+  function openDevice(
+    device: Device
+  ) {
+    setSelectedDevice(
+      device
+    );
+
+    setActionMessage("");
+
+    setSiteFilterOpen(
+      false
+    );
+
+    setStatusFilterOpen(
+      false
+    );
+
+    setDrawerOpen(
+      false
+    );
+
+    window.requestAnimationFrame(
+      () => {
+        window.requestAnimationFrame(
+          () => {
+            setDrawerOpen(
+              true
+            );
+          }
+        );
+      }
+    );
+  }
+
+  /* =========================
+     CLOSE DEVICE
+  ========================= */
+
+  function closeDevice() {
+    setDrawerOpen(
+      false
+    );
+
+    window.setTimeout(
+      () => {
+        setSelectedDevice(
+          null
+        );
+
+        setActionMessage("");
+      },
+      280
+    );
+  }
+
+  /* =========================
      ACTION PLACEHOLDER
   ========================= */
 
@@ -600,8 +653,17 @@ export default function DeviceDashboard({
       false
     );
 
-    setSelectedDevice(
-      null
+    setDrawerOpen(
+      false
+    );
+
+    window.setTimeout(
+      () => {
+        setSelectedDevice(
+          null
+        );
+      },
+      280
     );
 
     setActionMessage("");
@@ -658,7 +720,7 @@ export default function DeviceDashboard({
                 false
               );
             }}
-            className={`flex min-w-[160px] items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-sm transition ${
+            className={`flex min-w-[160px] items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-sm outline-none transition focus:outline-none ${
               siteFilterOpen
                 ? "border-zinc-600 bg-[#101114]"
                 : "border-zinc-800 bg-zinc-950 hover:border-zinc-700"
@@ -711,7 +773,7 @@ export default function DeviceDashboard({
                     false
                   );
                 }}
-                className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm transition ${
+                className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm outline-none transition focus:outline-none ${
                   siteFilter ===
                   "all"
                     ? "bg-zinc-800 text-white"
@@ -757,7 +819,7 @@ export default function DeviceDashboard({
                         false
                       );
                     }}
-                    className={`flex w-full items-center justify-between gap-4 border-t border-zinc-800 px-4 py-3 text-left text-sm transition ${
+                    className={`flex w-full items-center justify-between gap-4 border-t border-zinc-800 px-4 py-3 text-left text-sm outline-none transition focus:outline-none ${
                       siteFilter ===
                       site.id
                         ? "bg-zinc-800 text-white"
@@ -814,7 +876,7 @@ export default function DeviceDashboard({
                 false
               );
             }}
-            className={`flex min-w-[150px] items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-sm transition ${
+            className={`flex min-w-[150px] items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-sm outline-none transition focus:outline-none ${
               statusFilterOpen
                 ? "border-zinc-600 bg-[#101114]"
                 : "border-zinc-800 bg-zinc-950 hover:border-zinc-700"
@@ -990,7 +1052,7 @@ export default function DeviceDashboard({
                 false
               );
             }}
-            className="text-xs text-zinc-500 transition hover:text-white"
+            className="text-xs text-zinc-500 outline-none transition hover:text-white focus:outline-none"
           >
             Clear filters
           </button>
@@ -1087,24 +1149,12 @@ export default function DeviceDashboard({
                       device.id
                     }
                     type="button"
-                    onClick={() => {
-                      setSelectedDevice(
+                    onClick={() =>
+                      openDevice(
                         device
-                      );
-
-                      setActionMessage(
-                        ""
-                      );
-
-                      setSiteFilterOpen(
-                        false
-                      );
-
-                      setStatusFilterOpen(
-                        false
-                      );
-                    }}
-                    className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-6 bg-[#0d0f12] px-5 py-4 text-left transition hover:bg-[#15171a] lg:grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(150px,1fr)_120px]"
+                      )
+                    }
+                    className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-6 bg-[#0d0f12] px-5 py-4 text-left outline-none transition hover:bg-[#15171a] focus:outline-none focus-visible:outline-none lg:grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(150px,1fr)_120px]"
                   >
 
                     {/* DEVICE */}
@@ -1112,9 +1162,11 @@ export default function DeviceDashboard({
                     <div className="flex min-w-0 items-center gap-4">
 
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-[#08090b] text-zinc-400">
+
                         <Monitor
                           size={18}
                         />
+
                       </div>
 
                       <div className="min-w-0">
@@ -1148,13 +1200,11 @@ export default function DeviceDashboard({
                     {/* OS */}
 
                     <p className="hidden truncate text-sm text-zinc-400 lg:block">
-                      {device.os
-                        ? `${device.os}${
-                            device.os_version
-                              ? ` ${device.os_version}`
-                              : ""
-                          }`
-                        : "Unknown OS"}
+                      {
+                        formatOSName(
+                          device.os
+                        )
+                      }
                     </p>
 
                     {/* STATUS */}
@@ -1214,17 +1264,25 @@ export default function DeviceDashboard({
           <button
             type="button"
             aria-label="Close device"
-            onClick={() =>
-              setSelectedDevice(
-                null
-              )
+            onClick={
+              closeDevice
             }
-            className="fixed bottom-0 left-0 right-0 top-16 z-30 bg-black/40 backdrop-blur-[2px]"
+            className={`fixed bottom-0 left-0 right-0 top-16 z-30 bg-black/45 backdrop-blur-[2px] outline-none transition-opacity duration-300 focus:outline-none ${
+              drawerOpen
+                ? "opacity-100"
+                : "opacity-0"
+            }`}
           />
 
           {/* DRAWER */}
 
-          <aside className="fixed bottom-0 right-0 top-16 z-40 w-full overflow-y-auto border-l border-zinc-800 bg-[#070809] shadow-2xl sm:w-[580px]">
+          <aside
+            className={`fixed bottom-0 right-0 top-16 z-40 w-full overflow-y-auto border-l border-zinc-800 bg-[#070809] shadow-2xl transition-transform duration-300 ease-out sm:w-[580px] ${
+              drawerOpen
+                ? "translate-x-0"
+                : "translate-x-full"
+            }`}
+          >
 
             {/* =========================
                 HEADER
@@ -1263,12 +1321,10 @@ export default function DeviceDashboard({
 
                 <button
                   type="button"
-                  onClick={() =>
-                    setSelectedDevice(
-                      null
-                    )
+                  onClick={
+                    closeDevice
                   }
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-zinc-900 hover:text-white"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 outline-none transition hover:bg-zinc-900 hover:text-white focus:outline-none focus-visible:outline-none"
                 >
                   <X
                     size={18}
@@ -1351,9 +1407,11 @@ export default function DeviceDashboard({
                       : "bg-zinc-900 text-zinc-600"
                   }`}
                 >
+
                   <Wifi
                     size={17}
                   />
+
                 </div>
 
               </div>
@@ -1635,8 +1693,9 @@ export default function DeviceDashboard({
                         }
                         label="Manufacturer"
                         value={
-                          selectedDevice.manufacturer ||
-                          "—"
+                          cleanInventoryValue(
+                            selectedDevice.manufacturer
+                          )
                         }
                       />
 
@@ -1648,8 +1707,9 @@ export default function DeviceDashboard({
                         }
                         label="Model"
                         value={
-                          selectedDevice.model ||
-                          "—"
+                          cleanInventoryValue(
+                            selectedDevice.model
+                          )
                         }
                       />
 
@@ -1661,8 +1721,9 @@ export default function DeviceDashboard({
                         }
                         label="Serial"
                         value={
-                          selectedDevice.serial_number ||
-                          "—"
+                          cleanInventoryValue(
+                            selectedDevice.serial_number
+                          )
                         }
                       />
 
@@ -1677,6 +1738,7 @@ export default function DeviceDashboard({
                           selectedDevice.cpu_name ||
                           "—"
                         }
+                        allowWrap
                       />
 
                       <InfoRow
@@ -1883,7 +1945,7 @@ export default function DeviceDashboard({
                     onClick={
                       openDeleteDevice
                     }
-                    className="inline-flex items-center gap-2 rounded-lg border border-red-950 bg-[#120b0d] px-3.5 py-2 text-sm font-medium text-red-400 transition hover:border-red-900 hover:bg-red-950/30 hover:text-red-300"
+                    className="inline-flex items-center gap-2 rounded-lg border border-red-950 bg-[#120b0d] px-3.5 py-2 text-sm font-medium text-red-400 outline-none transition hover:border-red-900 hover:bg-red-950/30 hover:text-red-300 focus:outline-none focus-visible:outline-none"
                   >
 
                     <Trash2
@@ -1923,8 +1985,6 @@ export default function DeviceDashboard({
 
           <div className="fixed left-1/2 top-1/2 z-[70] w-[calc(100%-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12] shadow-2xl">
 
-            {/* HEADER */}
-
             <div className="flex items-start justify-between gap-5 border-b border-zinc-800 px-6 py-5">
 
               <div className="flex items-start gap-4">
@@ -1959,7 +2019,7 @@ export default function DeviceDashboard({
                 disabled={
                   deletingDevice
                 }
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-900 hover:text-white disabled:opacity-50"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 outline-none transition hover:bg-zinc-900 hover:text-white focus:outline-none disabled:opacity-50"
               >
                 <X
                   size={18}
@@ -1967,8 +2027,6 @@ export default function DeviceDashboard({
               </button>
 
             </div>
-
-            {/* CONTENT */}
 
             <div className="p-6">
 
@@ -2010,8 +2068,6 @@ export default function DeviceDashboard({
 
             </div>
 
-            {/* FOOTER */}
-
             <div className="flex justify-end gap-3 border-t border-zinc-800 px-6 py-5">
 
               <button
@@ -2022,7 +2078,7 @@ export default function DeviceDashboard({
                 disabled={
                   deletingDevice
                 }
-                className="rounded-xl border border-zinc-800 px-4 py-2.5 text-sm text-zinc-300 transition hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-xl border border-zinc-800 px-4 py-2.5 text-sm text-zinc-300 outline-none transition hover:bg-zinc-900 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -2035,7 +2091,7 @@ export default function DeviceDashboard({
                 disabled={
                   deletingDevice
                 }
-                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white outline-none transition hover:bg-red-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               >
 
                 <Trash2
@@ -2077,7 +2133,7 @@ function QuickActionButton({
       onClick={
         onClick
       }
-      className="group flex h-12 items-center gap-3 rounded-xl border border-zinc-800 bg-[#111317] px-4 text-left transition hover:border-zinc-700 hover:bg-[#17191d]"
+      className="group flex h-12 items-center gap-3 rounded-xl border border-zinc-800 bg-[#111317] px-4 text-left outline-none transition hover:border-zinc-700 hover:bg-[#17191d] focus:outline-none focus-visible:outline-none"
     >
 
       <span className="text-zinc-500 transition group-hover:text-white">
@@ -2110,20 +2166,24 @@ function DrawerSection({
   const [
     open,
     setOpen,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   return (
     <div>
 
       <button
         type="button"
+        aria-expanded={
+          open
+        }
         onClick={() =>
           setOpen(
             (current) =>
               !current
           )
         }
-        className="group flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left transition hover:bg-[#121417]"
+        className="group flex w-full items-center justify-between gap-4 border-0 px-4 py-3.5 text-left outline-none ring-0 transition hover:bg-[#121417] focus:border-transparent focus:outline-none focus:ring-0 focus-visible:border-transparent focus-visible:outline-none focus-visible:ring-0"
       >
 
         <div className="flex min-w-0 items-center gap-3">
@@ -2191,10 +2251,12 @@ function InfoRow({
   icon,
   label,
   value,
+  allowWrap = false,
 }: {
   icon: ReactNode;
   label: string;
   value: string;
+  allowWrap?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between gap-5 border-b border-zinc-800 bg-[#0d0f12] px-4 py-3 last:border-b-0">
@@ -2211,7 +2273,11 @@ function InfoRow({
 
       <span
         title={value}
-        className="min-w-0 max-w-[60%] truncate text-right text-sm text-zinc-300"
+        className={`min-w-0 max-w-[62%] text-right text-sm text-zinc-300 ${
+          allowWrap
+            ? "leading-5"
+            : "truncate"
+        }`}
       >
         {value}
       </span>
@@ -2257,9 +2323,9 @@ function MetricCard({
         );
 
   return (
-    <div className="min-w-0 rounded-xl border border-zinc-800 bg-[#111317] p-3">
+    <div className="min-w-0 rounded-xl border border-zinc-800 bg-[#111317] px-3 py-2.5">
 
-      <div className="flex items-center gap-2 text-zinc-600">
+      <div className="flex items-center gap-2 text-zinc-500">
 
         {icon}
 
@@ -2269,20 +2335,22 @@ function MetricCard({
 
       </div>
 
-      <p className="mt-2 text-lg font-semibold text-white">
+      <p className="mt-1.5 text-lg font-semibold text-white">
         {value}
       </p>
 
       {detail && (
         <p
-          title={detail}
-          className="mt-0.5 truncate text-[10px] text-zinc-600"
+          title={
+            detail
+          }
+          className="mt-0.5 truncate text-[10px] text-zinc-500"
         >
           {detail}
         </p>
       )}
 
-      <div className="mt-3 h-1 overflow-hidden rounded-full bg-zinc-800">
+      <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-zinc-800">
 
         {safePercentage !==
           null && (
@@ -2329,7 +2397,7 @@ function StatusFilterOption({
       onClick={
         onClick
       }
-      className={`flex w-full items-center justify-between gap-5 border-b border-zinc-800 px-4 py-3 text-left text-sm transition last:border-b-0 ${
+      className={`flex w-full items-center justify-between gap-5 border-b border-zinc-800 px-4 py-3 text-left text-sm outline-none transition last:border-b-0 focus:outline-none ${
         active
           ? "bg-zinc-800 text-white"
           : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
@@ -2468,11 +2536,6 @@ function getEffectiveStatus(
     now -
     lastSeen;
 
-  /*
-    Heartbeat = 30 seconds.
-    Three missed heartbeats = offline.
-  */
-
   if (
     diff >
     90_000
@@ -2481,6 +2544,85 @@ function getEffectiveStatus(
   }
 
   return device.status;
+}
+
+/* =========================
+   FORMAT OS NAME
+========================= */
+
+function formatOSName(
+  os:
+    | string
+    | null
+) {
+  if (!os) {
+    return "Unknown OS";
+  }
+
+  const normalized =
+    os.trim();
+
+  if (
+    normalized
+      .toLowerCase()
+      .includes(
+        "windows 11"
+      )
+  ) {
+    return "Microsoft Windows 11";
+  }
+
+  if (
+    normalized
+      .toLowerCase()
+      .includes(
+        "windows 10"
+      )
+  ) {
+    return "Microsoft Windows 10";
+  }
+
+  return normalized;
+}
+
+/* =========================
+   CLEAN INVENTORY VALUE
+========================= */
+
+function cleanInventoryValue(
+  value:
+    | string
+    | null
+) {
+  if (!value) {
+    return "—";
+  }
+
+  const normalized =
+    value
+      .trim()
+      .toLowerCase();
+
+  const invalidValues = [
+    "to be filled by o.e.m.",
+    "to be filled by oem",
+    "default string",
+    "system product name",
+    "system manufacturer",
+    "not specified",
+    "unknown",
+    "none",
+  ];
+
+  if (
+    invalidValues.includes(
+      normalized
+    )
+  ) {
+    return "Not provided";
+  }
+
+  return value.trim();
 }
 
 /* =========================
