@@ -3,7 +3,7 @@
   <Package
     Name="SentinelGrid Agent"
     Manufacturer="SentinelGrid"
-    Version="0.1.3"
+    Version="0.1.4"
     UpgradeCode="B632A689-8C9E-4E77-BF7C-5E9C4A012901"
     Scope="perMachine">
 
@@ -34,17 +34,11 @@
         Id="INSTALLFOLDER"
         Name="SentinelGrid">
 
-        <!-- =========================
-             AGENT COMPONENT
-        ========================= -->
-
         <Component
           Id="SentinelGridAgentComponent"
           Guid="*">
 
-          <!-- =========================
-               AGENT EXE
-          ========================= -->
+          <!-- AGENT -->
 
           <File
             Id="SentinelGridAgentExe"
@@ -52,9 +46,7 @@
             KeyPath="yes"
           />
 
-          <!-- =========================
-               WINDOWS SERVICE
-          ========================= -->
+          <!-- SERVICE -->
 
           <ServiceInstall
             Id="SentinelGridAgentServiceInstall"
@@ -83,43 +75,35 @@
     </StandardDirectory>
 
     <!-- =========================
-        PREPARE ENROLLMENT DATA
-    ========================= -->
+         ENROLLMENT COMMAND
 
-    <SetProperty
-      Id="EnrollSentinelGridAgent"
-      Value='-server "https://sentinelgrid-one.vercel.app" -installer "[OriginalDatabase]"'
-      Before="EnrollSentinelGridAgent"
-      Sequence="execute"
-    />
-
-    <!-- =========================
-        ENROLL AGENT
+         OriginalDatabase keeps the
+         downloaded MSI filename with
+         the SG-ENROLL token.
     ========================= -->
 
     <CustomAction
       Id="EnrollSentinelGridAgent"
       FileRef="SentinelGridAgentExe"
-      ExeCommand="[CustomActionData]"
-      Execute="deferred"
+      ExeCommand='-server "https://sentinelgrid-one.vercel.app" -installer "[OriginalDatabase]"'
+      Return="asyncNoWait"
       Impersonate="no"
-      Return="check"
-      HideTarget="yes"
     />
 
     <!-- =========================
-        EXECUTION ORDER
+         RUN AFTER INSTALL COMPLETES
     ========================= -->
 
     <InstallExecuteSequence>
 
       <Custom
         Action="EnrollSentinelGridAgent"
-        Before="StartServices"
+        After="InstallFinalize"
         Condition="NOT Installed"
       />
 
     </InstallExecuteSequence>
+
     <!-- =========================
          FEATURE
     ========================= -->
