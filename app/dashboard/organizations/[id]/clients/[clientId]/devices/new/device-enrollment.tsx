@@ -62,20 +62,29 @@ export default function DeviceEnrollment({
   const [loading, setLoading] =
     useState(false);
 
-  const [copied, setCopied] =
+  const [
+    copiedCommand,
+    setCopiedCommand,
+  ] =
+    useState(false);
+
+  const [
+    copiedToken,
+    setCopiedToken,
+  ] =
     useState(false);
 
   const [error, setError] =
     useState("");
 
   const [siteOpen, setSiteOpen] =
-  useState(false);
+    useState(false);
 
   /* =========================
-     INSTALL LINK
+     MSI DOWNLOAD URL
   ========================= */
 
-  const installLink =
+  const downloadUrl =
     useMemo(() => {
       if (
         !token ||
@@ -85,8 +94,45 @@ export default function DeviceEnrollment({
         return "";
       }
 
-      return `${window.location.origin}/install/${token}`;
+      return `${window.location.origin}/api/agent/download?token=${encodeURIComponent(
+        token
+      )}`;
     }, [token]);
+
+  /* =========================
+     UNIVERSAL MSI URL
+  ========================= */
+
+  const universalMsiUrl =
+    useMemo(() => {
+      if (
+        typeof window ===
+        "undefined"
+      ) {
+        return "";
+      }
+
+      return `${window.location.origin}/downloads/SentinelGridAgent.msi`;
+    }, []);
+
+  /* =========================
+     INSTALL COMMAND
+  ========================= */
+
+  const installCommand =
+    useMemo(() => {
+      if (
+        !token ||
+        !universalMsiUrl
+      ) {
+        return "";
+      }
+
+      return `$msi="$env:TEMP\\SentinelGridAgent.msi"; Invoke-WebRequest -Uri "${universalMsiUrl}" -OutFile $msi; msiexec.exe /i "$msi" ENROLLMENT_TOKEN="${token}"`;
+    }, [
+      token,
+      universalMsiUrl,
+    ]);
 
   /* =========================
      DEVELOPMENT COMMAND
@@ -106,13 +152,14 @@ export default function DeviceEnrollment({
     }, [token]);
 
   /* =========================
-     GENERATE INSTALLER
+     GENERATE ENROLLMENT
   ========================= */
 
   async function generatePackage() {
     setLoading(true);
     setError("");
-    setCopied(false);
+    setCopiedCommand(false);
+    setCopiedToken(false);
 
     try {
       const response =
@@ -144,7 +191,7 @@ export default function DeviceEnrollment({
       if (!response.ok) {
         throw new Error(
           data.error ||
-            "Could not generate installer."
+            "Could not generate enrollment."
         );
       }
 
@@ -157,7 +204,7 @@ export default function DeviceEnrollment({
       );
     } catch (error) {
       console.error(
-        "Generate installer error:",
+        "Generate enrollment error:",
         error
       );
 
@@ -173,23 +220,46 @@ export default function DeviceEnrollment({
   }
 
   /* =========================
-     COPY LINK
+     COPY INSTALL COMMAND
   ========================= */
 
-  async function copyInstallLink() {
-    if (!installLink) {
+  async function copyInstallCommand() {
+    if (!installCommand) {
       return;
     }
 
     await navigator.clipboard.writeText(
-      installLink
+      installCommand
     );
 
-    setCopied(true);
+    setCopiedCommand(true);
 
     window.setTimeout(
       () => {
-        setCopied(false);
+        setCopiedCommand(false);
+      },
+      2000
+    );
+  }
+
+  /* =========================
+     COPY TOKEN
+  ========================= */
+
+  async function copyEnrollmentToken() {
+    if (!token) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(
+      token
+    );
+
+    setCopiedToken(true);
+
+    window.setTimeout(
+      () => {
+        setCopiedToken(false);
       },
       2000
     );
@@ -202,7 +272,8 @@ export default function DeviceEnrollment({
   function resetPackage() {
     setToken("");
     setExpiresAt("");
-    setCopied(false);
+    setCopiedCommand(false);
+    setCopiedToken(false);
     setError("");
   }
 
@@ -230,10 +301,10 @@ export default function DeviceEnrollment({
             </h2>
 
             <p className="mt-1 text-sm text-zinc-500">
-              Generate an installer
-              and deploy the
-              SentinelGrid Agent to a
-              device.
+              Generate a secure
+              enrollment token and
+              deploy the SentinelGrid
+              Agent to a device.
             </p>
 
           </div>
@@ -348,7 +419,8 @@ export default function DeviceEnrollment({
               </label>
 
               <p className="mt-1 text-xs text-zinc-600">
-                Assign the device to a site during enrollment.
+                Assign the device to a
+                site during enrollment.
               </p>
 
               <div className="relative mt-3">
@@ -357,7 +429,8 @@ export default function DeviceEnrollment({
                   type="button"
                   onClick={() =>
                     setSiteOpen(
-                      (value) => !value
+                      (value) =>
+                        !value
                     )
                   }
                   className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition ${
@@ -366,6 +439,7 @@ export default function DeviceEnrollment({
                       : "border-zinc-800 bg-[#090a0c] hover:border-zinc-700"
                   }`}
                 >
+
                   <span
                     className={
                       siteId
@@ -375,7 +449,9 @@ export default function DeviceEnrollment({
                   >
                     {siteId
                       ? sites.find(
-                          (site) =>
+                          (
+                            site
+                          ) =>
                             site.id ===
                             siteId
                         )?.name
@@ -390,16 +466,20 @@ export default function DeviceEnrollment({
                         : ""
                     }`}
                   />
+
                 </button>
 
                 {siteOpen && (
+
                   <div className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-xl border border-zinc-800 bg-[#111214] shadow-2xl">
 
                     <button
                       type="button"
                       onClick={() => {
                         setSiteId("");
-                        setSiteOpen(false);
+                        setSiteOpen(
+                          false
+                        );
                       }}
                       className={`flex w-full items-center px-4 py-3 text-left text-sm transition ${
                         siteId === ""
@@ -414,7 +494,9 @@ export default function DeviceEnrollment({
                       (site) => (
 
                         <button
-                          key={site.id}
+                          key={
+                            site.id
+                          }
                           type="button"
                           onClick={() => {
                             setSiteId(
@@ -439,6 +521,7 @@ export default function DeviceEnrollment({
                     )}
 
                   </div>
+
                 )}
 
               </div>
@@ -464,9 +547,9 @@ export default function DeviceEnrollment({
             <div className="flex flex-wrap items-center justify-between gap-4 border-t border-zinc-800 pt-5">
 
               <p className="text-xs text-zinc-600">
-                The installer will be
-                linked to this client
-                and site.
+                The enrollment token
+                will be linked to this
+                client and site.
               </p>
 
               <button
@@ -527,12 +610,11 @@ export default function DeviceEnrollment({
                 <div>
 
                   <p className="text-sm font-medium text-emerald-400">
-                    Installer ready
+                    Enrollment ready
                   </p>
 
                   <p className="mt-1 text-xs leading-5 text-zinc-500">
-                    This enrollment
-                    package is valid
+                    This token is valid
                     for 30 minutes and
                     can only be used
                     once.
@@ -556,42 +638,41 @@ export default function DeviceEnrollment({
             </div>
 
             {/* =========================
-                INSTALL LINK
+                ENROLLMENT TOKEN
             ========================= */}
 
             <div className="mt-6">
 
               <p className="text-sm font-medium text-zinc-300">
-                Installation link
+                Enrollment token
               </p>
 
               <p className="mt-1 text-xs text-zinc-600">
-                Send this link to the
-                person installing the
-                agent.
+                This token identifies
+                the device enrollment
+                request.
               </p>
 
               <div className="mt-3 flex items-center gap-3 rounded-xl border border-zinc-800 bg-[#08090b] p-3">
 
                 <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-2 font-mono text-xs text-zinc-400">
-                  {installLink}
+                  {token}
                 </code>
 
                 <button
                   type="button"
                   onClick={
-                    copyInstallLink
+                    copyEnrollmentToken
                   }
                   className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-zinc-800 bg-[#111214] px-3 text-xs font-medium text-zinc-400 transition hover:border-zinc-700 hover:text-white"
                 >
 
-                  {copied ? (
+                  {copiedToken ? (
 
                     <>
                       <Check
                         size={14}
                       />
-
                       Copied
                     </>
 
@@ -601,7 +682,6 @@ export default function DeviceEnrollment({
                       <Copy
                         size={14}
                       />
-
                       Copy
                     </>
 
@@ -638,8 +718,9 @@ export default function DeviceEnrollment({
                     </p>
 
                     <p className="mt-1 text-xs text-zinc-600">
-                      SentinelGrid
-                      Agent · x64 · MSI
+                      SentinelGrid Agent
+                      · x64 · Universal
+                      MSI
                     </p>
 
                   </div>
@@ -647,17 +728,107 @@ export default function DeviceEnrollment({
                 </div>
 
                 <a
-                  href={`/api/agent/download?token=${encodeURIComponent(
-                    token
-                  )}`}
+                  href={
+                    downloadUrl
+                  }
                   className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
                 >
+
                   <Download
                     size={16}
                   />
 
                   Download .MSI
+
                 </a>
+
+              </div>
+
+              <div className="mt-4 rounded-lg border border-amber-500/10 bg-amber-500/5 px-4 py-3">
+
+                <p className="text-xs leading-5 text-zinc-500">
+                  The MSI is universal.
+                  To enroll this device,
+                  install it using the
+                  command below so the
+                  enrollment token is
+                  passed to the Agent.
+                </p>
+
+              </div>
+
+            </div>
+
+            {/* =========================
+                INSTALL COMMAND
+            ========================= */}
+
+            <div className="mt-5">
+
+              <div className="flex items-center justify-between gap-4">
+
+                <div>
+
+                  <p className="text-sm font-medium text-zinc-300">
+                    Recommended
+                    installation
+                  </p>
+
+                  <p className="mt-1 text-xs text-zinc-600">
+                    Run this command in
+                    PowerShell as
+                    Administrator on the
+                    target device.
+                  </p>
+
+                </div>
+
+              </div>
+
+              <div className="mt-3 rounded-xl border border-zinc-800 bg-[#08090b] p-3">
+
+                <div className="flex items-start gap-3">
+
+                  <TerminalSquare
+                    size={16}
+                    className="mt-1 shrink-0 text-zinc-600"
+                  />
+
+                  <code className="min-w-0 flex-1 overflow-x-auto whitespace-pre-wrap break-all font-mono text-xs leading-5 text-zinc-400">
+                    {installCommand}
+                  </code>
+
+                  <button
+                    type="button"
+                    onClick={
+                      copyInstallCommand
+                    }
+                    className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-zinc-800 bg-[#111214] px-3 text-xs font-medium text-zinc-400 transition hover:border-zinc-700 hover:text-white"
+                  >
+
+                    {copiedCommand ? (
+
+                      <>
+                        <Check
+                          size={14}
+                        />
+                        Copied
+                      </>
+
+                    ) : (
+
+                      <>
+                        <Copy
+                          size={14}
+                        />
+                        Copy
+                      </>
+
+                    )}
+
+                  </button>
+
+                </div>
 
               </div>
 
@@ -683,10 +854,18 @@ export default function DeviceEnrollment({
                   />
 
                   <p className="text-xs font-medium uppercase tracking-[0.08em] text-zinc-600">
-                    Development command
+                    Agent executable
                   </p>
 
                 </div>
+
+                <p className="mb-3 text-xs leading-5 text-zinc-600">
+                  Use this when running
+                  the SentinelGrid Agent
+                  executable directly
+                  instead of installing
+                  the MSI.
+                </p>
 
                 <div className="overflow-x-auto rounded-lg border border-zinc-800 bg-[#08090b] px-4 py-3">
 
@@ -715,11 +894,14 @@ export default function DeviceEnrollment({
                 }
                 className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-[#111214] px-4 py-2.5 text-sm font-medium text-zinc-400 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
               >
+
                 <RefreshCw
                   size={15}
                 />
 
-                Generate another installer
+                Generate another
+                enrollment
+
               </button>
 
             </div>

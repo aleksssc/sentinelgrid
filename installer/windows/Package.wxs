@@ -3,7 +3,7 @@
   <Package
     Name="SentinelGrid Agent"
     Manufacturer="SentinelGrid"
-    Version="0.1.0"
+    Version="0.1.1"
     UpgradeCode="B632A689-8C9E-4E77-BF7C-5E9C4A012901"
     Scope="perMachine">
 
@@ -11,16 +11,10 @@
       DowngradeErrorMessage="A newer version of SentinelGrid Agent is already installed."
     />
 
-    <!-- =========================
-         EMBED EVERYTHING IN MSI
-    ========================= -->
-
-    <MediaTemplate
-      EmbedCab="yes"
-    />
+    <MediaTemplate EmbedCab="yes" />
 
     <!-- =========================
-         CONFIGURATION
+         PROPERTIES
     ========================= -->
 
     <Property
@@ -39,8 +33,7 @@
          FILES + SERVICE
     ========================= -->
 
-    <StandardDirectory
-      Id="ProgramFiles6432Folder">
+    <StandardDirectory Id="ProgramFiles6432Folder">
 
       <Directory
         Id="INSTALLFOLDER"
@@ -83,13 +76,21 @@
     </StandardDirectory>
 
     <!-- =========================
-         ENROLLMENT
+         ENROLLMENT CUSTOM ACTION
     ========================= -->
+
+    <SetProperty
+      Id="EnrollSentinelGridAgent"
+      Value='-server "[SENTINELGRID_SERVER]" -token "[ENROLLMENT_TOKEN]"'
+      Before="EnrollSentinelGridAgent"
+      Sequence="execute"
+      Condition="NOT Installed AND ENROLLMENT_TOKEN"
+    />
 
     <CustomAction
       Id="EnrollSentinelGridAgent"
       FileRef="SentinelGridAgentExe"
-      ExeCommand='-server "[SENTINELGRID_SERVER]" -token "[ENROLLMENT_TOKEN]"'
+      ExeCommand="[CustomActionData]"
       Execute="deferred"
       Impersonate="no"
       Return="check"
