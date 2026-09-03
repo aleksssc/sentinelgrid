@@ -1,4 +1,5 @@
 import { updateSession } from "@/lib/supabase/proxy";
+
 import {
   NextResponse,
   type NextRequest,
@@ -19,8 +20,29 @@ export async function proxy(
   ========================= */
 
   if (
-    pathname === "/api/agent/enroll" ||
-    pathname === "/api/agent/heartbeat"
+    pathname ===
+      "/api/agent/enroll" ||
+    pathname ===
+      "/api/agent/heartbeat" ||
+    pathname ===
+      "/api/agent/download"
+  ) {
+    return NextResponse.next();
+  }
+
+  /* =========================
+     AGENT DOWNLOAD FILES
+
+     O MSI precisa de ser
+     acessível diretamente pela
+     API de download sem passar
+     pelo auth proxy.
+  ========================= */
+
+  if (
+    pathname.startsWith(
+      "/downloads/"
+    )
   ) {
     return NextResponse.next();
   }
