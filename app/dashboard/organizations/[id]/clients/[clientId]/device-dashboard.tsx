@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type ReactNode,
 } from "react";
 
 import {
@@ -15,10 +16,12 @@ import {
 } from "@/lib/supabase/client";
 
 import {
+  Activity,
   Check,
   ChevronDown,
   CircleAlert,
   Command,
+  Cpu,
   ExternalLink,
   HardDrive,
   MapPin,
@@ -53,6 +56,10 @@ type Device = {
     | string
     | null;
 
+  /* =========================
+     SYSTEM
+  ========================= */
+
   os:
     | string
     | null;
@@ -60,6 +67,70 @@ type Device = {
   os_version:
     | string
     | null;
+
+  os_build:
+    | string
+    | null;
+
+  arch:
+    | string
+    | null;
+
+  manufacturer:
+    | string
+    | null;
+
+  model:
+    | string
+    | null;
+
+  serial_number:
+    | string
+    | null;
+
+  cpu_name:
+    | string
+    | null;
+
+  /* =========================
+     PERFORMANCE
+  ========================= */
+
+  cpu_usage:
+    | number
+    | null;
+
+  ram_usage:
+    | number
+    | null;
+
+  ram_total_bytes:
+    | number
+    | null;
+
+  ram_used_bytes:
+    | number
+    | null;
+
+  disk_usage:
+    | number
+    | null;
+
+  disk_total_bytes:
+    | number
+    | null;
+
+  disk_used_bytes:
+    | number
+    | null;
+
+  uptime_seconds:
+    | number
+    | null;
+
+  /* =========================
+     NETWORK
+  ========================= */
 
   local_ip:
     | string
@@ -73,6 +144,10 @@ type Device = {
     | string
     | null;
 
+  /* =========================
+     AGENT
+  ========================= */
+
   status:
     | "online"
     | "offline"
@@ -82,9 +157,17 @@ type Device = {
     | string
     | null;
 
+  agent_version:
+    | string
+    | null;
+
   last_seen:
     | string
     | null;
+
+  /* =========================
+     SITE
+  ========================= */
 
   site_id:
     | string
@@ -98,9 +181,7 @@ type Device = {
 
 type Props = {
   devices: Device[];
-
   sites: Site[];
-
   canManage: boolean;
 };
 
@@ -120,7 +201,7 @@ export default function DeviceDashboard({
     createClient();
 
   /* =========================
-     LOCAL DEVICES
+     DEVICES
   ========================= */
 
   const [
@@ -131,20 +212,22 @@ export default function DeviceDashboard({
       devices
     );
 
-  /*
-    When router.refresh() gets fresh data
-    from the server, update our local list.
-  */
+  const [
+    selectedDevice,
+    setSelectedDevice,
+  ] =
+    useState<Device | null>(
+      null
+    );
+
+  /* =========================
+     SYNC DEVICES
+  ========================= */
 
   useEffect(() => {
     setDeviceList(
       devices
     );
-
-    /*
-      Also update the currently opened
-      device with fresh last_seen etc.
-    */
 
     setSelectedDevice(
       (current) => {
@@ -174,10 +257,6 @@ export default function DeviceDashboard({
     Date.now()
   );
 
-  /*
-    Re-render relative times every 10 sec.
-  */
-
   useEffect(() => {
     const interval =
       window.setInterval(
@@ -196,13 +275,9 @@ export default function DeviceDashboard({
     };
   }, []);
 
-  /*
-    Fetch fresh last_seen/status values
-    from the server every 30 seconds.
-
-    The Agent heartbeat is also currently
-    running every 30 seconds.
-  */
+  /* =========================
+     AUTO REFRESH
+  ========================= */
 
   useEffect(() => {
     const interval =
@@ -250,16 +325,8 @@ export default function DeviceDashboard({
   ] = useState(false);
 
   /* =========================
-     DEVICE DRAWER
+     ACTION MESSAGE
   ========================= */
-
-  const [
-    selectedDevice,
-    setSelectedDevice,
-  ] =
-    useState<Device | null>(
-      null
-    );
 
   const [
     actionMessage,
@@ -267,7 +334,7 @@ export default function DeviceDashboard({
   ] = useState("");
 
   /* =========================
-     DELETE DEVICE
+     DELETE
   ========================= */
 
   const [
@@ -311,7 +378,7 @@ export default function DeviceDashboard({
   }
 
   /* =========================
-     SELECTED DEVICE STATUS
+     SELECTED STATUS
   ========================= */
 
   const selectedDeviceStatus =
@@ -323,7 +390,7 @@ export default function DeviceDashboard({
       : null;
 
   /* =========================
-     FILTERED DEVICES
+     FILTER DEVICES
   ========================= */
 
   const filteredDevices =
@@ -369,6 +436,21 @@ export default function DeviceDashboard({
                 query
               ) ||
             device.os
+              ?.toLowerCase()
+              .includes(
+                query
+              ) ||
+            device.manufacturer
+              ?.toLowerCase()
+              .includes(
+                query
+              ) ||
+            device.model
+              ?.toLowerCase()
+              .includes(
+                query
+              ) ||
+            device.serial_number
               ?.toLowerCase()
               .includes(
                 query
@@ -475,13 +557,14 @@ export default function DeviceDashboard({
 
     const {
       error,
-    } = await supabase
-      .from("devices")
-      .delete()
-      .eq(
-        "id",
-        deviceId
-      );
+    } =
+      await supabase
+        .from("devices")
+        .delete()
+        .eq(
+          "id",
+          deviceId
+        );
 
     if (error) {
       console.error(
@@ -499,10 +582,6 @@ export default function DeviceDashboard({
 
       return;
     }
-
-    /*
-      Remove immediately from the UI.
-    */
 
     setDeviceList(
       (current) =>
@@ -619,7 +698,6 @@ export default function DeviceDashboard({
           </button>
 
           {siteFilterOpen && (
-
             <div className="absolute right-0 top-full z-30 mt-2 min-w-full overflow-hidden rounded-xl border border-zinc-800 bg-[#111214] shadow-2xl">
 
               <button
@@ -658,7 +736,6 @@ export default function DeviceDashboard({
                   "all" && (
                   <Check
                     size={14}
-                    className="text-zinc-300"
                   />
                 )}
 
@@ -666,9 +743,10 @@ export default function DeviceDashboard({
 
               {sites.map(
                 (site) => (
-
                   <button
-                    key={site.id}
+                    key={
+                      site.id
+                    }
                     type="button"
                     onClick={() => {
                       setSiteFilter(
@@ -706,17 +784,14 @@ export default function DeviceDashboard({
                       site.id && (
                       <Check
                         size={14}
-                        className="text-zinc-300"
                       />
                     )}
 
                   </button>
-
                 )
               )}
 
             </div>
-
           )}
 
         </div>
@@ -790,7 +865,6 @@ export default function DeviceDashboard({
           </button>
 
           {statusFilterOpen && (
-
             <div className="absolute right-0 top-full z-30 mt-2 min-w-[180px] overflow-hidden rounded-xl border border-zinc-800 bg-[#111214] shadow-2xl">
 
               <StatusFilterOption
@@ -866,7 +940,6 @@ export default function DeviceDashboard({
               />
 
             </div>
-
           )}
 
         </div>
@@ -896,7 +969,6 @@ export default function DeviceDashboard({
             "all" ||
           statusFilter !==
             "all") && (
-
           <button
             type="button"
             onClick={() => {
@@ -922,7 +994,6 @@ export default function DeviceDashboard({
           >
             Clear filters
           </button>
-
         )}
 
       </div>
@@ -933,15 +1004,12 @@ export default function DeviceDashboard({
 
       {deviceList.length ===
       0 ? (
-
         <div className="flex flex-col items-center rounded-2xl border border-dashed border-zinc-800 px-6 py-16 text-center">
 
           <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500">
-
             <Monitor
               size={21}
             />
-
           </div>
 
           <h3 className="mt-5 font-semibold">
@@ -952,23 +1020,9 @@ export default function DeviceDashboard({
             Devices will appear here once a SentinelGrid agent is deployed and linked to this client.
           </p>
 
-          {sites.length > 0 && (
-
-            <p className="mt-3 text-xs text-zinc-600">
-              {sites.length}{" "}
-              {sites.length === 1
-                ? "site is"
-                : "sites are"}{" "}
-              currently configured for this client.
-            </p>
-
-          )}
-
         </div>
-
       ) : filteredDevices.length ===
         0 ? (
-
         <div className="rounded-2xl border border-dashed border-zinc-800 px-6 py-12 text-center">
 
           <Search
@@ -985,16 +1039,12 @@ export default function DeviceDashboard({
           </p>
 
         </div>
-
       ) : (
-
         /* =========================
             DEVICE TABLE
         ========================= */
 
         <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
-
-          {/* HEADER */}
 
           <div className="hidden grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(150px,1fr)_120px] gap-6 border-b border-zinc-800 bg-[#111214] px-5 py-3 text-xs uppercase tracking-wide text-zinc-600 lg:grid">
 
@@ -1016,9 +1066,7 @@ export default function DeviceDashboard({
 
           </div>
 
-          {/* ROWS */}
-
-          <div className="divide-y divide-zinc-800 bg-[#0d0f12]">
+          <div className="divide-y divide-zinc-800">
 
             {filteredDevices.map(
               (device) => {
@@ -1034,7 +1082,6 @@ export default function DeviceDashboard({
                   );
 
                 return (
-
                   <button
                     key={
                       device.id
@@ -1065,11 +1112,9 @@ export default function DeviceDashboard({
                     <div className="flex min-w-0 items-center gap-4">
 
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-[#08090b] text-zinc-400">
-
                         <Monitor
                           size={18}
                         />
-
                       </div>
 
                       <div className="min-w-0">
@@ -1103,7 +1148,6 @@ export default function DeviceDashboard({
                     {/* OS */}
 
                     <p className="hidden truncate text-sm text-zinc-400 lg:block">
-
                       {device.os
                         ? `${device.os}${
                             device.os_version
@@ -1111,7 +1155,6 @@ export default function DeviceDashboard({
                               : ""
                           }`
                         : "Unknown OS"}
-
                     </p>
 
                     {/* STATUS */}
@@ -1150,7 +1193,6 @@ export default function DeviceDashboard({
                     </div>
 
                   </button>
-
                 );
               }
             )}
@@ -1158,7 +1200,6 @@ export default function DeviceDashboard({
           </div>
 
         </div>
-
       )}
 
       {/* =========================
@@ -1183,15 +1224,17 @@ export default function DeviceDashboard({
 
           {/* DRAWER */}
 
-          <aside className="fixed bottom-0 right-0 top-16 z-40 w-full overflow-y-auto border-l border-zinc-800 bg-zinc-950 shadow-2xl sm:w-[520px]">
+          <aside className="fixed bottom-0 right-0 top-16 z-40 w-full overflow-y-auto border-l border-zinc-800 bg-[#070809] shadow-2xl sm:w-[580px]">
 
-            {/* HEADER */}
+            {/* =========================
+                HEADER
+            ========================= */}
 
-            <div className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/95 px-6 py-5 backdrop-blur">
+            <div className="sticky top-0 z-20 border-b border-zinc-800 bg-[#070809]/95 px-5 py-4 backdrop-blur">
 
-              <div className="flex items-start justify-between gap-5">
+              <div className="flex items-center justify-between gap-5">
 
-                <div className="flex min-w-0 items-start gap-4">
+                <div className="flex min-w-0 items-center gap-4">
 
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400">
 
@@ -1203,12 +1246,12 @@ export default function DeviceDashboard({
 
                   <div className="min-w-0">
 
-                    <h2 className="truncate text-lg font-semibold">
+                    <h2 className="truncate text-lg font-semibold text-white">
                       {selectedDevice.display_name ||
                         selectedDevice.hostname}
                     </h2>
 
-                    <p className="mt-1 truncate text-sm text-zinc-500">
+                    <p className="mt-0.5 truncate text-sm text-zinc-600">
                       {
                         selectedDevice.hostname
                       }
@@ -1225,7 +1268,7 @@ export default function DeviceDashboard({
                       null
                     )
                   }
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-900 hover:text-white"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-zinc-900 hover:text-white"
                 >
                   <X
                     size={18}
@@ -1236,21 +1279,21 @@ export default function DeviceDashboard({
 
             </div>
 
-            <div className="space-y-6 p-6">
+            {/* =========================
+                DRAWER CONTENT
+            ========================= */}
+
+            <div className="p-5">
 
               {/* =========================
                   STATUS
               ========================= */}
 
-              <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-zinc-800 bg-[#111317] px-4 py-3.5">
 
                 <div>
 
-                  <p className="text-xs text-zinc-600">
-                    Device status
-                  </p>
-
-                  <div className="mt-2 flex items-center gap-2">
+                  <div className="flex items-center gap-2">
 
                     <span
                       className={`h-2 w-2 rounded-full ${
@@ -1264,15 +1307,29 @@ export default function DeviceDashboard({
                       }`}
                     />
 
-                    <span className="text-sm font-medium capitalize">
-                      {
-                        selectedDeviceStatus
-                      }
+                    <span
+                      className={`text-sm font-semibold ${
+                        selectedDeviceStatus ===
+                        "online"
+                          ? "text-emerald-400"
+                          : selectedDeviceStatus ===
+                            "warning"
+                          ? "text-amber-400"
+                          : "text-zinc-400"
+                      }`}
+                    >
+                      {selectedDeviceStatus ===
+                      "online"
+                        ? "Online"
+                        : selectedDeviceStatus ===
+                          "warning"
+                        ? "Warning"
+                        : "Offline"}
                     </span>
 
                   </div>
 
-                  <p className="mt-1.5 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-zinc-600">
                     {selectedDevice.last_seen
                       ? `Last seen ${getRelativeLastSeen(
                           selectedDevice.last_seen,
@@ -1283,18 +1340,21 @@ export default function DeviceDashboard({
 
                 </div>
 
-                <Wifi
-                  size={19}
-                  className={
+                <div
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl ${
                     selectedDeviceStatus ===
                     "online"
-                      ? "text-emerald-500"
+                      ? "bg-emerald-500/10 text-emerald-400"
                       : selectedDeviceStatus ===
                         "warning"
-                      ? "text-amber-500"
-                      : "text-zinc-700"
-                  }
-                />
+                      ? "bg-amber-500/10 text-amber-400"
+                      : "bg-zinc-900 text-zinc-600"
+                  }`}
+                >
+                  <Wifi
+                    size={17}
+                  />
+                </div>
 
               </div>
 
@@ -1303,97 +1363,85 @@ export default function DeviceDashboard({
               ========================= */}
 
               {canManage && (
-                <div>
+                <div className="mt-5">
 
-                  <h3 className="text-sm font-semibold">
-                    Quick actions
-                  </h3>
+                  <div className="mb-3">
 
-                  <p className="mt-1 text-xs text-zinc-600">
-                    Remote management tools for this endpoint.
-                  </p>
+                    <h3 className="text-sm font-semibold text-white">
+                      Quick actions
+                    </h3>
 
-                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <p className="mt-0.5 text-xs text-zinc-600">
+                      Manage this endpoint remotely.
+                    </p>
 
-                    <button
-                      type="button"
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+
+                    <QuickActionButton
+                      icon={
+                        <ExternalLink
+                          size={17}
+                        />
+                      }
+                      label="Remote Desktop"
                       onClick={() =>
                         runAction(
                           "Remote Desktop"
                         )
                       }
-                      className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
-                    >
-                      <ExternalLink
-                        size={18}
-                      />
+                    />
 
-                      <span className="text-sm font-medium">
-                        Remote Desktop
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
+                    <QuickActionButton
+                      icon={
+                        <Terminal
+                          size={17}
+                        />
+                      }
+                      label="PowerShell"
                       onClick={() =>
                         runAction(
                           "PowerShell"
                         )
                       }
-                      className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
-                    >
-                      <Terminal
-                        size={18}
-                      />
+                    />
 
-                      <span className="text-sm font-medium">
-                        PowerShell
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
+                    <QuickActionButton
+                      icon={
+                        <Command
+                          size={17}
+                        />
+                      }
+                      label="CMD"
                       onClick={() =>
                         runAction(
                           "CMD"
                         )
                       }
-                      className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
-                    >
-                      <Command
-                        size={18}
-                      />
+                    />
 
-                      <span className="text-sm font-medium">
-                        CMD
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
+                    <QuickActionButton
+                      icon={
+                        <RotateCcw
+                          size={17}
+                        />
+                      }
+                      label="Restart"
                       onClick={() =>
                         runAction(
                           "Restart"
                         )
                       }
-                      className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
-                    >
-                      <RotateCcw
-                        size={18}
-                      />
-
-                      <span className="text-sm font-medium">
-                        Restart
-                      </span>
-                    </button>
+                    />
 
                   </div>
 
                   {actionMessage && (
-                    <div className="mt-3 flex items-start gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-xs text-zinc-500">
+                    <div className="mt-3 flex items-start gap-2 rounded-xl border border-zinc-800 bg-[#111317] px-3.5 py-3 text-xs text-zinc-500">
 
                       <CircleAlert
-                        size={15}
+                        size={14}
                         className="mt-0.5 shrink-0"
                       />
 
@@ -1408,169 +1456,406 @@ export default function DeviceDashboard({
               )}
 
               {/* =========================
-                  SYSTEM INFO
+                  DEVICE DETAILS
               ========================= */}
 
-              <div>
+              <div className="mt-6">
 
-                <h3 className="mb-4 text-sm font-semibold">
-                  System information
-                </h3>
+                <div className="mb-3">
 
-                <div className="overflow-hidden rounded-xl border border-zinc-800">
+                  <h3 className="text-sm font-semibold text-white">
+                    Device details
+                  </h3>
 
-                  <InfoRow
+                  <p className="mt-0.5 text-xs text-zinc-600">
+                    Hardware, system and Agent information.
+                  </p>
+
+                </div>
+
+                <div className="divide-y divide-zinc-800 overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
+
+                  {/* =========================
+                      PERFORMANCE
+                  ========================= */}
+
+                  <DrawerSection
+                    title="Performance"
+                    subtitle="CPU, memory and disk usage"
+                    icon={
+                      <Activity
+                        size={17}
+                      />
+                    }
+                  >
+
+                    <div className="grid grid-cols-3 gap-2.5">
+
+                      <MetricCard
+                        icon={
+                          <Cpu
+                            size={15}
+                          />
+                        }
+                        label="CPU"
+                        value={
+                          formatPercentage(
+                            selectedDevice.cpu_usage
+                          )
+                        }
+                        percentage={
+                          selectedDevice.cpu_usage
+                        }
+                      />
+
+                      <MetricCard
+                        icon={
+                          <MemoryStick
+                            size={15}
+                          />
+                        }
+                        label="RAM"
+                        value={
+                          formatPercentage(
+                            selectedDevice.ram_usage
+                          )
+                        }
+                        detail={
+                          formatUsedTotal(
+                            selectedDevice.ram_used_bytes,
+                            selectedDevice.ram_total_bytes
+                          )
+                        }
+                        percentage={
+                          selectedDevice.ram_usage
+                        }
+                      />
+
+                      <MetricCard
+                        icon={
+                          <HardDrive
+                            size={15}
+                          />
+                        }
+                        label="Disk"
+                        value={
+                          formatPercentage(
+                            selectedDevice.disk_usage
+                          )
+                        }
+                        detail={
+                          formatUsedTotal(
+                            selectedDevice.disk_used_bytes,
+                            selectedDevice.disk_total_bytes
+                          )
+                        }
+                        percentage={
+                          selectedDevice.disk_usage
+                        }
+                      />
+
+                    </div>
+
+                  </DrawerSection>
+
+                  {/* =========================
+                      SYSTEM
+                  ========================= */}
+
+                  <DrawerSection
+                    title="System information"
+                    subtitle="Operating system and hardware"
                     icon={
                       <Monitor
-                        size={16}
+                        size={17}
                       />
                     }
-                    label="Operating system"
-                    value={
-                      selectedDevice.os
-                        ? `${selectedDevice.os}${
-                            selectedDevice.os_version
-                              ? ` ${selectedDevice.os_version}`
-                              : ""
-                          }`
-                        : "Unknown"
-                    }
-                  />
+                  >
 
-                  <InfoRow
+                    <div className="overflow-hidden rounded-xl border border-zinc-800">
+
+                      <InfoRow
+                        icon={
+                          <Monitor
+                            size={15}
+                          />
+                        }
+                        label="Operating system"
+                        value={
+                          selectedDevice.os ||
+                          "Unknown"
+                        }
+                      />
+
+                      <InfoRow
+                        icon={
+                          <Activity
+                            size={15}
+                          />
+                        }
+                        label="Version"
+                        value={
+                          selectedDevice.os_version ||
+                          "—"
+                        }
+                      />
+
+                      <InfoRow
+                        icon={
+                          <Server
+                            size={15}
+                          />
+                        }
+                        label="Build"
+                        value={
+                          selectedDevice.os_build ||
+                          "—"
+                        }
+                      />
+
+                      <InfoRow
+                        icon={
+                          <Server
+                            size={15}
+                          />
+                        }
+                        label="Architecture"
+                        value={
+                          formatArchitecture(
+                            selectedDevice.arch
+                          )
+                        }
+                      />
+
+                      <InfoRow
+                        icon={
+                          <Server
+                            size={15}
+                          />
+                        }
+                        label="Manufacturer"
+                        value={
+                          selectedDevice.manufacturer ||
+                          "—"
+                        }
+                      />
+
+                      <InfoRow
+                        icon={
+                          <Monitor
+                            size={15}
+                          />
+                        }
+                        label="Model"
+                        value={
+                          selectedDevice.model ||
+                          "—"
+                        }
+                      />
+
+                      <InfoRow
+                        icon={
+                          <ShieldCheck
+                            size={15}
+                          />
+                        }
+                        label="Serial"
+                        value={
+                          selectedDevice.serial_number ||
+                          "—"
+                        }
+                      />
+
+                      <InfoRow
+                        icon={
+                          <Cpu
+                            size={15}
+                          />
+                        }
+                        label="Processor"
+                        value={
+                          selectedDevice.cpu_name ||
+                          "—"
+                        }
+                      />
+
+                      <InfoRow
+                        icon={
+                          <MemoryStick
+                            size={15}
+                          />
+                        }
+                        label="Memory"
+                        value={
+                          formatBytes(
+                            selectedDevice.ram_total_bytes
+                          )
+                        }
+                      />
+
+                      <InfoRow
+                        icon={
+                          <Activity
+                            size={15}
+                          />
+                        }
+                        label="Uptime"
+                        value={
+                          formatUptime(
+                            selectedDevice.uptime_seconds
+                          )
+                        }
+                      />
+
+                    </div>
+
+                  </DrawerSection>
+
+                  {/* =========================
+                      NETWORK
+                  ========================= */}
+
+                  <DrawerSection
+                    title="Network"
+                    subtitle={
+                      selectedDevice.local_ip ||
+                      "Network information"
+                    }
                     icon={
                       <Network
-                        size={16}
+                        size={17}
                       />
                     }
-                    label="Local IP"
-                    value={
-                      selectedDevice.local_ip ||
-                      "—"
-                    }
-                  />
+                  >
 
-                  <InfoRow
-                    icon={
-                      <Wifi
-                        size={16}
+                    <div className="overflow-hidden rounded-xl border border-zinc-800">
+
+                      <InfoRow
+                        icon={
+                          <Network
+                            size={15}
+                          />
+                        }
+                        label="Local IP"
+                        value={
+                          selectedDevice.local_ip ||
+                          "—"
+                        }
                       />
-                    }
-                    label="Public IP"
-                    value={
-                      selectedDevice.public_ip ||
-                      "—"
-                    }
-                  />
 
-                  <InfoRow
-                    icon={
-                      <Server
-                        size={16}
+                      <InfoRow
+                        icon={
+                          <Wifi
+                            size={15}
+                          />
+                        }
+                        label="Public IP"
+                        value={
+                          selectedDevice.public_ip ||
+                          "—"
+                        }
                       />
-                    }
-                    label="MAC address"
-                    value={
-                      selectedDevice.mac_address ||
-                      "—"
-                    }
-                  />
 
-                  <InfoRow
-                    icon={
-                      <MapPin
-                        size={16}
+                      <InfoRow
+                        icon={
+                          <Server
+                            size={15}
+                          />
+                        }
+                        label="MAC address"
+                        value={
+                          selectedDevice.mac_address ||
+                          "—"
+                        }
                       />
-                    }
-                    label="Site"
-                    value={
-                      getSite(
-                        selectedDevice
-                      )?.name ||
-                      "No site"
-                    }
-                  />
 
-                  <InfoRow
+                      <InfoRow
+                        icon={
+                          <MapPin
+                            size={15}
+                          />
+                        }
+                        label="Site"
+                        value={
+                          getSite(
+                            selectedDevice
+                          )?.name ||
+                          "No site"
+                        }
+                      />
+
+                    </div>
+
+                  </DrawerSection>
+
+                  {/* =========================
+                      AGENT
+                  ========================= */}
+
+                  <DrawerSection
+                    title="SentinelGrid Agent"
+                    subtitle={
+                      selectedDevice.agent_version
+                        ? `Version ${selectedDevice.agent_version}`
+                        : "Agent information"
+                    }
                     icon={
                       <ShieldCheck
-                        size={16}
+                        size={17}
                       />
                     }
-                    label="Agent ID"
-                    value={
-                      selectedDevice.agent_id ||
-                      "Not registered"
-                    }
-                  />
+                  >
+
+                    <div className="overflow-hidden rounded-xl border border-zinc-800">
+
+                      <InfoRow
+                        icon={
+                          <ShieldCheck
+                            size={15}
+                          />
+                        }
+                        label="Version"
+                        value={
+                          selectedDevice.agent_version
+                            ? `v${selectedDevice.agent_version}`
+                            : "—"
+                        }
+                      />
+
+                      <InfoRow
+                        icon={
+                          <Server
+                            size={15}
+                          />
+                        }
+                        label="Agent ID"
+                        value={
+                          selectedDevice.agent_id ||
+                          "Not registered"
+                        }
+                      />
+
+                      <InfoRow
+                        icon={
+                          <Activity
+                            size={15}
+                          />
+                        }
+                        label="Last communication"
+                        value={
+                          selectedDevice.last_seen
+                            ? new Date(
+                                selectedDevice.last_seen
+                              ).toLocaleString()
+                            : "Never"
+                        }
+                      />
+
+                    </div>
+
+                  </DrawerSection>
 
                 </div>
-
-              </div>
-
-              {/* =========================
-                  PERFORMANCE
-              ========================= */}
-
-              <div>
-
-                <h3 className="mb-4 text-sm font-semibold">
-                  Performance
-                </h3>
-
-                <div className="grid grid-cols-3 gap-3">
-
-                  <MetricCard
-                    icon={
-                      <Server
-                        size={16}
-                      />
-                    }
-                    label="CPU"
-                    value="—"
-                  />
-
-                  <MetricCard
-                    icon={
-                      <MemoryStick
-                        size={16}
-                      />
-                    }
-                    label="RAM"
-                    value="—"
-                  />
-
-                  <MetricCard
-                    icon={
-                      <HardDrive
-                        size={16}
-                      />
-                    }
-                    label="Disk"
-                    value="—"
-                  />
-
-                </div>
-
-              </div>
-
-              {/* =========================
-                  LAST SEEN DETAIL
-              ========================= */}
-
-              <div className="border-t border-zinc-800 pt-5">
-
-                <p className="text-xs text-zinc-600">
-                  Last seen
-                </p>
-
-                <p className="mt-1 text-sm text-zinc-400">
-                  {selectedDevice.last_seen
-                    ? new Date(
-                        selectedDevice.last_seen
-                      ).toLocaleString()
-                    : "Never"}
-                </p>
 
               </div>
 
@@ -1579,41 +1864,37 @@ export default function DeviceDashboard({
               ========================= */}
 
               {canManage && (
+                <div className="mt-6 flex items-center justify-between border-t border-zinc-800 pt-5">
 
-                <div className="border-t border-zinc-800 pt-6">
+                  <div>
 
-                  <div className="flex items-center justify-between gap-5">
+                    <p className="text-sm font-medium text-zinc-300">
+                      Remove device
+                    </p>
 
-                    <div>
-
-                      <p className="text-sm font-medium text-red-400">
-                        Delete device
-                      </p>
-
-                      <p className="mt-1 text-xs leading-5 text-zinc-600">
-                        Remove this device from SentinelGrid.
-                      </p>
-
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={
-                        openDeleteDevice
-                      }
-                      className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-red-950 bg-[#120b0d] px-4 py-2.5 text-sm font-medium text-red-400 transition hover:border-red-900 hover:bg-[#1a0d10] hover:text-red-300"
-                    >
-                      <Trash2
-                        size={15}
-                      />
-
-                      Delete
-                    </button>
+                    <p className="mt-0.5 text-xs text-zinc-600">
+                      Permanently remove this endpoint.
+                    </p>
 
                   </div>
 
-                </div>
+                  <button
+                    type="button"
+                    onClick={
+                      openDeleteDevice
+                    }
+                    className="inline-flex items-center gap-2 rounded-lg border border-red-950 bg-[#120b0d] px-3.5 py-2 text-sm font-medium text-red-400 transition hover:border-red-900 hover:bg-red-950/30 hover:text-red-300"
+                  >
 
+                    <Trash2
+                      size={14}
+                    />
+
+                    Delete
+
+                  </button>
+
+                </div>
               )}
 
             </div>
@@ -1624,14 +1905,12 @@ export default function DeviceDashboard({
       )}
 
       {/* =========================
-          DELETE DEVICE MODAL
+          DELETE MODAL
       ========================= */}
 
       {deleteOpen &&
         selectedDevice && (
         <>
-
-          {/* MODAL OVERLAY */}
 
           <button
             type="button"
@@ -1641,8 +1920,6 @@ export default function DeviceDashboard({
             }
             className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm"
           />
-
-          {/* MODAL */}
 
           <div className="fixed left-1/2 top-1/2 z-[70] w-[calc(100%-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12] shadow-2xl">
 
@@ -1724,11 +2001,11 @@ export default function DeviceDashboard({
               </div>
 
               {deleteError && (
-
                 <div className="mt-4 rounded-xl border border-red-950 bg-[#120b0d] px-4 py-3 text-sm text-red-400">
-                  {deleteError}
+                  {
+                    deleteError
+                  }
                 </div>
-
               )}
 
             </div>
@@ -1760,6 +2037,7 @@ export default function DeviceDashboard({
                 }
                 className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
+
                 <Trash2
                   size={15}
                 />
@@ -1767,6 +2045,7 @@ export default function DeviceDashboard({
                 {deletingDevice
                   ? "Deleting..."
                   : "Delete device"}
+
               </button>
 
             </div>
@@ -1780,135 +2059,128 @@ export default function DeviceDashboard({
 }
 
 /* =========================
-   DEVICE STATUS HELPERS
+   QUICK ACTION BUTTON
 ========================= */
 
-function getRelativeLastSeen(
-  lastSeen: string | null,
-  now: number
-) {
-  if (!lastSeen) {
-    return "never";
-  }
+function QuickActionButton({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={
+        onClick
+      }
+      className="group flex h-12 items-center gap-3 rounded-xl border border-zinc-800 bg-[#111317] px-4 text-left transition hover:border-zinc-700 hover:bg-[#17191d]"
+    >
 
-  const lastSeenTime =
-    new Date(
-      lastSeen
-    ).getTime();
+      <span className="text-zinc-500 transition group-hover:text-white">
+        {icon}
+      </span>
 
-  if (
-    Number.isNaN(
-      lastSeenTime
-    )
-  ) {
-    return "unknown";
-  }
+      <span className="truncate text-sm font-medium text-zinc-200 transition group-hover:text-white">
+        {label}
+      </span>
 
-  const diff =
-    Math.max(
-      0,
-      now -
-        lastSeenTime
-    );
-
-  const seconds =
-    Math.floor(
-      diff / 1000
-    );
-
-  if (seconds < 10) {
-    return "just now";
-  }
-
-  if (seconds < 60) {
-    return `${seconds}s ago`;
-  }
-
-  const minutes =
-    Math.floor(
-      seconds / 60
-    );
-
-  if (minutes < 60) {
-    if (minutes === 1) {
-      return "1 min ago";
-    }
-
-    return `${minutes} min ago`;
-  }
-
-  const hours =
-    Math.floor(
-      minutes / 60
-    );
-
-  if (hours < 24) {
-    if (hours === 1) {
-      return "1h ago";
-    }
-
-    return `${hours}h ago`;
-  }
-
-  const days =
-    Math.floor(
-      hours / 24
-    );
-
-  if (days === 1) {
-    return "1d ago";
-  }
-
-  return `${days}d ago`;
+    </button>
+  );
 }
 
 /* =========================
-   EFFECTIVE STATUS
+   DRAWER SECTION
 ========================= */
 
-function getEffectiveStatus(
-  device: Device,
-  now: number
-):
-  | "online"
-  | "offline"
-  | "warning" {
-  if (!device.last_seen) {
-    return "offline";
-  }
+function DrawerSection({
+  title,
+  subtitle,
+  icon,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  const [
+    open,
+    setOpen,
+  ] = useState(false);
 
-  const lastSeen =
-    new Date(
-      device.last_seen
-    ).getTime();
+  return (
+    <div>
 
-  if (
-    Number.isNaN(
-      lastSeen
-    )
-  ) {
-    return "offline";
-  }
+      <button
+        type="button"
+        onClick={() =>
+          setOpen(
+            (current) =>
+              !current
+          )
+        }
+        className="group flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left transition hover:bg-[#121417]"
+      >
 
-  const diff =
-    now -
-    lastSeen;
+        <div className="flex min-w-0 items-center gap-3">
 
-  /*
-    Heartbeat = 30 seconds.
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-zinc-500 transition group-hover:text-zinc-300">
+            {icon}
+          </div>
 
-    We allow three missed heartbeats
-    before considering the device offline.
-  */
+          <div className="min-w-0">
 
-  if (
-    diff >
-    90_000
-  ) {
-    return "offline";
-  }
+            <p className="text-sm font-medium text-zinc-200">
+              {title}
+            </p>
 
-  return device.status;
+            {subtitle && (
+              <p className="mt-0.5 truncate text-xs text-zinc-600">
+                {subtitle}
+              </p>
+            )}
+
+          </div>
+
+        </div>
+
+        <ChevronDown
+          size={15}
+          className={`shrink-0 text-zinc-600 transition-transform duration-200 group-hover:text-zinc-400 ${
+            open
+              ? "rotate-180"
+              : ""
+          }`}
+        />
+
+      </button>
+
+      <div
+        className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+          open
+            ? "grid-rows-[1fr]"
+            : "grid-rows-[0fr]"
+        }`}
+      >
+
+        <div className="overflow-hidden">
+
+          <div className="border-t border-zinc-800 bg-[#090b0d] p-4">
+            {
+              children
+            }
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  );
 }
 
 /* =========================
@@ -1920,14 +2192,14 @@ function InfoRow({
   label,
   value,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   value: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-5 border-b border-zinc-800 px-4 py-3.5 last:border-b-0">
+    <div className="flex items-center justify-between gap-5 border-b border-zinc-800 bg-[#0d0f12] px-4 py-3 last:border-b-0">
 
-      <div className="flex items-center gap-3 text-zinc-500">
+      <div className="flex shrink-0 items-center gap-3 text-zinc-600">
 
         {icon}
 
@@ -1937,7 +2209,10 @@ function InfoRow({
 
       </div>
 
-      <span className="max-w-[55%] truncate text-right text-sm text-zinc-300">
+      <span
+        title={value}
+        className="min-w-0 max-w-[60%] truncate text-right text-sm text-zinc-300"
+      >
         {value}
       </span>
 
@@ -1953,27 +2228,81 @@ function MetricCard({
   icon,
   label,
   value,
+  detail,
+  percentage,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   value: string;
+  detail?: string;
+  percentage:
+    | number
+    | null;
 }) {
+  const safePercentage =
+    percentage ===
+      null ||
+    percentage ===
+      undefined ||
+    !Number.isFinite(
+      percentage
+    )
+      ? null
+      : Math.min(
+          100,
+          Math.max(
+            0,
+            percentage
+          )
+        );
+
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+    <div className="min-w-0 rounded-xl border border-zinc-800 bg-[#111317] p-3">
 
       <div className="flex items-center gap-2 text-zinc-600">
 
         {icon}
 
-        <span className="text-xs">
+        <span className="text-[11px]">
           {label}
         </span>
 
       </div>
 
-      <p className="mt-3 text-xl font-semibold">
+      <p className="mt-2 text-lg font-semibold text-white">
         {value}
       </p>
+
+      {detail && (
+        <p
+          title={detail}
+          className="mt-0.5 truncate text-[10px] text-zinc-600"
+        >
+          {detail}
+        </p>
+      )}
+
+      <div className="mt-3 h-1 overflow-hidden rounded-full bg-zinc-800">
+
+        {safePercentage !==
+          null && (
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${
+              safePercentage >=
+              90
+                ? "bg-red-500"
+                : safePercentage >=
+                  75
+                ? "bg-amber-500"
+                : "bg-emerald-500"
+            }`}
+            style={{
+              width: `${safePercentage}%`,
+            }}
+          />
+        )}
+
+      </div>
 
     </div>
   );
@@ -2028,4 +2357,334 @@ function StatusFilterOption({
 
     </button>
   );
+}
+
+/* =========================
+   LAST SEEN
+========================= */
+
+function getRelativeLastSeen(
+  lastSeen: string | null,
+  now: number
+) {
+  if (!lastSeen) {
+    return "never";
+  }
+
+  const lastSeenTime =
+    new Date(
+      lastSeen
+    ).getTime();
+
+  if (
+    Number.isNaN(
+      lastSeenTime
+    )
+  ) {
+    return "unknown";
+  }
+
+  const diff =
+    Math.max(
+      0,
+      now -
+        lastSeenTime
+    );
+
+  const seconds =
+    Math.floor(
+      diff / 1000
+    );
+
+  if (seconds < 10) {
+    return "just now";
+  }
+
+  if (seconds < 60) {
+    return `${seconds}s ago`;
+  }
+
+  const minutes =
+    Math.floor(
+      seconds / 60
+    );
+
+  if (minutes < 60) {
+    return minutes === 1
+      ? "1 min ago"
+      : `${minutes} min ago`;
+  }
+
+  const hours =
+    Math.floor(
+      minutes / 60
+    );
+
+  if (hours < 24) {
+    return hours === 1
+      ? "1h ago"
+      : `${hours}h ago`;
+  }
+
+  const days =
+    Math.floor(
+      hours / 24
+    );
+
+  return days === 1
+    ? "1d ago"
+    : `${days}d ago`;
+}
+
+/* =========================
+   EFFECTIVE STATUS
+========================= */
+
+function getEffectiveStatus(
+  device: Device,
+  now: number
+):
+  | "online"
+  | "offline"
+  | "warning" {
+  if (!device.last_seen) {
+    return "offline";
+  }
+
+  const lastSeen =
+    new Date(
+      device.last_seen
+    ).getTime();
+
+  if (
+    Number.isNaN(
+      lastSeen
+    )
+  ) {
+    return "offline";
+  }
+
+  const diff =
+    now -
+    lastSeen;
+
+  /*
+    Heartbeat = 30 seconds.
+    Three missed heartbeats = offline.
+  */
+
+  if (
+    diff >
+    90_000
+  ) {
+    return "offline";
+  }
+
+  return device.status;
+}
+
+/* =========================
+   FORMAT PERCENTAGE
+========================= */
+
+function formatPercentage(
+  value:
+    | number
+    | null
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    !Number.isFinite(
+      value
+    )
+  ) {
+    return "—";
+  }
+
+  return `${Math.round(
+    value
+  )}%`;
+}
+
+/* =========================
+   FORMAT BYTES
+========================= */
+
+function formatBytes(
+  bytes:
+    | number
+    | null
+) {
+  if (
+    bytes === null ||
+    bytes === undefined ||
+    !Number.isFinite(
+      bytes
+    ) ||
+    bytes < 0
+  ) {
+    return "—";
+  }
+
+  if (bytes === 0) {
+    return "0 B";
+  }
+
+  const tb =
+    bytes /
+    1024 /
+    1024 /
+    1024 /
+    1024;
+
+  if (tb >= 1) {
+    return `${tb.toFixed(
+      2
+    )} TB`;
+  }
+
+  const gb =
+    bytes /
+    1024 /
+    1024 /
+    1024;
+
+  if (gb >= 1) {
+    return `${gb.toFixed(
+      1
+    )} GB`;
+  }
+
+  const mb =
+    bytes /
+    1024 /
+    1024;
+
+  if (mb >= 1) {
+    return `${mb.toFixed(
+      0
+    )} MB`;
+  }
+
+  const kb =
+    bytes /
+    1024;
+
+  return `${kb.toFixed(
+    0
+  )} KB`;
+}
+
+/* =========================
+   USED / TOTAL
+========================= */
+
+function formatUsedTotal(
+  used:
+    | number
+    | null,
+  total:
+    | number
+    | null
+) {
+  if (
+    used === null ||
+    used === undefined ||
+    total === null ||
+    total === undefined
+  ) {
+    return "";
+  }
+
+  return `${formatBytes(
+    used
+  )} / ${formatBytes(
+    total
+  )}`;
+}
+
+/* =========================
+   UPTIME
+========================= */
+
+function formatUptime(
+  seconds:
+    | number
+    | null
+) {
+  if (
+    seconds === null ||
+    seconds === undefined ||
+    !Number.isFinite(
+      seconds
+    ) ||
+    seconds < 0
+  ) {
+    return "—";
+  }
+
+  const days =
+    Math.floor(
+      seconds /
+        86400
+    );
+
+  const hours =
+    Math.floor(
+      (seconds %
+        86400) /
+        3600
+    );
+
+  const minutes =
+    Math.floor(
+      (seconds %
+        3600) /
+        60
+    );
+
+  if (days > 0) {
+    return `${days}d ${hours}h ${minutes}m`;
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+
+  return "< 1m";
+}
+
+/* =========================
+   ARCHITECTURE
+========================= */
+
+function formatArchitecture(
+  arch:
+    | string
+    | null
+) {
+  if (!arch) {
+    return "—";
+  }
+
+  switch (
+    arch.toLowerCase()
+  ) {
+    case "amd64":
+      return "64-bit (x64)";
+
+    case "386":
+      return "32-bit (x86)";
+
+    case "arm64":
+      return "64-bit (ARM)";
+
+    default:
+      return arch;
+  }
 }

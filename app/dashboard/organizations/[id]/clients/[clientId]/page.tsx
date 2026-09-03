@@ -30,7 +30,8 @@ export default async function ClientDetailsPage({
 
   const { id, clientId } = await params;
 
-  const supabase = await createClient();
+  const supabase =
+    await createClient();
 
   /* =========================
      USER
@@ -74,16 +75,21 @@ export default async function ClientDetailsPage({
   ========================= */
 
   const isOwner =
-    organization.owner_id === user.id;
+    organization.owner_id ===
+    user.id;
 
-  let memberRole: string | null = null;
+  let memberRole:
+    | string
+    | null = null;
 
   if (!isOwner) {
     const {
       data: membership,
       error: membershipError,
     } = await supabase
-      .from("organization_members")
+      .from(
+        "organization_members"
+      )
       .select("role")
       .eq(
         "organization_id",
@@ -103,19 +109,12 @@ export default async function ClientDetailsPage({
     }
 
     memberRole =
-      membership?.role ?? null;
+      membership?.role ??
+      null;
   }
 
   const isAdmin =
     memberRole === "admin";
-
-  /*
-    Owner + Admin
-    = infrastructure management
-
-    Member
-    = read-only
-  */
 
   const canManageInfrastructure =
     isOwner || isAdmin;
@@ -198,16 +197,42 @@ export default async function ClientDetailsPage({
       id,
       hostname,
       display_name,
+
       os,
       os_version,
+      os_build,
+      arch,
+
+      manufacturer,
+      model,
+      serial_number,
+
+      cpu_name,
+      cpu_usage,
+
+      ram_usage,
+      ram_total_bytes,
+      ram_used_bytes,
+
+      disk_usage,
+      disk_total_bytes,
+      disk_used_bytes,
+
+      uptime_seconds,
+
       local_ip,
       public_ip,
       mac_address,
+
       status,
+
       agent_id,
+      agent_version,
+
       last_seen,
       site_id,
       created_at,
+
       sites (
         id,
         name
@@ -277,7 +302,9 @@ export default async function ClientDetailsPage({
           href={`/dashboard/organizations/${organization.id}`}
           className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-500 transition hover:text-white"
         >
-          <ArrowLeft size={16} />
+          <ArrowLeft
+            size={16}
+          />
 
           Back to organization
         </Link>
@@ -293,7 +320,9 @@ export default async function ClientDetailsPage({
           <div className="flex items-start gap-5">
 
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-zinc-400">
-              <Building2 size={24} />
+              <Building2
+                size={24}
+              />
             </div>
 
             <div>
@@ -326,7 +355,9 @@ export default async function ClientDetailsPage({
               </p>
 
               <p className="mt-2 text-xs text-zinc-600">
-                {organization.name}
+                {
+                  organization.name
+                }
               </p>
 
             </div>
@@ -337,13 +368,9 @@ export default async function ClientDetailsPage({
 
           <div className="flex flex-wrap items-center justify-end gap-4">
 
-            {/* =========================
-                STATS
-            ========================= */}
+            {/* STATS */}
 
             <div className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-800 bg-[#0d0f12] px-4 py-2.5">
-
-              {/* DEVICES */}
 
               <div className="flex items-center gap-2">
 
@@ -357,14 +384,14 @@ export default async function ClientDetailsPage({
                 </span>
 
                 <span className="text-sm font-semibold text-white">
-                  {devicesCount}
+                  {
+                    devicesCount
+                  }
                 </span>
 
               </div>
 
               <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
-
-              {/* ONLINE */}
 
               <div className="flex items-center gap-2">
 
@@ -378,14 +405,14 @@ export default async function ClientDetailsPage({
                 </span>
 
                 <span className="text-sm font-semibold text-white">
-                  {onlineCount}
+                  {
+                    onlineCount
+                  }
                 </span>
 
               </div>
 
               <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
-
-              {/* OFFLINE */}
 
               <div className="flex items-center gap-2">
 
@@ -399,21 +426,22 @@ export default async function ClientDetailsPage({
                 </span>
 
                 <span className="text-sm font-semibold text-white">
-                  {offlineCount}
+                  {
+                    offlineCount
+                  }
                 </span>
 
               </div>
 
               <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
 
-              {/* ALERTS */}
-
               <div className="flex items-center gap-2">
 
                 <ShieldAlert
                   size={15}
                   className={
-                    alertsCount > 0
+                    alertsCount >
+                    0
                       ? "text-amber-500/80"
                       : "text-zinc-600"
                   }
@@ -424,39 +452,38 @@ export default async function ClientDetailsPage({
                 </span>
 
                 <span className="text-sm font-semibold text-white">
-                  {alertsCount}
+                  {
+                    alertsCount
+                  }
                 </span>
 
               </div>
 
             </div>
 
-            {/* =========================
-                ACTIONS
-                OWNER + ADMIN
-            ========================= */}
+            {/* ACTIONS */}
 
             {canManageInfrastructure && (
               <div className="flex items-center gap-3">
-
-                {/* SETTINGS */}
 
                 <Link
                   href={`/dashboard/organizations/${organization.id}/clients/${client.id}/settings`}
                   className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                 >
-                  <Settings size={17} />
+                  <Settings
+                    size={17}
+                  />
 
                   Settings
                 </Link>
-
-                {/* ADD DEVICE */}
 
                 <Link
                   href={`/dashboard/organizations/${organization.id}/clients/${client.id}/devices/new`}
                   className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
                 >
-                  <Plus size={17} />
+                  <Plus
+                    size={17}
+                  />
 
                   Add device
                 </Link>
@@ -469,7 +496,7 @@ export default async function ClientDetailsPage({
         </div>
 
         {/* =========================
-            DEVICES AREA
+            DEVICES
         ========================= */}
 
         <section className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-6">
@@ -489,8 +516,12 @@ export default async function ClientDetailsPage({
           </div>
 
           <DeviceDashboard
-            devices={deviceList}
-            sites={siteList}
+            devices={
+              deviceList
+            }
+            sites={
+              siteList
+            }
             canManage={
               canManageInfrastructure
             }

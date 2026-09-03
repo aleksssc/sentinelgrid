@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowLeft, Activity } from "lucide-react";
 
 export default function AuthLayout({
@@ -15,11 +16,15 @@ export default function AuthLayout({
 
           <Link
             href="/"
-            className="flex items-center gap-2 font-bold tracking-tight"
+            className="flex items-center gap-2 font-bold"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-black">
-              <Activity size={18} />
-            </div>
+            <Image
+              src="/logos/sentinelgrid_png.png"
+              alt="SentinelGrid"
+              width={32}
+              height={32}
+              className="h-8 w-8 object-contain"
+            />
 
             <span className="text-lg">
               SentinelGrid

@@ -14,11 +14,16 @@ import (
 	"sentinelgrid/agent/internal/api"
 	"sentinelgrid/agent/internal/config"
 	"sentinelgrid/agent/internal/inventory"
+	"sentinelgrid/agent/internal/metrics"
 )
 
-const version = "0.1.1"
+const version = "0.1.2"
 
 const defaultServerURL = "https://sentinelgrid-one.vercel.app"
+
+const heartbeatInterval = 30 * time.Second
+
+const inventoryInterval = 30 * time.Minute
 
 /* =========================
    WINDOWS SERVICE
@@ -26,6 +31,7 @@ const defaultServerURL = "https://sentinelgrid-one.vercel.app"
 
 type program struct {
 	stop chan struct{}
+
 	done chan struct{}
 }
 
@@ -34,15 +40,23 @@ func (p *program) Start(
 ) error {
 
 	p.stop =
-		make(chan struct{})
+		make(
+			chan struct{},
+		)
 
 	p.done =
-		make(chan struct{})
+		make(
+			chan struct{},
+		)
 
 	go p.run()
 
 	return nil
 }
+
+/* =========================
+   SERVICE RUN
+========================= */
 
 func (p *program) run() {
 
@@ -50,8 +64,9 @@ func (p *program) run() {
 		p.done,
 	)
 
-	log.Println(
-		"SentinelGrid Agent service started.",
+	log.Printf(
+		"SentinelGrid Agent %s service started.",
+		version,
 	)
 
 	/* =========================
@@ -84,31 +99,30 @@ func (p *program) run() {
 	}
 
 	/* =========================
+	   INVENTORY TIMER
+	========================= */
+
+	nextInventorySync :=
+		time.Now()
+
+	/* =========================
 	   INITIAL HEARTBEAT
 	========================= */
 
 	if cfg != nil &&
 		client != nil {
 
-		response, err :=
-			client.Heartbeat(
-				cfg.AgentToken,
-			)
+		sendHeartbeat(
+			client,
+			cfg,
+			true,
+		)
 
-		if err != nil {
-
-			log.Printf(
-				"Initial heartbeat failed: %v",
-				err,
-			)
-
-		} else {
-
-			log.Printf(
-				"Heartbeat sent successfully. Device: %s",
-				response.DeviceID,
-			)
-		}
+		nextInventorySync =
+			time.Now().
+				Add(
+					inventoryInterval,
+				)
 	}
 
 	/* =========================
@@ -117,7 +131,7 @@ func (p *program) run() {
 
 	ticker :=
 		time.NewTicker(
-			30 * time.Second,
+			heartbeatInterval,
 		)
 
 	defer ticker.Stop()
@@ -132,10 +146,14 @@ func (p *program) run() {
 			   RELOAD CONFIG
 			========================= */
 
+			configJustLoaded :=
+				false
+
 			if cfg == nil ||
 				client == nil {
 
-				loadedConfig, err :=
+				loadedConfig,
+					err :=
 					config.Load()
 
 				if err != nil {
@@ -155,6 +173,9 @@ func (p *program) run() {
 						cfg.Server,
 					)
 
+				configJustLoaded =
+					true
+
 				log.Printf(
 					"Agent configuration loaded. Device: %s",
 					cfg.DeviceID,
@@ -162,28 +183,34 @@ func (p *program) run() {
 			}
 
 			/* =========================
+			   INVENTORY SCHEDULE
+			========================= */
+
+			includeInventory :=
+				configJustLoaded ||
+					time.Now().
+						After(
+							nextInventorySync,
+						)
+
+			/* =========================
 			   HEARTBEAT
 			========================= */
 
-			response, err :=
-				client.Heartbeat(
-					cfg.AgentToken,
-				)
-
-			if err != nil {
-
-				log.Printf(
-					"Heartbeat failed: %v",
-					err,
-				)
-
-				continue
-			}
-
-			log.Printf(
-				"Heartbeat sent. Device: %s",
-				response.DeviceID,
+			sendHeartbeat(
+				client,
+				cfg,
+				includeInventory,
 			)
+
+			if includeInventory {
+
+				nextInventorySync =
+					time.Now().
+						Add(
+							inventoryInterval,
+						)
+			}
 
 		case <-p.stop:
 
@@ -195,6 +222,126 @@ func (p *program) run() {
 		}
 	}
 }
+
+/* =========================
+   SEND HEARTBEAT
+========================= */
+
+func sendHeartbeat(
+	client *api.Client,
+	cfg *config.Config,
+	includeInventory bool,
+) {
+
+	/* =========================
+	   METRICS
+	========================= */
+
+	deviceMetrics, err :=
+		metrics.Collect()
+
+	if err != nil {
+
+		log.Printf(
+			"Telemetry collection failed: %v",
+			err,
+		)
+
+		/*
+			Even if metrics collection fails,
+			we still need to tell SentinelGrid
+			that the Agent is alive.
+		*/
+
+		response,
+			heartbeatErr :=
+			client.Heartbeat(
+				cfg.AgentToken,
+			)
+
+		if heartbeatErr != nil {
+
+			log.Printf(
+				"Heartbeat failed: %v",
+				heartbeatErr,
+			)
+
+			return
+		}
+
+		log.Printf(
+			"Heartbeat sent without telemetry. Device: %s",
+			response.DeviceID,
+		)
+
+		return
+	}
+
+	/* =========================
+	   OPTIONAL INVENTORY
+	========================= */
+
+	var deviceInventory *inventory.Inventory
+
+	if includeInventory {
+
+		collectedInventory,
+			inventoryErr :=
+			inventory.Collect(
+				version,
+			)
+
+		if inventoryErr != nil {
+
+			log.Printf(
+				"Inventory collection failed: %v",
+				inventoryErr,
+			)
+
+		} else {
+
+			deviceInventory =
+				&collectedInventory
+		}
+	}
+
+	/* =========================
+	   SEND
+	========================= */
+
+	response, err :=
+		client.
+			HeartbeatWithData(
+				cfg.AgentToken,
+				api.HeartbeatData{
+					Metrics: deviceMetrics,
+
+					Inventory: deviceInventory,
+				},
+			)
+
+	if err != nil {
+
+		log.Printf(
+			"Heartbeat failed: %v",
+			err,
+		)
+
+		return
+	}
+
+	log.Printf(
+		"Heartbeat sent. Device: %s | CPU %.1f%% | RAM %.1f%% | Disk %.1f%%",
+		response.DeviceID,
+		deviceMetrics.CPUUsage,
+		deviceMetrics.RAMUsage,
+		deviceMetrics.DiskUsage,
+	)
+}
+
+/* =========================
+   SERVICE STOP
+========================= */
 
 func (p *program) Stop(
 	s service.Service,
@@ -247,7 +394,9 @@ func runCLI(
 	========================= */
 
 	deviceInventory, err :=
-		inventory.Collect()
+		inventory.Collect(
+			version,
+		)
 
 	if err != nil {
 
@@ -282,8 +431,43 @@ func runCLI(
 		)
 
 		fmt.Printf(
+			"OS Version: %s\n",
+			deviceInventory.OSVersion,
+		)
+
+		fmt.Printf(
+			"OS Build: %s\n",
+			deviceInventory.OSBuild,
+		)
+
+		fmt.Printf(
 			"Arch: %s\n",
 			deviceInventory.Arch,
+		)
+
+		fmt.Printf(
+			"Manufacturer: %s\n",
+			deviceInventory.Manufacturer,
+		)
+
+		fmt.Printf(
+			"Model: %s\n",
+			deviceInventory.Model,
+		)
+
+		fmt.Printf(
+			"Serial: %s\n",
+			deviceInventory.SerialNumber,
+		)
+
+		fmt.Printf(
+			"CPU: %s\n",
+			deviceInventory.CPUName,
+		)
+
+		fmt.Printf(
+			"RAM Total: %d bytes\n",
+			deviceInventory.RAMTotalBytes,
 		)
 
 		fmt.Printf(
@@ -294,6 +478,11 @@ func runCLI(
 		fmt.Printf(
 			"MAC: %s\n",
 			deviceInventory.MACAddress,
+		)
+
+		fmt.Printf(
+			"Agent Version: %s\n",
+			deviceInventory.AgentVersion,
 		)
 
 		return nil
@@ -359,17 +548,13 @@ func runCLI(
 	err =
 		config.Save(
 			config.Config{
-				Server:
-					serverURL,
+				Server: serverURL,
 
-				DeviceID:
-					response.DeviceID,
+				DeviceID: response.DeviceID,
 
-				AgentID:
-					response.AgentID,
+				AgentID: response.AgentID,
 
-				AgentToken:
-					response.AgentToken,
+				AgentToken: response.AgentToken,
 			},
 		)
 
@@ -419,7 +604,10 @@ func runCLI(
 
 func enrollmentTokenFromInstallerPath(
 	installerPath string,
-) (string, error) {
+) (
+	string,
+	error,
+) {
 
 	if strings.TrimSpace(
 		installerPath,
@@ -436,11 +624,9 @@ func enrollmentTokenFromInstallerPath(
 			installerPath,
 		)
 
-	const prefix =
-		"SentinelGridAgent__"
+	const prefix = "SentinelGridAgent__"
 
-	const suffix =
-		".msi"
+	const suffix = ".msi"
 
 	if !strings.HasPrefix(
 		fileName,
@@ -480,7 +666,8 @@ func enrollmentTokenFromInstallerPath(
 			)
 	}
 
-	return token, nil
+	return token,
+		nil
 }
 
 /* =========================
@@ -621,14 +808,11 @@ func main() {
 
 	serviceConfig :=
 		&service.Config{
-			Name:
-				"SentinelGridAgent",
+			Name: "SentinelGridAgent",
 
-			DisplayName:
-				"SentinelGrid Agent",
+			DisplayName: "SentinelGrid Agent",
 
-			Description:
-				"SentinelGrid monitoring and remote management agent.",
+			Description: "SentinelGrid monitoring and remote management agent.",
 		}
 
 	program :=
