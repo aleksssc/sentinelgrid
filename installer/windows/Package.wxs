@@ -3,7 +3,7 @@
   <Package
     Name="SentinelGrid Agent"
     Manufacturer="SentinelGrid"
-    Version="0.1.2"
+    Version="0.1.3"
     UpgradeCode="B632A689-8C9E-4E77-BF7C-5E9C4A012901"
     Scope="perMachine">
 
@@ -73,11 +73,11 @@
     <!-- =========================
          PREPARE ENROLLMENT
 
-         Pass the original MSI path
-         to the deferred action.
+         OriginalDatabase contains
+         the downloaded MSI path:
 
-         Example:
-         SentinelGridAgent__SG-ENROLL-xxxx.msi
+         SentinelGridAgent__
+         SG-ENROLL-xxxx.msi
     ========================= -->
 
     <SetProperty
@@ -85,7 +85,6 @@
       Value='-server "https://sentinelgrid-one.vercel.app" -installer "[OriginalDatabase]"'
       Before="EnrollSentinelGridAgent"
       Sequence="execute"
-      Condition="NOT Installed"
     />
 
     <!-- =========================
@@ -102,11 +101,20 @@
       HideTarget="yes"
     />
 
+    <!-- =========================
+         EXECUTION ORDER
+
+         1. Files installed
+         2. Enrollment runs
+         3. agent.json is created
+         4. Windows service starts
+    ========================= -->
+
     <InstallExecuteSequence>
 
       <Custom
         Action="EnrollSentinelGridAgent"
-        After="InstallFiles"
+        Before="StartServices"
         Condition="NOT Installed"
       />
 
