@@ -2,7 +2,7 @@ import "./dashboard-background.css";
 
 import DashboardSidebar from "@/components/dashboard/dashboard-sidebar";
 import DashboardBackground from "@/components/dashboard/dashboard-background";
-
+import InfrastructureSearch from "@/components/infrastructure-search";
 import NotificationsBell from "@/components/dashboard/notifications/notifications-bell";
 import { UserMenu } from "@/components/user-menu";
 
@@ -64,67 +64,8 @@ export default function DashboardLayout({
           ========================= */}
 
           <div className="flex flex-1 items-center">
-
-            <button
-              type="button"
-              className="
-                group
-
-                flex h-9 w-full max-w-[360px]
-                items-center gap-2.5
-
-                rounded-xl
-
-                border border-white/[0.07]
-
-                bg-white/[0.035]
-
-                px-3
-
-                text-left
-
-                transition-all duration-200
-
-                hover:border-white/[0.12]
-                hover:bg-white/[0.055]
-              "
-            >
-              <Search
-                size={15}
-                className="
-                  shrink-0
-                  text-zinc-500
-
-                  transition-colors
-
-                  group-hover:text-zinc-300
-                "
-              />
-
-              <span className="flex-1 text-sm text-zinc-500">
-                Search infrastructure...
-              </span>
-
-              <div
-                className="
-                  flex items-center gap-1
-
-                  rounded-md
-
-                  border border-white/[0.07]
-                  bg-white/[0.04]
-
-                  px-1.5 py-1
-
-                  text-[10px]
-                  text-zinc-500
-                "
-              >
-                <Command size={10} />
-
-                K
-              </div>
-            </button>
+            
+            <InfrastructureSearch />
 
           </div>
 
