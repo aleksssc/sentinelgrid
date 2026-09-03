@@ -3,37 +3,32 @@
   <Package
     Name="SentinelGrid Agent"
     Manufacturer="SentinelGrid"
-    Version="0.1.1"
+    Version="0.1.2"
     UpgradeCode="B632A689-8C9E-4E77-BF7C-5E9C4A012901"
     Scope="perMachine">
+
+    <!-- =========================
+         UPGRADE
+    ========================= -->
 
     <MajorUpgrade
       DowngradeErrorMessage="A newer version of SentinelGrid Agent is already installed."
     />
 
-    <MediaTemplate EmbedCab="yes" />
-
     <!-- =========================
-         PROPERTIES
+         EMBED FILES
     ========================= -->
 
-    <Property
-      Id="ENROLLMENT_TOKEN"
-      Secure="yes"
-      Hidden="yes"
-    />
-
-    <Property
-      Id="SENTINELGRID_SERVER"
-      Value="https://sentinelgrid-one.vercel.app"
-      Secure="yes"
+    <MediaTemplate
+      EmbedCab="yes"
     />
 
     <!-- =========================
          FILES + SERVICE
     ========================= -->
 
-    <StandardDirectory Id="ProgramFiles6432Folder">
+    <StandardDirectory
+      Id="ProgramFiles6432Folder">
 
       <Directory
         Id="INSTALLFOLDER"
@@ -76,16 +71,26 @@
     </StandardDirectory>
 
     <!-- =========================
-         ENROLLMENT CUSTOM ACTION
+         PREPARE ENROLLMENT
+
+         Pass the original MSI path
+         to the deferred action.
+
+         Example:
+         SentinelGridAgent__SG-ENROLL-xxxx.msi
     ========================= -->
 
     <SetProperty
       Id="EnrollSentinelGridAgent"
-      Value='-server "[SENTINELGRID_SERVER]" -token "[ENROLLMENT_TOKEN]"'
+      Value='-server "https://sentinelgrid-one.vercel.app" -installer "[OriginalDatabase]"'
       Before="EnrollSentinelGridAgent"
       Sequence="execute"
-      Condition="NOT Installed AND ENROLLMENT_TOKEN"
+      Condition="NOT Installed"
     />
+
+    <!-- =========================
+         ENROLL AGENT
+    ========================= -->
 
     <CustomAction
       Id="EnrollSentinelGridAgent"
@@ -102,7 +107,7 @@
       <Custom
         Action="EnrollSentinelGridAgent"
         After="InstallFiles"
-        Condition="NOT Installed AND ENROLLMENT_TOKEN"
+        Condition="NOT Installed"
       />
 
     </InstallExecuteSequence>
