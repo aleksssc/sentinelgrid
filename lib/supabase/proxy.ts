@@ -3,13 +3,51 @@ import { NextResponse, type NextRequest } from "next/server";
 import { hasEnvVars } from "../utils";
 
 export async function updateSession(request: NextRequest) {
+  // =========================================
+  // PATH
+  // =========================================
+
+  const pathname = request.nextUrl.pathname;
+
+  // =========================================
+  // AGENT / REALTIME API BYPASS
+  //
+  // Estas routes fazem a própria autenticação
+  // através do Agent Token.
+  //
+  // Muito importante para WebSocket:
+  // /api/realtime/* não pode ser redirecionado
+  // para /auth/login.
+  // =========================================
+
+  if (
+    pathname.startsWith("/api/agent/") ||
+    pathname.startsWith("/api/realtime/")
+  ) {
+    return NextResponse.next({
+      request,
+    });
+  }
+
+  // =========================================
+  // SUPABASE RESPONSE
+  // =========================================
+
   let supabaseResponse = NextResponse.next({
     request,
   });
 
+  // =========================================
+  // ENV CHECK
+  // =========================================
+
   if (!hasEnvVars) {
     return supabaseResponse;
   }
+
+  // =========================================
+  // SUPABASE
+  // =========================================
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,29 +59,54 @@ export async function updateSession(request: NextRequest) {
         },
 
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
+          cookiesToSet.forEach(
+            ({
+              name,
+              value,
+            }) =>
+              request.cookies.set(
+                name,
+                value,
+              ),
           );
 
-          supabaseResponse = NextResponse.next({
-            request,
-          });
+          supabaseResponse =
+            NextResponse.next({
+              request,
+            });
 
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options),
+          cookiesToSet.forEach(
+            ({
+              name,
+              value,
+              options,
+            }) =>
+              supabaseResponse.cookies.set(
+                name,
+                value,
+                options,
+              ),
           );
         },
       },
     },
   );
 
-  const { data } = await supabase.auth.getClaims();
+  // =========================================
+  // AUTH
+  // =========================================
 
-  const user = data?.claims;
+  const {
+    data,
+  } =
+    await supabase.auth.getClaims();
 
-  /* =========================================
-     PUBLIC ROUTES
-  ========================================= */
+  const user =
+    data?.claims;
+
+  // =========================================
+  // PUBLIC ROUTES
+  // =========================================
 
   const publicRoutes = [
     "/",
@@ -54,26 +117,41 @@ export async function updateSession(request: NextRequest) {
     "/contact",
   ];
 
-  const pathname = request.nextUrl.pathname;
+  const isPublicRoute =
+    publicRoutes.some(
+      (route) =>
+        pathname === route ||
+        (
+          route !== "/" &&
+          pathname.startsWith(
+            `${route}/`,
+          )
+        ),
+    );
 
-  const isPublicRoute = publicRoutes.some(
-    (route) =>
-      pathname === route ||
-      (route !== "/" && pathname.startsWith(`${route}/`))
-  );
+  const isAuthRoute =
+    pathname.startsWith(
+      "/auth",
+    );
 
-  const isAuthRoute = pathname.startsWith("/auth");
+  // =========================================
+  // PROTECTED ROUTES
+  // =========================================
 
-  /* =========================================
-     PROTECTED ROUTES
-  ========================================= */
+  if (
+    !user &&
+    !isPublicRoute &&
+    !isAuthRoute
+  ) {
+    const url =
+      request.nextUrl.clone();
 
-  if (!user && !isPublicRoute && !isAuthRoute) {
-    const url = request.nextUrl.clone();
+    url.pathname =
+      "/auth/login";
 
-    url.pathname = "/auth/login";
-
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(
+      url,
+    );
   }
 
   return supabaseResponse;
