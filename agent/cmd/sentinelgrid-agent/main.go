@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -15,6 +16,7 @@ import (
 	"sentinelgrid/agent/internal/config"
 	"sentinelgrid/agent/internal/inventory"
 	"sentinelgrid/agent/internal/metrics"
+	"sentinelgrid/agent/internal/realtime"
 )
 
 /* =========================
@@ -76,6 +78,22 @@ func (p *program) run() {
 		"SentinelGrid Agent %s service started.",
 		version,
 	)
+
+	/* =========================
+		REALTIME
+	========================= */
+
+		realtimeContext,
+			cancelRealtime :=
+			context.WithCancel(
+				context.Background(),
+			)
+
+		defer cancelRealtime()
+
+		go realtime.Run(
+			realtimeContext,
+		)
 
 	/* =========================
 	   LOAD CONFIG
