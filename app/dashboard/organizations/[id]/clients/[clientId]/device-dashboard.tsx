@@ -11,6 +11,10 @@ import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/client";
 
+import DeviceTerminal, {
+  type TerminalShell,
+} from "@/components/dashboard/devices/device-terminal";
+
 import {
   Activity,
   Check,
@@ -176,7 +180,11 @@ export default function DeviceDashboard({
     useRouter();
 
   const supabase =
-    createClient();
+    useMemo(
+      () =>
+        createClient(),
+      []
+    );
 
   /* =========================
      DEVICES
@@ -323,6 +331,24 @@ export default function DeviceDashboard({
     setActionMessage,
   ] =
     useState("");
+
+  /* =========================
+     REMOTE TERMINAL
+  ========================= */
+
+  const [
+    terminalOpen,
+    setTerminalOpen,
+  ] =
+    useState(false);
+
+  const [
+    terminalShell,
+    setTerminalShell,
+  ] =
+    useState<TerminalShell>(
+      "powershell"
+    );
 
   /* =========================
      DELETE
@@ -527,6 +553,8 @@ export default function DeviceDashboard({
   ========================= */
 
   function closeDevice() {
+    closeRemoteTerminal();
+
     setDrawerOpen(
       false
     );
@@ -540,6 +568,35 @@ export default function DeviceDashboard({
         setActionMessage("");
       },
       280
+    );
+  }
+
+  /* =========================
+     TERMINAL
+  ========================= */
+
+  function openRemoteTerminal(
+    shell: TerminalShell
+  ) {
+    if (
+      !canManage ||
+      !selectedDevice
+    ) {
+      return;
+    }
+
+    setTerminalShell(
+      shell
+    );
+
+    setTerminalOpen(
+      true
+    );
+  }
+
+  function closeRemoteTerminal() {
+    setTerminalOpen(
+      false
     );
   }
 
@@ -1459,8 +1516,8 @@ export default function DeviceDashboard({
                       }
                       label="PowerShell"
                       onClick={() =>
-                        runAction(
-                          "PowerShell"
+                        openRemoteTerminal(
+                          "powershell"
                         )
                       }
                     />
@@ -1473,8 +1530,8 @@ export default function DeviceDashboard({
                       }
                       label="CMD"
                       onClick={() =>
-                        runAction(
-                          "CMD"
+                        openRemoteTerminal(
+                          "cmd"
                         )
                       }
                     />
@@ -1965,6 +2022,28 @@ export default function DeviceDashboard({
 
         </>
       )}
+
+      {/* =========================
+          REMOTE TERMINAL
+      ========================= */}
+
+      <DeviceTerminal
+        open={
+          terminalOpen
+        }
+        initialShell={
+          terminalShell
+        }
+        device={
+          selectedDevice
+        }
+        canManage={
+          canManage
+        }
+        onClose={
+          closeRemoteTerminal
+        }
+      />
 
       {/* =========================
           DELETE MODAL
