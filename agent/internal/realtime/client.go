@@ -1,12 +1,16 @@
 package realtime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
+	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -14,26 +18,154 @@ import (
 	"sentinelgrid/agent/internal/config"
 )
 
-const reconnectDelay = 5 * time.Second
-const pingInterval = 20 * time.Second
+/* =========================================
+   CONSTANTS
+========================================= */
+
+const (
+	reconnectDelay = 5 * time.Second
+	pingInterval   = 20 * time.Second
+
+	commandTimeout = 5 * time.Minute
+
+	maxCommandOutput = 256 * 1024
+)
+
+/* =========================================
+   AUTH MESSAGE
+========================================= */
 
 type authMessage struct {
-	Type       string `json:"type"`
+	Type string `json:"type"`
+
 	AgentToken string `json:"agent_token"`
-	DeviceID   string `json:"device_id"`
-	AgentID    string `json:"agent_id"`
+
+	DeviceID string `json:"device_id"`
+
+	AgentID string `json:"agent_id"`
 }
+
+/* =========================================
+   PING
+========================================= */
 
 type pingMessage struct {
 	Type string `json:"type"`
 }
 
+/* =========================================
+   SERVER MESSAGE
+========================================= */
+
 type serverMessage struct {
-	Type       string `json:"type"`
-	DeviceID   string `json:"device_id,omitempty"`
-	Hostname   string `json:"hostname,omitempty"`
+	Type string `json:"type"`
+
+	DeviceID string `json:"device_id,omitempty"`
+
+	Hostname string `json:"hostname,omitempty"`
+
 	ServerTime string `json:"server_time,omitempty"`
+
+	CommandID string `json:"command_id,omitempty"`
+
+	SessionID string `json:"session_id,omitempty"`
+
+	Shell string `json:"shell,omitempty"`
+
+	Command string `json:"command,omitempty"`
 }
+
+/* =========================================
+   COMMAND RESULT
+========================================= */
+
+type commandResultMessage struct {
+	Type string `json:"type"`
+
+	CommandID string `json:"command_id"`
+
+	SessionID string `json:"session_id"`
+
+	Stdout string `json:"stdout"`
+
+	Stderr string `json:"stderr"`
+
+	ExitCode int `json:"exit_code"`
+}
+
+/* =========================================
+   LIMITED BUFFER
+========================================= */
+
+type limitedBuffer struct {
+	buffer bytes.Buffer
+
+	limit int
+
+	truncated bool
+}
+
+func (b *limitedBuffer) Write(
+	data []byte,
+) (
+	int,
+	error,
+) {
+	originalLength :=
+		len(data)
+
+	remaining :=
+		b.limit -
+			b.buffer.Len()
+
+	if remaining <= 0 {
+		b.truncated =
+			true
+
+		return originalLength,
+			nil
+	}
+
+	if len(data) >
+		remaining {
+		_,
+			_ =
+			b.buffer.Write(
+				data[:remaining],
+			)
+
+		b.truncated =
+			true
+
+		return originalLength,
+			nil
+	}
+
+	_,
+		_ =
+		b.buffer.Write(
+			data,
+		)
+
+	return originalLength,
+		nil
+}
+
+func (b *limitedBuffer) String() string {
+	value :=
+		b.buffer.String()
+
+	if b.truncated {
+		value +=
+			"\r\n[SentinelGrid: output truncated]"
+	}
+
+	return value
+}
+
+/* =========================================
+   RUN
+========================================= */
 
 func Run(
 	ctx context.Context,
@@ -54,7 +186,8 @@ func Run(
 		default:
 		}
 
-		cfg, err :=
+		cfg,
+			err :=
 			config.Load()
 
 		if err != nil {
@@ -91,17 +224,22 @@ func Run(
 	}
 }
 
+/* =========================================
+   CONNECT
+========================================= */
+
 func connect(
 	ctx context.Context,
 	cfg *config.Config,
 ) error {
 	if cfg == nil {
 		return fmt.Errorf(
-			"agent configuration is missing",
+			"Agent configuration is missing",
 		)
 	}
 
-	socketURL, err :=
+	socketURL,
+		err :=
 		buildWebSocketURL(
 			cfg.Server,
 		)
@@ -117,11 +255,10 @@ func connect(
 
 	dialer :=
 		websocket.Dialer{
-			HandshakeTimeout:
-				15 * time.Second,
+			HandshakeTimeout: 15 *
+				time.Second,
 
-			EnableCompression:
-				true,
+			EnableCompression: true,
 		}
 
 	conn,
@@ -146,22 +283,33 @@ func connect(
 		"Realtime connected.",
 	)
 
+	/*
+		Gorilla WebSocket only permits
+		one concurrent writer.
+	*/
+
+	var writeMu sync.Mutex
+
+	/* =====================================
+	   AUTH
+	===================================== */
+
+	writeMu.Lock()
+
 	err =
 		conn.WriteJSON(
 			authMessage{
-				Type:
-					"agent_auth",
+				Type: "agent_auth",
 
-				AgentToken:
-					cfg.AgentToken,
+				AgentToken: cfg.AgentToken,
 
-				DeviceID:
-					cfg.DeviceID,
+				DeviceID: cfg.DeviceID,
 
-				AgentID:
-					cfg.AgentID,
+				AgentID: cfg.AgentID,
 			},
 		)
+
+	writeMu.Unlock()
 
 	if err != nil {
 		return fmt.Errorf(
@@ -169,6 +317,10 @@ func connect(
 			err,
 		)
 	}
+
+	/* =====================================
+	   AUTH RESPONSE
+	===================================== */
 
 	_,
 		raw,
@@ -211,6 +363,10 @@ func connect(
 		response.Hostname,
 	)
 
+	/* =====================================
+	   CONNECTION
+	===================================== */
+
 	errChannel :=
 		make(
 			chan error,
@@ -218,10 +374,11 @@ func connect(
 		)
 
 	go func() {
-		errChannel <-
-			readLoop(
-				conn,
-			)
+		errChannel <- readLoop(
+			ctx,
+			conn,
+			&writeMu,
+		)
 	}()
 
 	ticker :=
@@ -234,6 +391,8 @@ func connect(
 	for {
 		select {
 		case <-ctx.Done():
+			writeMu.Lock()
+
 			_ =
 				conn.WriteMessage(
 					websocket.CloseMessage,
@@ -243,6 +402,8 @@ func connect(
 					),
 				)
 
+			writeMu.Unlock()
+
 			return nil
 
 		case err :=
@@ -251,13 +412,16 @@ func connect(
 			return err
 
 		case <-ticker.C:
+			writeMu.Lock()
+
 			err :=
 				conn.WriteJSON(
 					pingMessage{
-						Type:
-							"ping",
+						Type: "ping",
 					},
 				)
+
+			writeMu.Unlock()
 
 			if err != nil {
 				return fmt.Errorf(
@@ -269,8 +433,14 @@ func connect(
 	}
 }
 
+/* =========================================
+   READ LOOP
+========================================= */
+
 func readLoop(
+	ctx context.Context,
 	conn *websocket.Conn,
+	writeMu *sync.Mutex,
 ) error {
 	for {
 		_,
@@ -303,7 +473,43 @@ func readLoop(
 		}
 
 		switch message.Type {
+
+		/* =================================
+		   PONG
+		================================= */
+
 		case "pong":
+			// Connection alive.
+
+		/* =================================
+		   COMMAND
+		================================= */
+
+		case "command":
+			if message.CommandID == "" ||
+				message.SessionID == "" {
+				log.Println(
+					"Realtime command rejected: missing command/session ID.",
+				)
+
+				continue
+			}
+
+			/*
+				Execute outside the reader loop so
+				pings and new messages continue.
+			*/
+
+			go handleCommand(
+				ctx,
+				conn,
+				writeMu,
+				message,
+			)
+
+		/* =================================
+		   OTHER
+		================================= */
 
 		default:
 			log.Printf(
@@ -313,6 +519,243 @@ func readLoop(
 		}
 	}
 }
+
+/* =========================================
+   HANDLE COMMAND
+========================================= */
+
+func handleCommand(
+	parentContext context.Context,
+	conn *websocket.Conn,
+	writeMu *sync.Mutex,
+	message serverMessage,
+) {
+	log.Printf(
+		"Remote command received. ID: %s | Shell: %s",
+		message.CommandID,
+		message.Shell,
+	)
+
+	stdout,
+		stderr,
+		exitCode :=
+		executeCommand(
+			parentContext,
+			message.Shell,
+			message.Command,
+		)
+
+	result :=
+		commandResultMessage{
+			Type: "command_result",
+
+			CommandID: message.CommandID,
+
+			SessionID: message.SessionID,
+
+			Stdout: stdout,
+
+			Stderr: stderr,
+
+			ExitCode: exitCode,
+		}
+
+	writeMu.Lock()
+
+	err :=
+		conn.WriteJSON(
+			result,
+		)
+
+	writeMu.Unlock()
+
+	if err != nil {
+		log.Printf(
+			"Could not send command result. ID: %s | Error: %v",
+			message.CommandID,
+			err,
+		)
+
+		return
+	}
+
+	log.Printf(
+		"Remote command completed. ID: %s | Exit code: %d",
+		message.CommandID,
+		exitCode,
+	)
+}
+
+/* =========================================
+   EXECUTE COMMAND
+========================================= */
+
+func executeCommand(
+	parentContext context.Context,
+	shell string,
+	command string,
+) (
+	string,
+	string,
+	int,
+) {
+	shell =
+		strings.ToLower(
+			strings.TrimSpace(
+				shell,
+			),
+		)
+
+	command =
+		strings.TrimSpace(
+			command,
+		)
+
+	if command == "" {
+		return "",
+			"Command is empty.",
+			126
+	}
+
+	commandContext,
+		cancel :=
+		context.WithTimeout(
+			parentContext,
+			commandTimeout,
+		)
+
+	defer cancel()
+
+	var cmd *exec.Cmd
+
+	switch shell {
+
+	/* =====================================
+	   CMD
+	===================================== */
+
+	case "cmd":
+		cmd =
+			exec.CommandContext(
+				commandContext,
+				"cmd.exe",
+				"/D",
+				"/S",
+				"/C",
+				command,
+			)
+
+	/* =====================================
+	   POWERSHELL
+	===================================== */
+
+	case "powershell":
+		cmd =
+			exec.CommandContext(
+				commandContext,
+				"powershell.exe",
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-Command",
+				command,
+			)
+
+	default:
+		return "",
+			"Unsupported shell. Use cmd or powershell.",
+			126
+	}
+
+	/* =====================================
+	   OUTPUT
+	===================================== */
+
+	stdoutBuffer :=
+		&limitedBuffer{
+			limit: maxCommandOutput,
+		}
+
+	stderrBuffer :=
+		&limitedBuffer{
+			limit: maxCommandOutput,
+		}
+
+	cmd.Stdout =
+		stdoutBuffer
+
+	cmd.Stderr =
+		stderrBuffer
+
+	/* =====================================
+	   EXECUTE
+	===================================== */
+
+	err :=
+		cmd.Run()
+
+	stdout :=
+		strings.TrimRight(
+			stdoutBuffer.String(),
+			"\r\n",
+		)
+
+	stderr :=
+		strings.TrimRight(
+			stderrBuffer.String(),
+			"\r\n",
+		)
+
+	if errors.Is(
+		commandContext.Err(),
+		context.DeadlineExceeded,
+	) {
+		if stderr != "" {
+			stderr +=
+				"\r\n"
+		}
+
+		stderr +=
+			"SentinelGrid: command timed out after 5 minutes."
+
+		return stdout,
+			stderr,
+			124
+	}
+
+	if err == nil {
+		return stdout,
+			stderr,
+			0
+	}
+
+	var exitError *exec.ExitError
+
+	if errors.As(
+		err,
+		&exitError,
+	) {
+		return stdout,
+			stderr,
+			exitError.ExitCode()
+	}
+
+	if stderr != "" {
+		stderr +=
+			"\r\n"
+	}
+
+	stderr +=
+		err.Error()
+
+	return stdout,
+		stderr,
+		1
+}
+
+/* =========================================
+   WEBSOCKET URL
+========================================= */
 
 func buildWebSocketURL(
 	server string,
@@ -384,6 +827,10 @@ func buildWebSocketURL(
 	return parsedURL.String(),
 		nil
 }
+
+/* =========================================
+   WAIT
+========================================= */
 
 func wait(
 	ctx context.Context,

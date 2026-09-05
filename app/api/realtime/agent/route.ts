@@ -3,13 +3,29 @@ import {
   type WebSocketData,
 } from "@vercel/functions";
 
-import { createHash } from "crypto";
 import { connection } from "next/server";
+
+import {
+  createHash,
+  randomUUID,
+} from "crypto";
+
 import { createClient } from "@supabase/supabase-js";
 
-// ======================================================
-// TYPES
-// ======================================================
+import { getRedis } from "@/lib/realtime/redis";
+
+import {
+  agentCommandChannel,
+  agentPresenceKey,
+  browserResultChannel,
+  publishRealtimeMessage,
+  subscribeRealtimeChannel,
+  type RealtimeSubscription,
+} from "@/lib/realtime/pubsub";
+
+/* =========================================
+   TYPES
+========================================= */
 
 type AgentMessage = {
   type?: string;
@@ -19,80 +35,104 @@ type AgentMessage = {
   device_id?: string;
 
   agent_id?: string;
+
+  command_id?: string;
+
+  session_id?: string;
+
+  stdout?: string;
+
+  stderr?: string;
+
+  exit_code?: number;
 };
 
-// ======================================================
-// SUPABASE ADMIN
-// ======================================================
+type RemoteCommand = {
+  type: "command";
+
+  command_id: string;
+
+  session_id: string;
+
+  shell:
+    | "cmd"
+    | "powershell";
+
+  command: string;
+};
+
+/* =========================================
+   SUPABASE ADMIN
+========================================= */
 
 function createAdminClient() {
-  const supabaseUrl =
+  const url =
     process.env.NEXT_PUBLIC_SUPABASE_URL;
 
-  const serviceRoleKey =
+  const serviceRole =
     process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (
-    !supabaseUrl ||
-    !serviceRoleKey
-  ) {
+  if (!url) {
     throw new Error(
-      "Missing Supabase server environment variables."
+      "NEXT_PUBLIC_SUPABASE_URL is missing.",
+    );
+  }
+
+  if (!serviceRole) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY is missing.",
     );
   }
 
   return createClient(
-    supabaseUrl,
-    serviceRoleKey,
+    url,
+    serviceRole,
     {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
       },
-    }
+    },
   );
 }
 
-// ======================================================
-// WEBSOCKET ROUTE
-// ======================================================
+/* =========================================
+   ROUTE
+========================================= */
 
 export async function GET() {
   await connection();
 
   return experimental_upgradeWebSocket(
     (ws) => {
-      // ==================================================
-      // CONNECTION STATE
-      // ==================================================
-
       let authenticated =
         false;
 
       let authenticating =
         false;
 
-      let deviceId:
-        | string
+      let deviceId =
+        "";
+
+      let hostname =
+        "";
+
+      const connectionId =
+        randomUUID();
+
+      let subscription:
+        RealtimeSubscription
         | null = null;
 
-      let hostname:
-        | string
+      let presenceTimer:
+        ReturnType<typeof setInterval>
         | null = null;
 
-      // ==================================================
-      // CONNECTED
-      // ==================================================
+      /* =====================================
+         AUTH TIMEOUT
+      ===================================== */
 
-      console.log(
-        "[Realtime] New Agent connection."
-      );
-
-      // ==================================================
-      // AUTH TIMEOUT
-      // ==================================================
-
-      const authenticationTimeout =
+      const authTimer =
         setTimeout(
           () => {
             if (
@@ -101,76 +141,123 @@ export async function GET() {
               return;
             }
 
-            console.warn(
-              "[Realtime] Authentication timeout."
-            );
-
-            ws.close(
-              4401,
-              "Authentication required"
-            );
+            try {
+              ws.close(
+                4401,
+                "Authentication timeout",
+              );
+            } catch {
+              // Ignore.
+            }
           },
-          10_000
+          10_000,
         );
 
-      // ==================================================
-      // MESSAGE
-      // ==================================================
+      /* =====================================
+         PRESENCE
+      ===================================== */
+
+      async function refreshPresence() {
+        if (
+          !authenticated ||
+          !deviceId
+        ) {
+          return;
+        }
+
+        try {
+          const redis =
+            getRedis();
+
+          await redis.set(
+            agentPresenceKey(
+              deviceId,
+            ),
+            connectionId,
+            {
+              ex: 45,
+            },
+          );
+        } catch (error) {
+          console.error(
+            "[Realtime Agent] Presence update failed:",
+            error,
+          );
+        }
+      }
+
+      /* =====================================
+         CLEANUP
+      ===================================== */
+
+      function cleanup() {
+        clearTimeout(
+          authTimer,
+        );
+
+        if (
+          presenceTimer
+        ) {
+          clearInterval(
+            presenceTimer,
+          );
+
+          presenceTimer =
+            null;
+        }
+
+        if (
+          subscription
+        ) {
+          subscription.abort();
+
+          subscription =
+            null;
+        }
+      }
+
+      /* =====================================
+         MESSAGE
+      ===================================== */
 
       ws.on(
         "message",
         async (
-          data: WebSocketData
+          data: WebSocketData,
         ) => {
           try {
-            // ============================================
-            // PARSE MESSAGE
-            // ============================================
-
             const raw =
               data.toString();
 
             const message =
               JSON.parse(
-                raw
+                raw,
               ) as AgentMessage;
 
-            // ============================================
-            // AGENT NOT AUTHENTICATED
-            // ============================================
+            /* =================================
+               AUTHENTICATION
+            ================================= */
 
             if (
               !authenticated
             ) {
-              // Prevent simultaneous auth requests.
-
               if (
                 authenticating
               ) {
                 return;
               }
 
-              // First message MUST be agent_auth.
-
               if (
                 message.type !==
                 "agent_auth"
               ) {
-                console.warn(
-                  "[Realtime] First message was not agent_auth."
-                );
-
                 ws.close(
                   4401,
-                  "Authentication required"
+                  "Authentication required",
                 );
 
                 return;
               }
-
-              // ==========================================
-              // TOKEN
-              // ==========================================
 
               const agentToken =
                 typeof message.agent_token ===
@@ -181,13 +268,9 @@ export async function GET() {
               if (
                 !agentToken
               ) {
-                console.warn(
-                  "[Realtime] Missing Agent token."
-                );
-
                 ws.close(
                   4401,
-                  "Missing agent token"
+                  "Missing Agent token",
                 );
 
                 return;
@@ -196,154 +279,91 @@ export async function GET() {
               authenticating =
                 true;
 
-              // ==========================================
-              // HASH TOKEN
-              //
-              // Same concept used by the Agent API:
-              // raw AgentToken never needs to be stored.
-              // ==========================================
-
-              const agentTokenHash =
+              const tokenHash =
                 createHash(
-                  "sha256"
+                  "sha256",
                 )
                   .update(
-                    agentToken
+                    agentToken,
                   )
                   .digest(
-                    "hex"
+                    "hex",
                   );
-
-              // ==========================================
-              // SUPABASE
-              // ==========================================
 
               const supabase =
                 createAdminClient();
 
-              // ==========================================
-              // FIND DEVICE
-              // ==========================================
-
               const {
-                data:
-                  device,
-
-                error:
-                  deviceError,
+                data: device,
+                error,
               } =
                 await supabase
                   .from(
-                    "devices"
+                    "devices",
                   )
-                  .select(`
-                    id,
-                    hostname,
-                    agent_id
-                  `)
+                  .select(
+                    "id, hostname, agent_id",
+                  )
                   .eq(
                     "agent_token_hash",
-                    agentTokenHash
+                    tokenHash,
                   )
                   .maybeSingle();
 
-              // ==========================================
-              // DATABASE ERROR
-              // ==========================================
-
               if (
-                deviceError
-              ) {
-                console.error(
-                  "[Realtime] Device lookup error:",
-                  deviceError
-                );
-
-                ws.close(
-                  4500,
-                  "Device validation failed"
-                );
-
-                return;
-              }
-
-              // ==========================================
-              // INVALID TOKEN
-              // ==========================================
-
-              if (
+                error ||
                 !device
               ) {
-                console.warn(
-                  "[Realtime] Invalid Agent token."
+                console.error(
+                  "[Realtime Agent] Authentication failed:",
+                  error,
                 );
 
                 ws.close(
                   4401,
-                  "Invalid Agent token"
+                  "Invalid Agent token",
                 );
 
                 return;
               }
 
-              // ==========================================
-              // DEVICE ID VALIDATION
-              // ==========================================
-
-              const claimedDeviceId =
-                typeof message.device_id ===
-                "string"
-                  ? message.device_id.trim()
-                  : "";
+              /* DEVICE CHECK */
 
               if (
-                claimedDeviceId &&
-                claimedDeviceId !==
+                message.device_id &&
+                message.device_id !==
                   device.id
               ) {
-                console.warn(
-                  "[Realtime] Device ID mismatch."
-                );
-
                 ws.close(
                   4403,
-                  "Device mismatch"
+                  "Device mismatch",
                 );
 
                 return;
               }
 
-              // ==========================================
-              // AGENT ID VALIDATION
-              // ==========================================
-
-              const claimedAgentId =
-                typeof message.agent_id ===
-                "string"
-                  ? message.agent_id.trim()
-                  : "";
+              /* AGENT CHECK */
 
               if (
-                claimedAgentId &&
+                message.agent_id &&
                 device.agent_id &&
-                claimedAgentId !==
+                message.agent_id !==
                   device.agent_id
               ) {
-                console.warn(
-                  "[Realtime] Agent ID mismatch."
-                );
-
                 ws.close(
                   4403,
-                  "Agent mismatch"
+                  "Agent mismatch",
                 );
 
                 return;
               }
 
-              // ==========================================
-              // AUTHENTICATED
-              // ==========================================
+              deviceId =
+                device.id;
+
+              hostname =
+                device.hostname ??
+                device.id;
 
               authenticated =
                 true;
@@ -351,26 +371,87 @@ export async function GET() {
               authenticating =
                 false;
 
-              deviceId =
-                device.id;
-
-              hostname =
-                device.hostname;
-
               clearTimeout(
-                authenticationTimeout
+                authTimer,
               );
 
-              console.log(
-                `[Realtime] Agent authenticated: ${
-                  hostname ||
-                  deviceId
-                }`
+              /* =============================
+                 PRESENCE
+              ============================= */
+
+              await refreshPresence();
+
+              presenceTimer =
+                setInterval(
+                  () => {
+                    void refreshPresence();
+                  },
+                  15_000,
+                );
+
+              /* =============================
+                 SUBSCRIBE COMMAND CHANNEL
+              ============================= */
+
+              subscription =
+                subscribeRealtimeChannel<RemoteCommand>(
+                  agentCommandChannel(
+                    deviceId,
+                  ),
+                  async (
+                    command,
+                  ) => {
+                    if (
+                      command.type !==
+                      "command"
+                    ) {
+                      return;
+                    }
+
+                    try {
+                      ws.send(
+                        JSON.stringify(
+                          command,
+                        ),
+                      );
+
+                      console.log(
+                        `[Realtime Agent] Command forwarded to ${hostname}: ${command.command_id}`,
+                      );
+                    } catch (
+                      error
+                    ) {
+                      console.error(
+                        "[Realtime Agent] Could not send command:",
+                        error,
+                      );
+                    }
+                  },
+                );
+
+              void subscription.done.catch(
+                (
+                  error,
+                ) => {
+                  console.error(
+                    `[Realtime Agent] Redis subscription failed for ${deviceId}:`,
+                    error,
+                  );
+
+                  try {
+                    ws.close(
+                      1011,
+                      "Realtime broker unavailable",
+                    );
+                  } catch {
+                    // Ignore.
+                  }
+                },
               );
 
-              // ==========================================
-              // AUTH RESPONSE
-              // ==========================================
+              /* =============================
+                 AUTH RESPONSE
+              ============================= */
 
               ws.send(
                 JSON.stringify({
@@ -380,125 +461,173 @@ export async function GET() {
                   device_id:
                     deviceId,
 
-                  hostname:
-                    hostname,
+                  hostname,
 
                   server_time:
                     new Date()
                       .toISOString(),
-                })
+                }),
+              );
+
+              console.log(
+                `[Realtime Agent] Connected: ${hostname} | ${deviceId}`,
               );
 
               return;
             }
 
-            // ============================================
-            // AUTHENTICATED MESSAGES
-            // ============================================
+            /* =================================
+               KEEPALIVE
+            ================================= */
 
-            switch (
-              message.type
+            if (
+              message.type ===
+              "ping"
             ) {
-              // ==========================================
-              // KEEPALIVE
-              // ==========================================
+              await refreshPresence();
 
-              case "ping": {
-                ws.send(
-                  JSON.stringify({
-                    type:
-                      "pong",
+              ws.send(
+                JSON.stringify({
+                  type:
+                    "pong",
 
-                    device_id:
-                      deviceId,
+                  server_time:
+                    new Date()
+                      .toISOString(),
+                }),
+              );
 
-                    server_time:
-                      new Date()
-                        .toISOString(),
-                  })
-                );
-
-                break;
-              }
-
-              // ==========================================
-              // UNKNOWN MESSAGE
-              // ==========================================
-
-              default: {
-                console.log(
-                  `[Realtime] Message from ${
-                    hostname ||
-                    deviceId
-                  }:`,
-                  message.type
-                );
-
-                break;
-              }
+              return;
             }
+
+            /* =================================
+               COMMAND RESULT
+            ================================= */
+
+            if (
+              message.type ===
+              "command_result"
+            ) {
+              const commandId =
+                typeof message.command_id ===
+                "string"
+                  ? message.command_id.trim()
+                  : "";
+
+              const sessionId =
+                typeof message.session_id ===
+                "string"
+                  ? message.session_id.trim()
+                  : "";
+
+              if (
+                !commandId ||
+                !sessionId
+              ) {
+                console.warn(
+                  "[Realtime Agent] Invalid command result.",
+                );
+
+                return;
+              }
+
+              await publishRealtimeMessage(
+                browserResultChannel(
+                  sessionId,
+                ),
+                {
+                  type:
+                    "command_result",
+
+                  command_id:
+                    commandId,
+
+                  session_id:
+                    sessionId,
+
+                  device_id:
+                    deviceId,
+
+                  stdout:
+                    message.stdout ??
+                    "",
+
+                  stderr:
+                    message.stderr ??
+                    "",
+
+                  exit_code:
+                    typeof message.exit_code ===
+                    "number"
+                      ? message.exit_code
+                      : 1,
+
+                  completed_at:
+                    new Date()
+                      .toISOString(),
+                },
+              );
+
+              console.log(
+                `[Realtime Agent] Result published: ${hostname} | ${commandId}`,
+              );
+
+              return;
+            }
+
+            console.log(
+              `[Realtime Agent] Unknown message: ${message.type}`,
+            );
           } catch (error) {
             console.error(
-              "[Realtime] Message processing error:",
-              error
-            );
-
-            ws.send(
-              JSON.stringify({
-                type:
-                  "error",
-
-                message:
-                  "Invalid realtime message",
-              })
+              "[Realtime Agent] Message error:",
+              error,
             );
           }
-        }
+        },
       );
 
-      // ==================================================
-      // SOCKET CLOSED
-      // ==================================================
+      /* =====================================
+         CLOSE
+      ===================================== */
 
       ws.on(
         "close",
         (
           code,
-          reason
+          reason,
         ) => {
-          clearTimeout(
-            authenticationTimeout
-          );
+          cleanup();
 
           console.log(
-            `[Realtime] Agent disconnected: ${
+            `[Realtime Agent] Disconnected: ${
               hostname ||
               deviceId ||
               "unauthenticated"
-            } | code=${code} | reason=${reason.toString()}`
+            } | ${code} | ${reason.toString()}`,
           );
-        }
+        },
       );
 
-      // ==================================================
-      // SOCKET ERROR
-      // ==================================================
+      /* =====================================
+         ERROR
+      ===================================== */
 
       ws.on(
         "error",
         (
-          error
+          error,
         ) => {
           console.error(
-            `[Realtime] Socket error for ${
+            `[Realtime Agent] Socket error: ${
               hostname ||
               deviceId ||
               "unauthenticated"
-            }:`,
-            error
+            }`,
+            error,
           );
-        }
+        },
       );
-    }
+    },
   );
 }

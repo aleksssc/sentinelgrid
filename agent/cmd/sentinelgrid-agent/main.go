@@ -23,7 +23,7 @@ import (
    AGENT
 ========================= */
 
-const version = "0.1.2"
+const version = "0.1.3"
 
 const defaultServerURL =
 	"https://sentinelgrid-one.vercel.app"
