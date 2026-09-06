@@ -24,6 +24,7 @@ import {
   Cpu,
   ExternalLink,
   HardDrive,
+  Laptop,
   MapPin,
   MemoryStick,
   Monitor,
@@ -70,6 +71,12 @@ type Device = {
 
   arch:
     | string
+    | null;
+
+  device_type:
+    | "desktop"
+    | "laptop"
+    | "server"
     | null;
 
   manufacturer:
@@ -456,6 +463,11 @@ export default function DeviceDashboard({
                 query
               ) ||
             device.os
+              ?.toLowerCase()
+              .includes(
+                query
+              ) ||
+            device.device_type
               ?.toLowerCase()
               .includes(
                 query
@@ -1220,7 +1232,10 @@ export default function DeviceDashboard({
 
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-[#08090b] text-zinc-400">
 
-                        <Monitor
+                        <DeviceTypeIcon
+                          type={
+                            device.device_type
+                          }
                           size={18}
                         />
 
@@ -1353,7 +1368,10 @@ export default function DeviceDashboard({
 
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400">
 
-                    <Monitor
+                    <DeviceTypeIcon
+                      type={
+                        selectedDevice.device_type
+                      }
                       size={19}
                     />
 
@@ -1688,6 +1706,23 @@ export default function DeviceDashboard({
                   >
 
                     <div className="overflow-hidden rounded-xl border border-zinc-800">
+
+                      <InfoRow
+                        icon={
+                          <DeviceTypeIcon
+                            type={
+                              selectedDevice.device_type
+                            }
+                            size={15}
+                          />
+                        }
+                        label="Device type"
+                        value={
+                          formatDeviceType(
+                            selectedDevice.device_type
+                          )
+                        }
+                      />
 
                       <InfoRow
                         icon={
@@ -2907,5 +2942,71 @@ function formatArchitecture(
 
     default:
       return arch;
+  }
+}
+
+/* =========================
+   DEVICE TYPE
+========================= */
+
+function formatDeviceType(
+  type:
+    | "desktop"
+    | "laptop"
+    | "server"
+    | null
+) {
+  switch (type) {
+    case "server":
+      return "Server";
+
+    case "laptop":
+      return "Laptop";
+
+    case "desktop":
+      return "Desktop";
+
+    default:
+      return "Unknown";
+  }
+}
+
+/* =========================
+   DEVICE TYPE ICON
+========================= */
+
+function DeviceTypeIcon({
+  type,
+  size = 16,
+}: {
+  type:
+    | "desktop"
+    | "laptop"
+    | "server"
+    | null;
+
+  size?: number;
+}) {
+  switch (type) {
+    case "server":
+      return (
+        <Server
+          size={size}
+        />
+      );
+
+    case "laptop":
+      return (
+        <Laptop
+          size={size}
+        />
+      );
+
+    default:
+      return (
+        <Monitor
+          size={size}
+        />
+      );
   }
 }

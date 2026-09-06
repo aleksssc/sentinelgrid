@@ -26,6 +26,8 @@ type AgentInventory = {
 
   arch?: unknown;
 
+  device_type?: unknown;
+
   local_ip?: unknown;
 
   mac_address?: unknown;
@@ -354,6 +356,12 @@ export async function POST(
         updateData,
         "arch",
         inventory.arch
+      );
+
+      assignString(
+        updateData,
+        "device_type",
+        inventory.device_type
       );
 
       assignString(

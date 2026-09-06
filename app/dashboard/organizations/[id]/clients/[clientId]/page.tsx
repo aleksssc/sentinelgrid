@@ -207,6 +207,7 @@ export default async function ClientDetailsPage({
       os_version,
       os_build,
       arch,
+      device_type,
 
       manufacturer,
       model,

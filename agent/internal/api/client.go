@@ -100,6 +100,8 @@ type enrollRequest struct {
 	RAMTotalBytes uint64 `json:"ram_total_bytes"`
 
 	AgentVersion string `json:"agent_version"`
+
+	DeviceType string `json:"device_type"`
 }
 
 /* =========================
@@ -200,6 +202,9 @@ func (c *Client) Enroll(
 
 			Arch:
 				deviceInventory.Arch,
+
+			DeviceType:
+				deviceInventory.DeviceType,
 
 			LocalIP:
 				deviceInventory.LocalIP,

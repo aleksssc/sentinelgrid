@@ -23,6 +23,8 @@ type Inventory struct {
 
 	Arch string `json:"arch"`
 
+	DeviceType string `json:"device_type"`
+
 	LocalIP    string `json:"local_ip"`
 	MACAddress string `json:"mac_address"`
 
@@ -57,6 +59,8 @@ type windowsSystemInfo struct {
 	CPUName string `json:"CPUName"`
 
 	RAMTotalBytes uint64 `json:"RAMTotalBytes"`
+
+	DeviceType string `json:"DeviceType"`
 }
 
 /* =========================
@@ -183,6 +187,11 @@ func Collect(
 			systemInfo.OSBuild,
 		)
 
+	result.DeviceType =
+		strings.TrimSpace(
+			systemInfo.DeviceType,
+		)
+
 	result.Manufacturer =
 		strings.TrimSpace(
 			systemInfo.Manufacturer,
@@ -219,18 +228,58 @@ func collectWindowsSystemInfo() (
 	error,
 ) {
 
-	const script = `
+const script = `
 $ErrorActionPreference = "Stop"
 
 $os = Get-CimInstance Win32_OperatingSystem
 $computer = Get-CimInstance Win32_ComputerSystem
 $bios = Get-CimInstance Win32_BIOS
 $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+$enclosure = Get-CimInstance Win32_SystemEnclosure | Select-Object -First 1
+
+$deviceType = "desktop"
+
+# ProductType:
+# 1 = Workstation
+# 2 = Domain Controller
+# 3 = Server
+
+if ([int]$os.ProductType -ne 1) {
+
+    $deviceType = "server"
+
+}
+else {
+
+    $portableChassis = @(
+        8,   # Portable
+        9,   # Laptop
+        10,  # Notebook
+        14,  # Sub Notebook
+        30,  # Tablet
+        31,  # Convertible
+        32   # Detachable
+    )
+
+    foreach ($chassisType in @($enclosure.ChassisTypes)) {
+
+        if (
+            $portableChassis -contains
+            [int]$chassisType
+        ) {
+
+            $deviceType = "laptop"
+
+            break
+        }
+    }
+}
 
 [PSCustomObject]@{
     OS = [string]$os.Caption
     OSVersion = [string]$os.Version
     OSBuild = [string]$os.BuildNumber
+    DeviceType = [string]$deviceType
     Manufacturer = [string]$computer.Manufacturer
     Model = [string]$computer.Model
     SerialNumber = [string]$bios.SerialNumber
