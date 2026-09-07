@@ -11,6 +11,7 @@ import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createAuditLog } from "@/lib/audit/create-audit-log";
 import { SettingsNotice } from "@/components/organization/settings-notice";
 import { RemoveMemberButton } from "@/components/organization/remove-member-button";
 import { InviteMemberButton } from "@/components/organization/invite-member-button";
@@ -691,7 +692,7 @@ export default async function OrganizationSettingsPage({
     }
 
     /* =========================
-       CREATE INVITE
+      CREATE INVITE
     ========================= */
 
     const expiresAt =
@@ -705,6 +706,7 @@ export default async function OrganizationSettingsPage({
       ).toISOString();
 
     const {
+      data: createdInvite,
       error,
     } = await supabase
       .from(
@@ -731,9 +733,33 @@ export default async function OrganizationSettingsPage({
 
         expires_at:
           expiresAt,
-      });
+      })
+      .select("id")
+      .single();
 
     if (error) {
+      await createAuditLog({
+        organizationId,
+
+        action:
+          "member.invited",
+
+        targetType:
+          "invite",
+
+        targetName:
+          email,
+
+        status:
+          "failed",
+
+        metadata: {
+          role,
+          reason:
+            error.message,
+        },
+      });
+
       console.error(
         "Invite member error:",
         error
@@ -741,6 +767,33 @@ export default async function OrganizationSettingsPage({
 
       return;
     }
+
+    /* =========================
+      AUDIT LOG
+    ========================= */
+
+    await createAuditLog({
+      organizationId,
+
+      action:
+        "member.invited",
+
+      targetType:
+        "invite",
+
+      targetId:
+        createdInvite.id,
+
+      targetName:
+        email,
+
+      status:
+        "success",
+
+      metadata: {
+        role,
+      },
+    });
 
     revalidatePath(
       `/dashboard/organizations/${organizationId}/settings`
@@ -950,293 +1003,457 @@ export default async function OrganizationSettingsPage({
     );
   }
 
-  /* =========================================================
-                    REMOVE MEMBER
-  ========================================================== */
+/* =========================================================
+                  REMOVE MEMBER
+========================================================== */
 
-  async function removeMember(
-    formData: FormData
-  ) {
-    "use server";
+async function removeMember(
+  formData: FormData
+) {
+  "use server";
 
-    const supabase =
-      await createClient();
+  const supabase =
+    await createClient();
 
-    const {
-      data: { user },
-    } =
-      await supabase.auth.getUser();
+  const {
+    data: { user },
+  } =
+    await supabase.auth.getUser();
 
-    if (!user) {
-      redirect(
-        "/auth/login"
-      );
-    }
-
-    const organizationId =
-      String(
-        formData.get(
-          "organization_id"
-        ) || ""
-      );
-
-    const memberId =
-      String(
-        formData.get(
-          "member_id"
-        ) || ""
-      );
-
-    if (
-      !organizationId ||
-      !memberId
-    ) {
-      return;
-    }
-
-    /* =========================
-       CONFIRM OWNER
-    ========================= */
-
-    const {
-      data:
-        ownedOrganization,
-    } = await supabase
-      .from(
-        "organizations"
-      )
-      .select(`
-        id,
-        owner_id
-      `)
-      .eq(
-        "id",
-        organizationId
-      )
-      .eq(
-        "owner_id",
-        user.id
-      )
-      .maybeSingle();
-
-    if (
-      !ownedOrganization
-    ) {
-      return;
-    }
-
-    /* =========================
-       FIND MEMBER
-    ========================= */
-
-    const {
-      data:
-        member,
-    } = await supabase
-      .from(
-        "organization_members"
-      )
-      .select(`
-        id,
-        user_id
-      `)
-      .eq(
-        "id",
-        memberId
-      )
-      .eq(
-        "organization_id",
-        organizationId
-      )
-      .maybeSingle();
-
-    if (!member) {
-      return;
-    }
-
-    /*
-      OWNER NÃO PODE
-      SER REMOVIDO
-    */
-
-    if (
-      member.user_id ===
-      ownedOrganization
-        .owner_id
-    ) {
-      return;
-    }
-
-    /* =========================
-       DELETE MEMBERSHIP
-    ========================= */
-
-    const {
-      error,
-    } = await supabase
-      .from(
-        "organization_members"
-      )
-      .delete()
-      .eq(
-        "id",
-        member.id
-      )
-      .eq(
-        "organization_id",
-        organizationId
-      );
-
-    if (error) {
-      console.error(
-        "Remove member error:",
-        error
-      );
-
-      return;
-    }
-
-    revalidatePath(
-      `/dashboard/organizations/${organizationId}/settings`
-    );
-
-    revalidatePath(
-      `/dashboard/organizations/${organizationId}`
-    );
-
-    revalidatePath(
-      "/dashboard/organizations"
-    );
-
+  if (!user) {
     redirect(
-      `/dashboard/organizations/${organizationId}/settings?notice=member-removed`
+      "/auth/login"
     );
   }
 
-  /* =========================================================
-                  CANCEL PENDING INVITE
-  ========================================================== */
+  const organizationId =
+    String(
+      formData.get(
+        "organization_id"
+      ) || ""
+    );
 
-  async function cancelPendingInvite(
-    formData: FormData
+  const memberId =
+    String(
+      formData.get(
+        "member_id"
+      ) || ""
+    );
+
+  if (
+    !organizationId ||
+    !memberId
   ) {
-    "use server";
+    return;
+  }
 
-    const supabase =
-      await createClient();
+  /* =========================
+     CONFIRM OWNER
+  ========================= */
 
-    const {
-      data: { user },
-    } =
-      await supabase.auth.getUser();
+  const {
+    data:
+      ownedOrganization,
+  } = await supabase
+    .from(
+      "organizations"
+    )
+    .select(`
+      id,
+      owner_id
+    `)
+    .eq(
+      "id",
+      organizationId
+    )
+    .eq(
+      "owner_id",
+      user.id
+    )
+    .maybeSingle();
 
-    if (!user) {
-      redirect(
-        "/auth/login"
-      );
-    }
+  if (
+    !ownedOrganization
+  ) {
+    return;
+  }
 
-    const organizationId =
-      String(
-        formData.get(
-          "organization_id"
-        ) || ""
-      );
+  /* =========================
+     FIND MEMBER
+  ========================= */
 
-    const inviteId =
-      String(
-        formData.get(
-          "invite_id"
-        ) || ""
-      );
+  const {
+    data:
+      member,
+    error:
+      memberLookupError,
+  } = await supabase
+    .from(
+      "organization_members"
+    )
+    .select(`
+      id,
+      user_id,
+      role
+    `)
+    .eq(
+      "id",
+      memberId
+    )
+    .eq(
+      "organization_id",
+      organizationId
+    )
+    .maybeSingle();
 
-    if (
-      !organizationId ||
-      !inviteId
-    ) {
-      return;
-    }
-
-    /* =========================
-       CONFIRM OWNER
-    ========================= */
-
-    const {
-      data:
-        ownedOrganization,
-    } = await supabase
-      .from(
-        "organizations"
-      )
-      .select("id")
-      .eq(
-        "id",
-        organizationId
-      )
-      .eq(
-        "owner_id",
-        user.id
-      )
-      .maybeSingle();
-
-    if (
-      !ownedOrganization
-    ) {
-      return;
-    }
-
-    /*
-      APAGA APENAS
-      CONVITES AINDA PENDING.
-
-      Como as notificações
-      também são baseadas em
-      invites pending, desaparece
-      automaticamente do sino.
-    */
-
-    const {
-      error,
-    } = await supabase
-      .from(
-        "organization_invites"
-      )
-      .delete()
-      .eq(
-        "id",
-        inviteId
-      )
-      .eq(
-        "organization_id",
-        organizationId
-      )
-      .eq(
-        "status",
-        "pending"
-      );
-
-    if (error) {
-      console.error(
-        "Cancel invitation error:",
-        error
-      );
-
-      return;
-    }
-
-    revalidatePath(
-      `/dashboard/organizations/${organizationId}/settings`
+  if (
+    memberLookupError ||
+    !member
+  ) {
+    console.error(
+      "Member lookup error:",
+      memberLookupError
     );
 
-    revalidatePath(
-      "/dashboard",
-      "layout"
+    return;
+  }
+
+  /*
+    OWNER NÃO PODE
+    SER REMOVIDO
+  */
+
+  if (
+    member.user_id ===
+    ownedOrganization
+      .owner_id
+  ) {
+    return;
+  }
+
+  /* =========================
+     DELETE MEMBERSHIP
+  ========================= */
+
+  const {
+    error,
+  } = await supabase
+    .from(
+      "organization_members"
+    )
+    .delete()
+    .eq(
+      "id",
+      member.id
+    )
+    .eq(
+      "organization_id",
+      organizationId
     );
 
+  if (error) {
+    await createAuditLog({
+      organizationId,
+
+      action:
+        "member.removed",
+
+      targetType:
+        "member",
+
+      targetId:
+        member.id,
+
+      targetName:
+        member.user_id,
+
+      status:
+        "failed",
+
+      metadata: {
+        userId:
+          member.user_id,
+
+        role:
+          member.role,
+
+        reason:
+          error.message,
+      },
+    });
+
+    console.error(
+      "Remove member error:",
+      error
+    );
+
+    return;
+  }
+
+  /* =========================
+     AUDIT LOG
+  ========================= */
+
+  await createAuditLog({
+    organizationId,
+
+    action:
+      "member.removed",
+
+    targetType:
+      "member",
+
+    targetId:
+      member.id,
+
+    targetName:
+      member.user_id,
+
+    status:
+      "success",
+
+    metadata: {
+      userId:
+        member.user_id,
+
+      role:
+        member.role,
+    },
+  });
+
+  revalidatePath(
+    `/dashboard/organizations/${organizationId}/settings`
+  );
+
+  revalidatePath(
+    `/dashboard/organizations/${organizationId}`
+  );
+
+  revalidatePath(
+    "/dashboard/organizations"
+  );
+
+  redirect(
+    `/dashboard/organizations/${organizationId}/settings?notice=member-removed`
+  );
+}
+
+/* =========================================================
+                CANCEL PENDING INVITE
+========================================================== */
+
+async function cancelPendingInvite(
+  formData: FormData
+) {
+  "use server";
+
+  const supabase =
+    await createClient();
+
+  const {
+    data: { user },
+  } =
+    await supabase.auth.getUser();
+
+  if (!user) {
     redirect(
-      `/dashboard/organizations/${organizationId}/settings?notice=invite-cancelled`
+      "/auth/login"
     );
   }
+
+  const organizationId =
+    String(
+      formData.get(
+        "organization_id"
+      ) || ""
+    );
+
+  const inviteId =
+    String(
+      formData.get(
+        "invite_id"
+      ) || ""
+    );
+
+  if (
+    !organizationId ||
+    !inviteId
+  ) {
+    return;
+  }
+
+  /* =========================
+     CONFIRM OWNER
+  ========================= */
+
+  const {
+    data:
+      ownedOrganization,
+  } = await supabase
+    .from(
+      "organizations"
+    )
+    .select("id")
+    .eq(
+      "id",
+      organizationId
+    )
+    .eq(
+      "owner_id",
+      user.id
+    )
+    .maybeSingle();
+
+  if (
+    !ownedOrganization
+  ) {
+    return;
+  }
+
+  /* =========================
+     GET INVITE
+  ========================= */
+
+  const {
+    data: invite,
+    error: inviteLookupError,
+  } = await supabase
+    .from(
+      "organization_invites"
+    )
+    .select(`
+      id,
+      email,
+      role,
+      status
+    `)
+    .eq(
+      "id",
+      inviteId
+    )
+    .eq(
+      "organization_id",
+      organizationId
+    )
+    .eq(
+      "status",
+      "pending"
+    )
+    .maybeSingle();
+
+  if (
+    inviteLookupError ||
+    !invite
+  ) {
+    console.error(
+      "Invite lookup error:",
+      inviteLookupError
+    );
+
+    return;
+  }
+
+  /* =========================
+     DELETE INVITE
+  ========================= */
+
+  const {
+    error,
+  } = await supabase
+    .from(
+      "organization_invites"
+    )
+    .delete()
+    .eq(
+      "id",
+      inviteId
+    )
+    .eq(
+      "organization_id",
+      organizationId
+    )
+    .eq(
+      "status",
+      "pending"
+    );
+
+  if (error) {
+    await createAuditLog({
+      organizationId,
+
+      action:
+        "member.invite_cancelled",
+
+      targetType:
+        "invite",
+
+      targetId:
+        invite.id,
+
+      targetName:
+        invite.email,
+
+      status:
+        "failed",
+
+      metadata: {
+        role:
+          invite.role,
+
+        reason:
+          error.message,
+      },
+    });
+
+    console.error(
+      "Cancel invitation error:",
+      error
+    );
+
+    return;
+  }
+
+  /* =========================
+     AUDIT LOG
+  ========================= */
+
+  await createAuditLog({
+    organizationId,
+
+    action:
+      "member.invite_cancelled",
+
+    targetType:
+      "invite",
+
+    targetId:
+      invite.id,
+
+    targetName:
+      invite.email,
+
+    status:
+      "success",
+
+    metadata: {
+      role:
+        invite.role,
+    },
+  });
+
+  revalidatePath(
+    `/dashboard/organizations/${organizationId}/settings`
+  );
+
+  revalidatePath(
+    "/dashboard",
+    "layout"
+  );
+
+  redirect(
+    `/dashboard/organizations/${organizationId}/settings?notice=invite-cancelled`
+  );
+}
 
   /* =========================================================
                     DELETE ORGANIZATION

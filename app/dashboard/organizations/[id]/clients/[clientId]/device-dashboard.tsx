@@ -7,9 +7,11 @@ import {
   type ReactNode,
 } from "react";
 
-import { useRouter } from "next/navigation";
+import {
+  deleteDeviceAction,
+} from "./device-actions";
 
-import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 
 import DeviceTerminal, {
   type TerminalShell,
@@ -185,13 +187,6 @@ export default function DeviceDashboard({
 }: Props) {
   const router =
     useRouter();
-
-  const supabase =
-    useMemo(
-      () =>
-        createClient(),
-      []
-    );
 
   /* =========================
      DEVICES
@@ -677,18 +672,59 @@ export default function DeviceDashboard({
 
     setDeleteError("");
 
-    const {
-      error,
-    } =
-      await supabase
-        .from("devices")
-        .delete()
-        .eq(
-          "id",
+    try {
+      const result =
+        await deleteDeviceAction(
           deviceId
         );
 
-    if (error) {
+      if (!result.ok) {
+        setDeleteError(
+          result.error ||
+            "Could not delete this device."
+        );
+
+        setDeletingDevice(
+          false
+        );
+
+        return;
+      }
+
+      setDeviceList(
+        (current) =>
+          current.filter(
+            (device) =>
+              device.id !==
+              deviceId
+          )
+      );
+
+      setDeletingDevice(
+        false
+      );
+
+      setDeleteOpen(
+        false
+      );
+
+      setDrawerOpen(
+        false
+      );
+
+      window.setTimeout(
+        () => {
+          setSelectedDevice(
+            null
+          );
+        },
+        280
+      );
+
+      setActionMessage("");
+
+      router.refresh();
+    } catch (error) {
       console.error(
         "Could not delete device:",
         error
@@ -701,43 +737,7 @@ export default function DeviceDashboard({
       setDeletingDevice(
         false
       );
-
-      return;
     }
-
-    setDeviceList(
-      (current) =>
-        current.filter(
-          (device) =>
-            device.id !==
-            deviceId
-        )
-    );
-
-    setDeletingDevice(
-      false
-    );
-
-    setDeleteOpen(
-      false
-    );
-
-    setDrawerOpen(
-      false
-    );
-
-    window.setTimeout(
-      () => {
-        setSelectedDevice(
-          null
-        );
-      },
-      280
-    );
-
-    setActionMessage("");
-
-    router.refresh();
   }
 
   return (
