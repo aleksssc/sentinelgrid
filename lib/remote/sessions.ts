@@ -7,12 +7,12 @@ import { getRedis } from "@/lib/realtime/redis";
 import { enforceRemoteRateLimit } from "@/lib/remote/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 
-export type RemoteSessionType = "terminal" | "rdp";
+export type RemoteSessionType = "terminal";
 
 const TICKET_TTL_SECONDS = 60;
 
 function isSessionType(value: unknown): value is RemoteSessionType {
-  return value === "terminal" || value === "rdp";
+  return value === "terminal";
 }
 
 function isAal2(user: { id: string }, assuranceLevel: string | null | undefined) {
@@ -84,7 +84,7 @@ export async function createRemoteSession({
   const { data: settings } = await supabase
     .from("organization_remote_access_settings")
     .select(
-      "remote_access_enabled, terminal_enabled, rdp_enabled, max_session_minutes, max_concurrent_sessions",
+      "remote_access_enabled, terminal_enabled, max_session_minutes, max_concurrent_sessions",
     )
     .eq("organization_id", organization.id)
     .maybeSingle();
@@ -95,10 +95,6 @@ export async function createRemoteSession({
 
   if (sessionType === "terminal" && settings && !settings.terminal_enabled) {
     throw new Error("TERMINAL_DISABLED");
-  }
-
-  if (sessionType === "rdp" && (!settings || !settings.rdp_enabled)) {
-    throw new Error("RDP_DISABLED");
   }
 
   if (!device.last_seen || Date.now() - new Date(device.last_seen).getTime() > 90_000) {

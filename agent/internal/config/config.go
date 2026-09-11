@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,11 +61,7 @@ func Save(
 	dir :=
 		directoryPath()
 
-	err :=
-		os.MkdirAll(
-			dir,
-			0755,
-		)
+	err := prepareDirectory(dir)
 
 	if err != nil {
 		return fmt.Errorf(
@@ -87,20 +84,19 @@ func Save(
 		)
 	}
 
-	err =
-		os.WriteFile(
-			FilePath(),
-			data,
-			0600,
-		)
-
+	file, err := os.CreateTemp(dir, "agent-config-*.tmp")
 	if err != nil {
-		return fmt.Errorf(
-			"could not save config: %w",
-			err,
-		)
+		return fmt.Errorf("could not create protected config: %w", err)
 	}
-
+	path := file.Name()
+	defer os.Remove(path)
+	_, writeErr := file.Write(data)
+	if err := errors.Join(writeErr, file.Sync(), file.Close()); err != nil {
+		return fmt.Errorf("could not persist config: %w", err)
+	}
+	if err := replaceConfig(path, FilePath()); err != nil {
+		return fmt.Errorf("could not replace config: %w", err)
+	}
 	return nil
 }
 

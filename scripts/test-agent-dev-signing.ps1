@@ -11,6 +11,7 @@ $cases = @(
     @{ Arguments = @('-DevSign', '-Channel', 'beta', '-DevSignerSHA256', 'bad'); Reason = 'explicit development certificate SHA256 fingerprint' },
     @{ Arguments = @('-DevSign', '-Channel', 'beta', '-TrustedSignerSHA256', 'bad'); Reason = 'separate development certificate/pin parameters' },
     @{ Arguments = @('-Sign', '-DevSignerSHA256', 'bad'); Reason = 'Development certificate/pin parameters require -DevSign' },
+    @{ Arguments = @('-DevCertificateStore', 'CurrentUser'); Reason = 'Development certificate/pin parameters require -DevSign' },
     @{ Arguments = @('-Dev', '-Channel', 'beta'); Reason = '-Dev requires the dev channel' },
     @{ Arguments = @('-SkipMSI'); Reason = '-SkipMSI is allowed only with explicit -Dev' }
 )
@@ -32,4 +33,4 @@ foreach ($case in $cases) {
         Write-Host "PASS: $($case.Arguments -join ' ')"
     } finally { $process.Dispose() }
 }
-Write-Host 'Nine fail-closed build mode tests passed. No certificate, artifacts, services or trust stores were changed.'
+Write-Host 'Ten fail-closed build mode tests passed. No certificate, artifacts, services or trust stores were changed.'

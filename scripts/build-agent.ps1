@@ -6,6 +6,7 @@ param(
     [switch]$DevSign,
     [string]$DevCertificateThumbprint = $env:SENTINELGRID_DEV_SIGN_CERT_THUMBPRINT,
     [string]$DevSignerSHA256 = $env:SENTINELGRID_DEV_UPDATE_SIGNER_SHA256,
+    [ValidateSet('CurrentUser', 'LocalMachine')][string]$DevCertificateStore = $(if ($env:SENTINELGRID_DEV_SIGN_CERT_STORE) { $env:SENTINELGRID_DEV_SIGN_CERT_STORE } else { 'LocalMachine' }),
     [switch]$Dev,
     [switch]$SkipMSI,
     [string]$CertificateThumbprint = $env:SENTINELGRID_SIGN_CERT_THUMBPRINT,
@@ -25,6 +26,7 @@ $oldGOOS = $env:GOOS
 $oldGOARCH = $env:GOARCH
 $oldCGO = $env:CGO_ENABLED
 $lock = $null
+$resourceFiles = @()
 
 function Require-Tool([string]$Name) {
     $tool = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -67,11 +69,11 @@ try {
         }
         if ($Channel -eq 'stable') { throw '-DevSign requires explicit -Channel beta or dev; development artifacts are never stable releases.' }
         $CertificateThumbprint = $DevCertificateThumbprint
-        $CertificateStore = 'LocalMachine'
+        $CertificateStore = $DevCertificateStore
         $TrustedSignerSHA256 = $DevSignerSHA256
         if (-not $PSBoundParameters.ContainsKey('TimestampUrl')) { $TimestampUrl = $env:SENTINELGRID_DEV_SIGN_TIMESTAMP_URL }
         if ($DevSignerSHA256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Set SENTINELGRID_DEV_UPDATE_SIGNER_SHA256 to the explicit development certificate SHA256 fingerprint.' }
-    } elseif ($PSBoundParameters.ContainsKey('DevCertificateThumbprint') -or $PSBoundParameters.ContainsKey('DevSignerSHA256')) {
+    } elseif ($PSBoundParameters.ContainsKey('DevCertificateThumbprint') -or $PSBoundParameters.ContainsKey('DevSignerSHA256') -or $PSBoundParameters.ContainsKey('DevCertificateStore')) {
         throw 'Development certificate/pin parameters require -DevSign.'
     }
     if ($Dev) {
@@ -123,7 +125,12 @@ try {
     if ($DevSign) { $ldflags += " -X sentinelgrid/agent/internal/update.DevelopmentSignerSHA256=$TrustedSignerSHA256" }
     elseif ($TrustedSignerSHA256) { $ldflags += " -X sentinelgrid/agent/internal/update.TrustedSignerSHA256=$TrustedSignerSHA256" }
     $agentExe = Join-Path $output 'SentinelGridAgent.exe'
+    $resourceFiles = @('sentinelgrid-agent', 'sentinelgrid-updater', 'sentinelgrid-rdp') | ForEach-Object { Join-Path $agent "cmd\$_\version_windows_amd64.syso" }
+    foreach ($path in $resourceFiles) { if (Test-Path -LiteralPath $path) { $resourceFiles = @(); throw 'Existing version resource must be cleaned up explicitly.' } }
+    & (Join-Path $PSScriptRoot 'prepare-agent-resources.ps1') -Version $Version
     $updaterExe = Join-Path $output 'SentinelGridUpdater.exe'
+    $rdpExe = Join-Path $output 'SentinelGridRDP.exe'
+    Invoke-Checked $go @('build', '-trimpath', '-ldflags', '-s -w', '-o', $rdpExe, '.\cmd\sentinelgrid-rdp') 'RDP client build'
     Invoke-Checked $go (@('build') + $buildTags + @('-trimpath', '-ldflags', $ldflags, '-o', $agentExe, '.\cmd\sentinelgrid-agent')) 'Agent build'
     Invoke-Checked $go (@('build') + $buildTags + @('-trimpath', '-ldflags', $ldflags, '-o', $updaterExe, '.\cmd\sentinelgrid-updater')) 'Updater build'
     $reportedVersion = & $agentExe -version
@@ -131,7 +138,12 @@ try {
     $reportedVersion = & $updaterExe -version
     if ($LASTEXITCODE -ne 0 -or $reportedVersion -ne "SentinelGrid Updater $Version") { throw 'Built updater reported the wrong version.' }
     Sign-Artifact $agentExe 'Agent signing'
+    foreach ($executable in @($agentExe, $updaterExe, $rdpExe)) {
+        $info = (Get-Item -LiteralPath $executable).VersionInfo
+        if ($info.FileVersion -ne $Version -or $info.ProductVersion -ne $Version) { throw 'PE version resources do not match the package version.' }
+    }
     Sign-Artifact $updaterExe 'Updater signing'
+    Sign-Artifact $rdpExe 'RDP client signing'
     foreach ($executable in @($agentExe, $updaterExe)) {
         $trustOutput = & $executable -update-build-info
         if ($LASTEXITCODE -ne 0) { throw 'Built executable failed its update trust probe.' }
@@ -155,7 +167,7 @@ try {
         development_update_build = $DevSign.IsPresent; qualification_requires_installed_windows_checks = $true
     }
     $checksums = [Collections.Generic.List[string]]::new()
-    $artifacts = [ordered]@{ agent = $agentExe; updater = $updaterExe }
+    $artifacts = [ordered]@{ agent = $agentExe; updater = $updaterExe; rdp_client = $rdpExe }
     if (-not $SkipMSI) { $artifacts['msi'] = $msi }
     foreach ($entry in $artifacts.GetEnumerator()) {
         $file = Get-Item -LiteralPath $entry.Value
@@ -180,6 +192,7 @@ try {
     Write-Error "Agent build failed: $($_.Exception.Message)" -ErrorAction Continue
     exit 1
 } finally {
+    foreach ($path in $resourceFiles) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force } }
     if ($null -ne $lock) { $lock.Dispose() }
     Set-Location -LiteralPath $originalLocation.Path
     $env:GOOS = $oldGOOS; $env:GOARCH = $oldGOARCH; $env:CGO_ENABLED = $oldCGO

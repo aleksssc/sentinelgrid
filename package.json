@@ -26,6 +26,7 @@
     "ws": "^8.21.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@eslint/eslintrc": "^3",
     "@types/node": "^20",
     "@types/react": "^19",

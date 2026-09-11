@@ -30,12 +30,42 @@ function Find-SignTool {
     $path = $null
     if ($tool) { $path = $tool.Source }
     else {
-        $base = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Windows Kits\10\bin'
-        if (Test-Path -LiteralPath $base) {
-            $versions = @(Get-ChildItem -LiteralPath $base -Directory | Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' -and -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } | Sort-Object { [version]$_.Name } -Descending)
-            foreach ($version in $versions) {
-                $candidate = Join-Path $version.FullName 'x64\signtool.exe'
-                if (Test-Path -LiteralPath $candidate -PathType Leaf) { $path = $candidate; break }
+        $searchBases = @(
+            (Join-Path (Split-Path -Parent $PSScriptRoot) 'dist\tools\signing\Windows Kits\10\bin'),
+            (Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Windows Kits\10\bin'),
+            (Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Windows Kits\10\bin'),
+            (Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Windows Kits\8.1\bin'),
+            (Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Windows Kits\8.1\bin'),
+            (Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft SDKs\Windows'),
+            (Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Microsoft SDKs\Windows')
+        )
+        foreach ($base in $searchBases) {
+            if (Test-Path -LiteralPath $base) {
+                # Look for versioned folders first (e.g. 10.0.22621.0)
+                $versions = @(Get-ChildItem -LiteralPath $base -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d+(\.\d+)*$' -and -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } | Sort-Object { [version]$_.Name } -Descending)
+                foreach ($version in $versions) {
+                    $candidates = @(
+                        (Join-Path $version.FullName 'x64\signtool.exe'),
+                        (Join-Path $version.FullName 'x86\signtool.exe'),
+                        (Join-Path $version.FullName 'arm64\signtool.exe')
+                    )
+                    foreach ($c in $candidates) {
+                        if (Test-Path -LiteralPath $c -PathType Leaf) { $path = $c; break }
+                    }
+                    if ($path) { break }
+                }
+                if ($path) { break }
+
+                # Check directly under bin or bin\x64
+                $candidates = @(
+                    (Join-Path $base 'x64\signtool.exe'),
+                    (Join-Path $base 'x86\signtool.exe'),
+                    (Join-Path $base 'signtool.exe')
+                )
+                foreach ($c in $candidates) {
+                    if (Test-Path -LiteralPath $c -PathType Leaf) { $path = $c; break }
+                }
+                if ($path) { break }
             }
         }
     }

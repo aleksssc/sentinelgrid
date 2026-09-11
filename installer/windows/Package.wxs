@@ -6,9 +6,20 @@
     UpgradeCode="B632A689-8C9E-4E77-BF7C-5E9C4A012901"
     Scope="perMachine">
 
-    <!-- Keep old components available for rollback while quiescing before file changes. -->
     <MajorUpgrade Schedule="afterInstallExecute"
       DowngradeErrorMessage="A newer version of SentinelGrid Agent is already installed." />
+    <Upgrade Id="B632A689-8C9E-4E77-BF7C-5E9C4A012901">
+      <UpgradeVersion Minimum="$(var.AgentVersion)" Maximum="$(var.AgentVersion)"
+        IncludeMinimum="yes" IncludeMaximum="yes" OnlyDetect="yes" Property="SG_SAME_VERSION" />
+    </Upgrade>
+    <Launch Condition="Installed OR NOT SG_SAME_VERSION"
+      Message="This Agent version is already installed. Use the installed package for repair, or install a newer version; a second same-version product is not supported." />
+    <Property Id="SENTINELGRID_SERVER" Value="https://sentinelgrid-one.vercel.app" Secure="yes" />
+    <Property Id="SG_EXISTING_CONFIG">
+      <DirectorySearch Id="SentinelGridConfigSearch" Path="[CommonAppDataFolder]SentinelGrid">
+        <FileSearch Id="SentinelGridConfigFileSearch" Name="agent.json" />
+      </DirectorySearch>
+    </Property>
     <MediaTemplate EmbedCab="yes" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
@@ -34,7 +45,6 @@
       </Directory>
     </StandardDirectory>
 
-    <!-- Embedded code survives removal of the previous product's executable. -->
     <Binary Id="SentinelGridMSICoordinator" SourceFile="$(var.UpdaterSource)" />
     <CustomAction Id="RollbackSentinelGridMaintenance" BinaryRef="SentinelGridMSICoordinator"
       ExeCommand="-maintenance-end" Execute="rollback" Impersonate="no" Return="check" />
@@ -46,8 +56,10 @@
       ExeCommand="-configure-recovery" Execute="deferred" Impersonate="no" Return="check" />
 
     <CustomAction Id="EnrollSentinelGridAgent" FileRef="SentinelGridAgentExe"
-      ExeCommand='-server "https://sentinelgrid-one.vercel.app" -installer "[OriginalDatabase]"'
-      Return="asyncNoWait" Impersonate="no" />
+      ExeCommand='-server "[SENTINELGRID_SERVER]" -installer "[OriginalDatabase]"'
+      Execute="deferred" Return="check" Impersonate="no" HideTarget="yes" />
+    <CustomAction Id="ValidateSentinelGridConfig" FileRef="SentinelGridAgentExe"
+      ExeCommand="-validate-config" Execute="deferred" Return="check" Impersonate="no" />
 
     <InstallExecuteSequence>
       <Custom Action="RollbackSentinelGridMaintenance" After="InstallInitialize"
@@ -55,10 +67,12 @@
       <Custom Action="BeginSentinelGridMaintenance" After="RollbackSentinelGridMaintenance"
         Condition="(Installed OR WIX_UPGRADE_DETECTED) AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="ConfigureSentinelGridRecovery" After="InstallServices" Condition="NOT REMOVE~=&quot;ALL&quot;" />
+      <Custom Action="EnrollSentinelGridAgent" After="ConfigureSentinelGridRecovery"
+        Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT SG_EXISTING_CONFIG" />
+      <Custom Action="ValidateSentinelGridConfig" After="EnrollSentinelGridAgent"
+        Condition="NOT REMOVE~=&quot;ALL&quot;" />
       <Custom Action="EndSentinelGridMaintenance" Before="InstallFinalize"
         Condition="(Installed OR WIX_UPGRADE_DETECTED) AND NOT UPGRADINGPRODUCTCODE" />
-      <Custom Action="EnrollSentinelGridAgent" After="InstallFinalize"
-        Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
     </InstallExecuteSequence>
 
     <Feature Id="MainFeature" Title="SentinelGrid Agent" Level="1">

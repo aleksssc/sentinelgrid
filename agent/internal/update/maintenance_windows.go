@@ -17,9 +17,6 @@ import (
 // Called only by the MSI's embedded updater. No product, path or service input.
 // A stale marker after an interrupted MSI fails closed until repair/rollback.
 func Maintenance(ctx context.Context, begin bool) (resultErr error) {
-	if !sourceQualified() {
-		return nil
-	}
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil || user.User.Sid.String() != "S-1-5-18" {
 		return fmt.Errorf("MSI coordination requires LocalSystem")

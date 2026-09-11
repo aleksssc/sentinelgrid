@@ -147,6 +147,7 @@ func Collect(
 
 			AgentVersion: version,
 		}
+	RefreshRemoteCapabilities(&result)
 
 	/* =========================
 	   WINDOWS DETAILS

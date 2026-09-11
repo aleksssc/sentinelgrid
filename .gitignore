@@ -36,6 +36,7 @@
 
 agent/SentinelGridAgent.exe
 agent/SentinelGridUpdater.exe
+agent/cmd/*/version_windows_amd64.syso
 /dist/
 
 

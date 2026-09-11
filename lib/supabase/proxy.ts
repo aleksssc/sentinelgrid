@@ -22,7 +22,9 @@ export async function updateSession(request: NextRequest) {
 
   if (
     pathname.startsWith("/api/agent/") ||
-    pathname.startsWith("/api/realtime/")
+    pathname.startsWith("/api/realtime/") ||
+    pathname === "/api/remote/rdp/relay" ||
+    /^\/api\/devices\/[a-f0-9-]+\/rdp(?:\/[a-f0-9-]+)?$/i.test(pathname)
   ) {
     return NextResponse.next({
       request,

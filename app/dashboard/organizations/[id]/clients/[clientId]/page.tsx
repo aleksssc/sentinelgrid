@@ -599,6 +599,7 @@ export default async function ClientDetailsPage({
           </div>
 
           <DeviceDashboard
+            rdpConfigured={Boolean(process.env.SENTINELGRID_RELAY_URL && process.env.SENTINELGRID_RDP_RELAY_SECRET)}
             devices={
               deviceList
             }

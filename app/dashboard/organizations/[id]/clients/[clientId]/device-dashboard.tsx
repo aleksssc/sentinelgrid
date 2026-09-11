@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import DeviceTerminal, {
   type TerminalShell,
 } from "@/components/dashboard/devices/device-terminal";
+import DeviceRDP from "@/components/dashboard/devices/device-rdp";
 
 import {
   Activity,
@@ -23,7 +24,6 @@ import {
   ChevronDown,
   CircleAlert,
   Cpu,
-  ExternalLink,
   HardDrive,
   Laptop,
   MapPin,
@@ -36,7 +36,6 @@ import {
   Terminal,
   Trash2,
   Wrench,
-  Wifi,
   X,
 } from "lucide-react";
 
@@ -183,6 +182,7 @@ type Props = {
   clientName: string;
 
   canManage: boolean;
+  rdpConfigured: boolean;
 
   activity: DeviceActivity[];
 };
@@ -214,6 +214,7 @@ export default function DeviceDashboard({
   sites,
   clientName,
   canManage,
+  rdpConfigured,
   activity,
 }: Props) {
   const router =
@@ -471,9 +472,9 @@ export default function DeviceDashboard({
 
   const rdpAvailable =
     Boolean(
+      rdpConfigured && selectedDeviceStatus === "online" &&
       selectedCapabilities.rdp &&
-      selectedCapabilities.tcp_tunnel &&
-      process.env.NEXT_PUBLIC_REMOTE_GATEWAY_URL
+      selectedCapabilities.tcp_tunnel
     );
 
   /* =========================
@@ -1599,20 +1600,7 @@ export default function DeviceDashboard({
               </div>
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  disabled={!canManage || !rdpAvailable}
-                  title={rdpAvailable ? "Open Remote Desktop" : "Remote Desktop is not available for this Agent yet."}
-                  onClick={() => {
-                    if (!rdpAvailable) {
-                      setActionMessage("Remote Desktop is not available for this Agent yet.");
-                    }
-                  }}
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-800 px-4 text-sm font-medium text-zinc-300 transition hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <ExternalLink size={16} />
-                  Remote Desktop
-                </button>
+                <DeviceRDP key={selectedDevice.id} deviceId={selectedDevice.id} available={canManage && rdpAvailable} />
 
                 <button
                   type="button"

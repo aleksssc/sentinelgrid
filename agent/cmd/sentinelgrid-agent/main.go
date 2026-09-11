@@ -18,6 +18,7 @@ import (
 	"sentinelgrid/agent/internal/config"
 	"sentinelgrid/agent/internal/inventory"
 	"sentinelgrid/agent/internal/metrics"
+	"sentinelgrid/agent/internal/rdp"
 	"sentinelgrid/agent/internal/realtime"
 	"sentinelgrid/agent/internal/update"
 )
@@ -96,6 +97,7 @@ func (p *program) run(ctx context.Context) {
 	defer cancelRealtime()
 
 	go update.Run(realtimeContext, version)
+	go rdp.Run(realtimeContext)
 
 	go realtime.Run(
 		realtimeContext,
@@ -302,6 +304,7 @@ func sendHeartbeat(
 		cfg == nil {
 		return
 	}
+	inventory.RefreshRemoteCapabilities(cachedInventory)
 
 	/* =========================
 	   COLLECT LIVE METRICS
@@ -787,8 +790,33 @@ func main() {
 		)
 
 	showUpdateTrust := flag.Bool("update-build-info", false, "Show embedded update trust (no update)")
+	validateConfig := flag.Bool("validate-config", false, "Validate preserved configuration without enrolling or changing it")
+	showRDPReadiness := flag.Bool("rdp-readiness", false, "Probe the fixed local RDP listener and NLA (no changes)")
 	showReadiness := flag.Bool("update-readiness", false, "Inspect installed update readiness (no update; administrator required)")
 	flag.Parse()
+	if *validateConfig {
+		if flag.NArg() != 0 || flag.NFlag() != 1 {
+			log.Fatal("Configuration validation accepts no other flags or arguments")
+		}
+		if _, err := config.Load(); err != nil {
+			log.Fatal("Preserved Agent configuration is unreadable or invalid; no enrollment was attempted")
+		}
+		fmt.Println("Preserved Agent configuration is valid")
+		return
+	}
+	if *showRDPReadiness {
+		if flag.NArg() != 0 || flag.NFlag() != 1 {
+			log.Fatal("RDP diagnostics accept no other flags or arguments")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := rdp.Available(ctx); err != nil {
+			fmt.Printf("RDP HOST NOT READY: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("RDP HOST READY: fixed loopback listener negotiates NLA. Relay, user authorization and interactive access are not qualified by this probe.")
+		return
+	}
 	if *showUpdateTrust || *showReadiness {
 		if flag.NArg() != 0 || flag.NFlag() != 1 {
 			log.Fatal("Update diagnostics accept no other flags or arguments")
@@ -823,6 +851,9 @@ func main() {
 	========================= */
 
 	if *installerPath != "" {
+		if err := validateInstallerServer(*serverURL); err != nil {
+			log.Fatal(err)
+		}
 		token, err :=
 			enrollmentTokenFromInstallerPath(
 				*installerPath,
