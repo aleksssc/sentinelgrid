@@ -11,8 +11,8 @@ import Link from "next/link";
 import {
   Building2,
   ChevronRight,
-  LayoutGrid,
   List,
+  LayoutGrid,
   Search,
 } from "lucide-react";
 
@@ -40,7 +40,7 @@ export default function OrganizationClients({
   const [search, setSearch] = useState("");
 
   const [viewMode, setViewMode] =
-    useState<ViewMode>("grid");
+    useState<ViewMode>("list");
 
   const [mounted, setMounted] =
     useState(false);
@@ -165,23 +165,6 @@ export default function OrganizationClients({
             <button
               type="button"
               onClick={() =>
-                changeView("grid")
-              }
-              title="Grid view"
-              className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${
-                viewMode === "grid"
-                  ? "bg-zinc-800 text-white"
-                  : "text-zinc-600 hover:bg-zinc-900 hover:text-zinc-300"
-              }`}
-            >
-              <LayoutGrid
-                size={16}
-              />
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
                 changeView("list")
               }
               title="List view"
@@ -192,6 +175,21 @@ export default function OrganizationClients({
               }`}
             >
               <List size={16} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                changeView("grid")
+              }
+              title="Grid view"
+              className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${
+                viewMode === "grid"
+                  ? "bg-zinc-800 text-white"
+                  : "text-zinc-600 hover:bg-zinc-900 hover:text-zinc-300"
+              }`}
+            >
+              <LayoutGrid size={16} />
             </button>
 
           </div>

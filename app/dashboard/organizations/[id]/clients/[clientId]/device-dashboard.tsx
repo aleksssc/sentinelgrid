@@ -22,7 +22,6 @@ import {
   Check,
   ChevronDown,
   CircleAlert,
-  Command,
   Cpu,
   ExternalLink,
   HardDrive,
@@ -31,12 +30,12 @@ import {
   MemoryStick,
   Monitor,
   Network,
-  RotateCcw,
   Search,
   Server,
   ShieldCheck,
   Terminal,
   Trash2,
+  Wrench,
   Wifi,
   X,
 } from "lucide-react";
@@ -154,6 +153,14 @@ type Device = {
     | string
     | null;
 
+  capabilities:
+    | Record<string, boolean>
+    | null;
+
+  last_inventory_at:
+    | string
+    | null;
+
   last_seen:
     | string
     | null;
@@ -173,8 +180,30 @@ type Props = {
 
   sites: Site[];
 
+  clientName: string;
+
   canManage: boolean;
+
+  activity: DeviceActivity[];
 };
+
+type DeviceActivity = {
+  id: string;
+  action: string;
+  status: string | null;
+  target_id: string | null;
+  created_at: string;
+  metadata: Record<string, unknown> | null;
+};
+
+type DeviceTab =
+  | "overview"
+  | "performance"
+  | "inventory"
+  | "software"
+  | "services"
+  | "security"
+  | "activity";
 
 /* =========================
    COMPONENT
@@ -183,7 +212,9 @@ type Props = {
 export default function DeviceDashboard({
   devices,
   sites,
+  clientName,
   canManage,
+  activity,
 }: Props) {
   const router =
     useRouter();
@@ -211,6 +242,20 @@ export default function DeviceDashboard({
   const [
     drawerOpen,
     setDrawerOpen,
+  ] =
+    useState(false);
+
+  const [
+    activeTab,
+    setActiveTab,
+  ] =
+    useState<DeviceTab>(
+      "overview"
+    );
+
+  const [
+    actionsOpen,
+    setActionsOpen,
   ] =
     useState(false);
 
@@ -334,6 +379,12 @@ export default function DeviceDashboard({
   ] =
     useState("");
 
+  const [
+    actionBusy,
+    setActionBusy,
+  ] =
+    useState<string | null>(null);
+
   /* =========================
      REMOTE TERMINAL
   ========================= */
@@ -410,6 +461,20 @@ export default function DeviceDashboard({
           now
         )
       : null;
+
+  const selectedCapabilities =
+    selectedDevice?.capabilities ?? {};
+
+  const terminalAvailable =
+    selectedDeviceStatus === "online" &&
+    selectedCapabilities.terminal !== false;
+
+  const rdpAvailable =
+    Boolean(
+      selectedCapabilities.rdp &&
+      selectedCapabilities.tcp_tunnel &&
+      process.env.NEXT_PUBLIC_REMOTE_GATEWAY_URL
+    );
 
   /* =========================
      FILTER DEVICES
@@ -530,6 +595,10 @@ export default function DeviceDashboard({
 
     setActionMessage("");
 
+    setActiveTab("overview");
+
+    setActionsOpen(false);
+
     setSiteFilterOpen(
       false
     );
@@ -561,6 +630,8 @@ export default function DeviceDashboard({
 
   function closeDevice() {
     closeRemoteTerminal();
+
+    setActionsOpen(false);
 
     setDrawerOpen(
       false
@@ -607,20 +678,129 @@ export default function DeviceDashboard({
     );
   }
 
-  /* =========================
-     ACTION PLACEHOLDER
-  ========================= */
-
-  function runAction(
-    action: string
+  async function runQuickAction(
+    action: string,
+    options?: {
+      confirm?: string;
+      payload?: Record<string, unknown>;
+    }
   ) {
-    if (!canManage) {
+    if (!canManage || !selectedDevice || actionBusy) {
       return;
     }
 
-    setActionMessage(
-      `${action} is ready for the SentinelGrid Agent integration.`
-    );
+    if (
+      options?.confirm &&
+      !window.confirm(options.confirm)
+    ) {
+      return;
+    }
+
+    setActionBusy(action);
+    setActionMessage(`Sending ${action}...`);
+
+    try {
+      const response = await fetch(
+        `/api/devices/${selectedDevice.id}/commands`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            command_type: action,
+            payload: options?.payload ?? {},
+          }),
+        }
+      );
+
+      const result = (await response.json()) as {
+        commandId?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(result.error || "ACTION_FAILED");
+      }
+
+      setActionMessage(
+        `${action} queued. Command ${result.commandId?.slice(0, 8) ?? "created"}.`
+      );
+
+      if (result.commandId) {
+        void watchQuickAction(
+          selectedDevice.id,
+          result.commandId,
+          action
+        );
+      }
+    } catch (error) {
+      const code =
+        error instanceof Error
+          ? error.message
+          : "ACTION_FAILED";
+
+      const messages: Record<string, string> = {
+        AAL2_REQUIRED: "MFA is required for this action.",
+        DEVICE_OFFLINE: "This device is offline.",
+        REMOTE_ACCESS_DISABLED: "Remote access is disabled by organization policy.",
+        FORBIDDEN: "You do not have permission for remote actions.",
+      };
+
+      setActionMessage(
+        messages[code] || "The action could not be submitted."
+      );
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function watchQuickAction(
+    deviceId: string,
+    commandId: string,
+    action: string
+  ) {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 1000);
+      });
+
+      try {
+        const response = await fetch(
+          `/api/devices/${deviceId}/commands?command_id=${commandId}`,
+          { cache: "no-store" }
+        );
+
+        if (!response.ok) return;
+
+        const command = (await response.json()) as {
+          status?: string;
+          error_message?: string | null;
+        };
+
+        if (
+          command.status === "succeeded" ||
+          command.status === "failed" ||
+          command.status === "expired"
+        ) {
+          setActionMessage(
+            command.status === "succeeded"
+              ? `${action} completed successfully.`
+              : `${action} ${command.status}: ${command.error_message || "No further details."}`
+          );
+
+          return;
+        }
+
+        setActionMessage(
+          `${action}: ${command.status || "queued"}...`
+        );
+      } catch {
+        return;
+      }
+    }
+
+    setActionMessage(`${action} is still processing.`);
   }
 
   /* =========================
@@ -1349,7 +1529,7 @@ export default function DeviceDashboard({
           {/* DRAWER */}
 
           <aside
-            className={`fixed bottom-0 right-0 top-16 z-40 w-full overflow-y-auto border-l border-zinc-800 bg-[#070809] shadow-2xl transition-transform duration-300 ease-out sm:w-[580px] ${
+            className={`fixed bottom-0 right-0 top-16 z-40 w-full overflow-y-auto border-l border-zinc-800 bg-[#070809] shadow-2xl transition-transform duration-300 ease-out sm:w-[calc(100vw-64px)] lg:w-[760px] xl:w-[820px] ${
               drawerOpen
                 ? "translate-x-0"
                 : "translate-x-full"
@@ -1408,6 +1588,79 @@ export default function DeviceDashboard({
 
               </div>
 
+              <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
+                <span className="text-zinc-300">{formatOSName(selectedDevice.os)}</span>
+                <span className="text-zinc-700">/</span>
+                <span>{clientName}</span>
+                <span className="text-zinc-700">/</span>
+                <span>{getSite(selectedDevice)?.name || "No site"}</span>
+                <span className="text-zinc-700">/</span>
+                <span>{selectedDevice.last_seen ? `Last seen ${getRelativeLastSeen(selectedDevice.last_seen, now)}` : "Never seen"}</span>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!canManage || !rdpAvailable}
+                  title={rdpAvailable ? "Open Remote Desktop" : "Remote Desktop is not available for this Agent yet."}
+                  onClick={() => {
+                    if (!rdpAvailable) {
+                      setActionMessage("Remote Desktop is not available for this Agent yet.");
+                    }
+                  }}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-800 px-4 text-sm font-medium text-zinc-300 transition hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ExternalLink size={16} />
+                  Remote Desktop
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => openRemoteTerminal("powershell")}
+                  disabled={!canManage || !terminalAvailable}
+                  title={
+                    !canManage
+                      ? "You do not have permission to open a remote terminal."
+                      : terminalAvailable
+                        ? "Open remote terminal"
+                        : "The device is offline or terminal access is unavailable."
+                  }
+                  className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Terminal size={16} />
+                  Terminal
+                </button>
+
+                {canManage && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setActionsOpen((open) => !open)}
+                      className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-800 px-4 text-sm font-medium text-zinc-300 transition hover:bg-zinc-900 hover:text-white"
+                    >
+                      Actions
+                      <ChevronDown size={15} className={actionsOpen ? "rotate-180 transition-transform" : "transition-transform"} />
+                    </button>
+
+                    {actionsOpen && (
+                      <ActionsMenu
+                        device={selectedDevice}
+                        busy={Boolean(actionBusy)}
+                        online={selectedDeviceStatus === "online"}
+                        onAction={(action, options) => {
+                          setActionsOpen(false);
+                          void runQuickAction(action, options);
+                        }}
+                        onUnavailable={(message) => {
+                          setActionsOpen(false);
+                          setActionMessage(message);
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+
             </div>
 
             {/* =========================
@@ -1416,602 +1669,236 @@ export default function DeviceDashboard({
 
             <div className="p-5">
 
-              {/* =========================
-                  STATUS
-              ========================= */}
-
-              <div className="flex items-center justify-between rounded-2xl border border-zinc-800 bg-[#111317] px-4 py-3.5">
-
-                <div>
-
-                  <div className="flex items-center gap-2">
-
-                    <span
-                      className={`h-2 w-2 rounded-full ${
-                        selectedDeviceStatus ===
-                        "online"
-                          ? "bg-emerald-400"
-                          : selectedDeviceStatus ===
-                            "warning"
-                          ? "bg-amber-400"
-                          : "bg-zinc-600"
-                      }`}
-                    />
-
-                    <span
-                      className={`text-sm font-semibold ${
-                        selectedDeviceStatus ===
-                        "online"
-                          ? "text-emerald-400"
-                          : selectedDeviceStatus ===
-                            "warning"
-                          ? "text-amber-400"
-                          : "text-zinc-400"
-                      }`}
-                    >
-                      {selectedDeviceStatus ===
-                      "online"
-                        ? "Online"
-                        : selectedDeviceStatus ===
-                          "warning"
-                        ? "Warning"
-                        : "Offline"}
-                    </span>
-
-                  </div>
-
-                  <p className="mt-1 text-xs text-zinc-600">
-                    {selectedDevice.last_seen
-                      ? `Last seen ${getRelativeLastSeen(
-                          selectedDevice.last_seen,
-                          now
-                        )}`
-                      : "Never seen"}
-                  </p>
-
-                </div>
-
-                <div
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl ${
-                    selectedDeviceStatus ===
-                    "online"
-                      ? "bg-emerald-500/10 text-emerald-400"
-                      : selectedDeviceStatus ===
-                        "warning"
-                      ? "bg-amber-500/10 text-amber-400"
-                      : "bg-zinc-900 text-zinc-600"
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                <span
+                  className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 ${
+                    selectedDeviceStatus === "online"
+                      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                      : selectedDeviceStatus === "warning"
+                        ? "border-amber-500/20 bg-amber-500/10 text-amber-400"
+                        : "border-zinc-800 bg-zinc-900 text-zinc-500"
                   }`}
                 >
-
-                  <Wifi
-                    size={17}
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      selectedDeviceStatus === "online"
+                        ? "bg-emerald-400"
+                        : selectedDeviceStatus === "warning"
+                          ? "bg-amber-400"
+                          : "bg-zinc-600"
+                    }`}
                   />
+                  {selectedDeviceStatus === "online"
+                    ? "Online"
+                    : selectedDeviceStatus === "warning"
+                      ? "Warning"
+                      : "Offline"}
+                </span>
 
-                </div>
-
+                <span className="text-zinc-600">
+                  {selectedDevice.last_seen
+                    ? `Last seen ${getRelativeLastSeen(selectedDevice.last_seen, now)}`
+                    : "Never seen"}
+                </span>
               </div>
 
-              {/* =========================
-                  QUICK ACTIONS
-              ========================= */}
-
-              {canManage && (
-                <div className="mt-5">
-
-                  <div className="mb-3">
-
-                    <h3 className="text-sm font-semibold text-white">
-                      Quick actions
-                    </h3>
-
-                    <p className="mt-0.5 text-xs text-zinc-600">
-                      Manage this endpoint remotely.
-                    </p>
-
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2.5">
-
-                    <QuickActionButton
-                      icon={
-                        <ExternalLink
-                          size={17}
-                        />
-                      }
-                      label="Remote Desktop"
-                      onClick={() =>
-                        runAction(
-                          "Remote Desktop"
-                        )
-                      }
-                    />
-
-                    <QuickActionButton
-                      icon={
-                        <Terminal
-                          size={17}
-                        />
-                      }
-                      label="PowerShell"
-                      onClick={() =>
-                        openRemoteTerminal(
-                          "powershell"
-                        )
-                      }
-                    />
-
-                    <QuickActionButton
-                      icon={
-                        <Command
-                          size={17}
-                        />
-                      }
-                      label="CMD"
-                      onClick={() =>
-                        openRemoteTerminal(
-                          "cmd"
-                        )
-                      }
-                    />
-
-                    <QuickActionButton
-                      icon={
-                        <RotateCcw
-                          size={17}
-                        />
-                      }
-                      label="Restart"
-                      onClick={() =>
-                        runAction(
-                          "Restart"
-                        )
-                      }
-                    />
-
-                  </div>
-
-                  {actionMessage && (
-                    <div className="mt-3 flex items-start gap-2 rounded-xl border border-zinc-800 bg-[#111317] px-3.5 py-3 text-xs text-zinc-500">
-
-                      <CircleAlert
-                        size={14}
-                        className="mt-0.5 shrink-0"
-                      />
-
-                      {
-                        actionMessage
-                      }
-
-                    </div>
-                  )}
-
+              {actionMessage && (
+                <div className="mt-5 flex items-start gap-2 rounded-xl border border-zinc-800 bg-[#111317] px-3.5 py-3 text-xs text-zinc-400">
+                  <CircleAlert size={14} className="mt-0.5 shrink-0" />
+                  {actionBusy ? `${actionBusy} is sending...` : actionMessage}
                 </div>
               )}
+
+              <div className="mt-5 overflow-x-auto border-b border-zinc-800">
+                <div className="flex min-w-max gap-5">
+                  {DEVICE_TABS.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`border-b-2 pb-3 text-xs font-medium transition ${activeTab === tab.id ? "border-emerald-400 text-white" : "border-transparent text-zinc-600 hover:text-zinc-300"}`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               {/* =========================
                   DEVICE DETAILS
               ========================= */}
 
-              <div className="mt-6">
+                {activeTab === "overview" ? (
+                <div className="mt-6 space-y-4">
 
-                <div className="mb-3">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <MetricCard
+                      icon={<Cpu size={15} />}
+                      label="CPU"
+                      value={formatPercentage(selectedDevice.cpu_usage)}
+                      percentage={selectedDevice.cpu_usage}
+                    />
 
-                  <h3 className="text-sm font-semibold text-white">
-                    Device details
-                  </h3>
+                    <MetricCard
+                      icon={<MemoryStick size={15} />}
+                      label="RAM"
+                      value={formatPercentage(selectedDevice.ram_usage)}
+                      detail={formatUsedTotal(
+                        selectedDevice.ram_used_bytes,
+                        selectedDevice.ram_total_bytes
+                      )}
+                      percentage={selectedDevice.ram_usage}
+                    />
 
-                  <p className="mt-0.5 text-xs text-zinc-600">
-                    Hardware, system and Agent information.
-                  </p>
+                    <MetricCard
+                      icon={<HardDrive size={15} />}
+                      label="Disk"
+                      value={formatPercentage(selectedDevice.disk_usage)}
+                      detail={formatUsedTotal(
+                        selectedDevice.disk_used_bytes,
+                        selectedDevice.disk_total_bytes
+                      )}
+                      percentage={selectedDevice.disk_usage}
+                    />
 
-                </div>
+                    <MetricCard
+                      icon={<Activity size={15} />}
+                      label="Uptime"
+                      value={formatUptime(selectedDevice.uptime_seconds)}
+                      percentage={null}
+                    />
+                  </div>
 
-                <div className="divide-y divide-zinc-800 overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
+                  <div className="grid gap-4 lg:grid-cols-2">
 
-                  {/* =========================
-                      PERFORMANCE
-                  ========================= */}
-
-                  <DrawerSection
-                    title="Performance"
-                    subtitle="CPU, memory and disk usage"
-                    icon={
-                      <Activity
-                        size={17}
-                      />
-                    }
-                  >
-
-                    <div className="grid grid-cols-3 gap-2.5">
-
-                      <MetricCard
-                        icon={
-                          <Cpu
-                            size={15}
-                          />
-                        }
-                        label="CPU"
-                        value={
-                          formatPercentage(
-                            selectedDevice.cpu_usage
-                          )
-                        }
-                        percentage={
-                          selectedDevice.cpu_usage
-                        }
-                      />
-
-                      <MetricCard
-                        icon={
-                          <MemoryStick
-                            size={15}
-                          />
-                        }
-                        label="RAM"
-                        value={
-                          formatPercentage(
-                            selectedDevice.ram_usage
-                          )
-                        }
-                        detail={
-                          formatUsedTotal(
-                            selectedDevice.ram_used_bytes,
-                            selectedDevice.ram_total_bytes
-                          )
-                        }
-                        percentage={
-                          selectedDevice.ram_usage
-                        }
-                      />
-
-                      <MetricCard
-                        icon={
-                          <HardDrive
-                            size={15}
-                          />
-                        }
-                        label="Disk"
-                        value={
-                          formatPercentage(
-                            selectedDevice.disk_usage
-                          )
-                        }
-                        detail={
-                          formatUsedTotal(
-                            selectedDevice.disk_used_bytes,
-                            selectedDevice.disk_total_bytes
-                          )
-                        }
-                        percentage={
-                          selectedDevice.disk_usage
-                        }
-                      />
-
-                    </div>
-
-                  </DrawerSection>
-
-                  {/* =========================
-                      SYSTEM
-                  ========================= */}
-
-                  <DrawerSection
-                    title="System information"
-                    subtitle="Operating system and hardware"
-                    icon={
-                      <Monitor
-                        size={17}
-                      />
-                    }
-                  >
-
-                    <div className="overflow-hidden rounded-xl border border-zinc-800">
-
-                      <InfoRow
-                        icon={
-                          <DeviceTypeIcon
-                            type={
-                              selectedDevice.device_type
-                            }
-                            size={15}
-                          />
-                        }
+                    <OverviewCard
+                      title="System"
+                      subtitle="Core endpoint information"
+                      icon={<Monitor size={17} />}
+                    >
+                      <OverviewInfoRow
                         label="Device type"
-                        value={
-                          formatDeviceType(
-                            selectedDevice.device_type
-                          )
-                        }
+                        value={formatDeviceType(selectedDevice.device_type)}
                       />
-
-                      <InfoRow
-                        icon={
-                          <Monitor
-                            size={15}
-                          />
-                        }
+                      <OverviewInfoRow
                         label="Operating system"
-                        value={
-                          selectedDevice.os ||
-                          "Unknown"
-                        }
+                        value={formatOSName(selectedDevice.os)}
                       />
-
-                      <InfoRow
-                        icon={
-                          <Activity
-                            size={15}
-                          />
-                        }
-                        label="Version"
-                        value={
-                          selectedDevice.os_version ||
-                          "—"
-                        }
-                      />
-
-                      <InfoRow
-                        icon={
-                          <Server
-                            size={15}
-                          />
-                        }
-                        label="Build"
-                        value={
-                          selectedDevice.os_build ||
-                          "—"
-                        }
-                      />
-
-                      <InfoRow
-                        icon={
-                          <Server
-                            size={15}
-                          />
-                        }
-                        label="Architecture"
-                        value={
-                          formatArchitecture(
-                            selectedDevice.arch
-                          )
-                        }
-                      />
-
-                      <InfoRow
-                        icon={
-                          <Server
-                            size={15}
-                          />
-                        }
-                        label="Manufacturer"
-                        value={
-                          cleanInventoryValue(
-                            selectedDevice.manufacturer
-                          )
-                        }
-                      />
-
-                      <InfoRow
-                        icon={
-                          <Monitor
-                            size={15}
-                          />
-                        }
-                        label="Model"
-                        value={
-                          cleanInventoryValue(
-                            selectedDevice.model
-                          )
-                        }
-                      />
-
-                      <InfoRow
-                        icon={
-                          <ShieldCheck
-                            size={15}
-                          />
-                        }
-                        label="Serial"
-                        value={
-                          cleanInventoryValue(
-                            selectedDevice.serial_number
-                          )
-                        }
-                      />
-
-                      <InfoRow
-                        icon={
-                          <Cpu
-                            size={15}
-                          />
-                        }
+                      <OverviewInfoRow
                         label="Processor"
-                        value={
-                          selectedDevice.cpu_name ||
-                          "—"
-                        }
-                        allowWrap
+                        value={selectedDevice.cpu_name || "Unknown"}
                       />
-
-                      <InfoRow
-                        icon={
-                          <MemoryStick
-                            size={15}
-                          />
-                        }
+                      <OverviewInfoRow
                         label="Memory"
+                        value={formatBytes(selectedDevice.ram_total_bytes)}
+                      />
+                      <OverviewInfoRow
+                        label="Model"
+                        value={cleanInventoryValue(selectedDevice.model)}
+                      />
+                    </OverviewCard>
+
+                    <OverviewCard
+                      title="Remote access"
+                      subtitle="Live management availability"
+                      icon={<Terminal size={17} />}
+                    >
+                      <RemoteAccessRow
+                        label="Agent"
+                        available={selectedDeviceStatus === "online"}
                         value={
-                          formatBytes(
-                            selectedDevice.ram_total_bytes
-                          )
+                          selectedDeviceStatus === "online"
+                            ? "Connected"
+                            : "Disconnected"
                         }
                       />
-
-                      <InfoRow
-                        icon={
-                          <Activity
-                            size={15}
-                          />
-                        }
-                        label="Uptime"
-                        value={
-                          formatUptime(
-                            selectedDevice.uptime_seconds
-                          )
-                        }
+                      <RemoteAccessRow
+                        label="Terminal"
+                        available={terminalAvailable}
+                        value={terminalAvailable ? "Available" : "Unavailable"}
                       />
-
-                    </div>
-
-                  </DrawerSection>
-
-                  {/* =========================
-                      NETWORK
-                  ========================= */}
-
-                  <DrawerSection
-                    title="Network"
-                    subtitle={
-                      selectedDevice.local_ip ||
-                      "Network information"
-                    }
-                    icon={
-                      <Network
-                        size={17}
+                      <RemoteAccessRow
+                        label="Remote Desktop"
+                        available={rdpAvailable}
+                        value={rdpAvailable ? "Available" : "Not configured"}
                       />
-                    }
-                  >
+                      <RemoteAccessRow
+                        label="Relay"
+                        available={false}
+                        value="Not configured"
+                      />
+                    </OverviewCard>
 
-                    <div className="overflow-hidden rounded-xl border border-zinc-800">
-
-                      <InfoRow
-                        icon={
-                          <Network
-                            size={15}
-                          />
-                        }
+                    <OverviewCard
+                      title="Network"
+                      subtitle="Current endpoint addressing"
+                      icon={<Network size={17} />}
+                    >
+                      <OverviewInfoRow
                         label="Local IP"
-                        value={
-                          selectedDevice.local_ip ||
-                          "—"
-                        }
+                        value={selectedDevice.local_ip || "Unknown"}
                       />
-
-                      <InfoRow
-                        icon={
-                          <Wifi
-                            size={15}
-                          />
-                        }
+                      <OverviewInfoRow
                         label="Public IP"
-                        value={
-                          selectedDevice.public_ip ||
-                          "—"
-                        }
+                        value={selectedDevice.public_ip || "Unknown"}
                       />
-
-                      <InfoRow
-                        icon={
-                          <Server
-                            size={15}
-                          />
-                        }
+                      <OverviewInfoRow
                         label="MAC address"
-                        value={
-                          selectedDevice.mac_address ||
-                          "—"
-                        }
+                        value={selectedDevice.mac_address || "Unknown"}
                       />
-
-                      <InfoRow
-                        icon={
-                          <MapPin
-                            size={15}
-                          />
-                        }
+                      <OverviewInfoRow
                         label="Site"
-                        value={
-                          getSite(
-                            selectedDevice
-                          )?.name ||
-                          "No site"
-                        }
+                        value={getSite(selectedDevice)?.name || "No site"}
                       />
+                    </OverviewCard>
 
-                    </div>
-
-                  </DrawerSection>
-
-                  {/* =========================
-                      AGENT
-                  ========================= */}
-
-                  <DrawerSection
-                    title="SentinelGrid Agent"
-                    subtitle={
-                      selectedDevice.agent_version
-                        ? `Version ${selectedDevice.agent_version}`
-                        : "Agent information"
-                    }
-                    icon={
-                      <ShieldCheck
-                        size={17}
-                      />
-                    }
-                  >
-
-                    <div className="overflow-hidden rounded-xl border border-zinc-800">
-
-                      <InfoRow
-                        icon={
-                          <ShieldCheck
-                            size={15}
-                          />
-                        }
+                    <OverviewCard
+                      title="SentinelGrid Agent"
+                      subtitle="Endpoint management agent"
+                      icon={<ShieldCheck size={17} />}
+                    >
+                      <OverviewInfoRow
                         label="Version"
                         value={
                           selectedDevice.agent_version
                             ? `v${selectedDevice.agent_version}`
-                            : "—"
+                            : "Unknown"
                         }
                       />
-
-                      <InfoRow
-                        icon={
-                          <Server
-                            size={15}
-                          />
-                        }
+                      <OverviewInfoRow
                         label="Agent ID"
-                        value={
-                          selectedDevice.agent_id ||
-                          "Not registered"
-                        }
+                        value={selectedDevice.agent_id || "Not registered"}
                       />
-
-                      <InfoRow
-                        icon={
-                          <Activity
-                            size={15}
-                          />
-                        }
+                      <OverviewInfoRow
                         label="Last communication"
                         value={
                           selectedDevice.last_seen
-                            ? new Date(
-                                selectedDevice.last_seen
-                              ).toLocaleString()
+                            ? new Date(selectedDevice.last_seen).toLocaleString()
                             : "Never"
                         }
                       />
+                      <OverviewInfoRow
+                        label="Last inventory"
+                        value={
+                          selectedDevice.last_inventory_at
+                            ? new Date(
+                                selectedDevice.last_inventory_at
+                              ).toLocaleString()
+                            : "Not recorded"
+                        }
+                      />
+                    </OverviewCard>
 
-                    </div>
-
-                  </DrawerSection>
+                  </div>
 
                 </div>
-
-              </div>
+              ) : (
+                <DeviceTabPanel
+                  tab={activeTab}
+                  device={selectedDevice}
+                  activity={activity}
+                />
+              )}
 
               {/* =========================
                   DELETE DEVICE
@@ -2228,45 +2115,204 @@ export default function DeviceDashboard({
   );
 }
 
-/* =========================
-   QUICK ACTION BUTTON
-========================= */
+const DEVICE_TABS: Array<{ id: DeviceTab; label: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "performance", label: "Performance" },
+  { id: "inventory", label: "Inventory" },
+  { id: "software", label: "Software" },
+  { id: "services", label: "Services" },
+  { id: "security", label: "Security" },
+  { id: "activity", label: "Activity" },
+];
 
-function QuickActionButton({
-  icon,
-  label,
-  onClick,
+function ActionsMenu({
+  device,
+  busy,
+  online,
+  onAction,
+  onUnavailable,
 }: {
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
+  device: Device;
+  busy: boolean;
+  online: boolean;
+  onAction: (
+    action: string,
+    options?: { confirm?: string },
+  ) => void;
+  onUnavailable: (message: string) => void;
 }) {
+  const itemClass = "flex w-full items-center justify-between gap-4 px-3 py-2 text-left text-xs text-zinc-300 transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-35";
+  const deviceName = device.display_name || device.hostname;
+
   return (
-    <button
-      type="button"
-      onClick={
-        onClick
-      }
-      className="group flex h-12 items-center gap-3 rounded-xl border border-zinc-800 bg-[#111317] px-4 text-left outline-none transition hover:border-zinc-700 hover:bg-[#17191d] focus:outline-none focus-visible:outline-none"
-    >
+    <div className="absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-zinc-800 bg-[#111317] p-1 shadow-2xl">
+      <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Device</p>
+      <button type="button" className={itemClass} disabled onClick={() => undefined}>
+        <span>Force inventory</span>
+        <span className="text-[10px] text-zinc-600">Agent update required</span>
+      </button>
+      <button type="button" className={itemClass} disabled onClick={() => undefined}>
+        <span>Restart Agent</span>
+        <span className="text-[10px] text-zinc-600">Coming later</span>
+      </button>
+      <button type="button" className={itemClass}
+        disabled={busy || !online || device.capabilities?.agent_update !== true}
+        onClick={() => onAction("update_agent", { confirm: `Check for and install the newest permitted Agent release on ${deviceName}?` })}
+        title="Requires an operational secure updater and enabled server policy">
+        <span>Update Agent</span>
+        <span className="text-[10px] text-zinc-600">{device.capabilities?.agent_update === true ? "AAL2" : "Unavailable"}</span>
+      </button>
 
-      <span className="text-zinc-500 transition group-hover:text-white">
-        {icon}
-      </span>
+      <div className="my-1 border-t border-zinc-800" />
+      <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">System</p>
+      <button type="button" className={itemClass} disabled={busy || !online} onClick={() => onAction("flush_dns")}>
+        <span>Flush DNS</span>
+        <Wrench size={14} className="text-zinc-600" />
+      </button>
+      <button type="button" className={itemClass} disabled={busy || !online} onClick={() => onAction("gpupdate")}>
+        <span>GPUpdate</span>
+        <Wrench size={14} className="text-zinc-600" />
+      </button>
 
-      <span className="truncate text-sm font-medium text-zinc-200 transition group-hover:text-white">
-        {label}
-      </span>
+      <div className="my-1 border-t border-zinc-800" />
+      <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Power</p>
+      <button type="button" className={itemClass} disabled={busy || !online} onClick={() => onAction("lock")}>
+        <span>Lock</span>
+        <span className="text-zinc-600">AAL2</span>
+      </button>
+      <button type="button" className={itemClass} disabled={busy || !online} onClick={() => onAction("reboot", { confirm: `Restart ${deviceName}?` })}>
+        <span>Restart</span>
+        <span className="text-amber-500/70">AAL2</span>
+      </button>
+      <button type="button" className={`${itemClass} text-red-300`} disabled={busy || !online} onClick={() => onAction("shutdown", { confirm: `Shutdown ${deviceName}?` })}>
+        <span>Shutdown</span>
+        <span className="text-red-400/70">AAL2</span>
+      </button>
 
-    </button>
+      <button
+        type="button"
+        className="mt-1 w-full border-t border-zinc-800 px-3 py-2 text-left text-[10px] text-zinc-600 transition hover:text-zinc-400"
+        onClick={() => onUnavailable("Restart Agent and Force inventory are not available from this Agent version yet. Update Agent remains disabled until the secure updater is qualified and operational.")}
+      >
+        Why are some actions disabled?
+      </button>
+    </div>
   );
 }
 
-/* =========================
-   DRAWER SECTION
-========================= */
+function DeviceTabPanel({
+  tab,
+  device,
+  activity,
+}: {
+  tab: DeviceTab;
+  device: Device;
+  activity?: DeviceActivity[];
+}) {
+  if (tab === "inventory") {
+    return (
+      <div className="mt-6 space-y-4">
+        <InventoryGroup title="Hardware" rows={[
+          ["Device type", formatDeviceType(device.device_type)],
+          ["Manufacturer", cleanInventoryValue(device.manufacturer)],
+          ["Model", cleanInventoryValue(device.model)],
+          ["Serial number", cleanInventoryValue(device.serial_number)],
+          ["Processor", device.cpu_name || "Unknown"],
+          ["Memory", formatBytes(device.ram_total_bytes)],
+        ]} />
+        <InventoryGroup title="Operating system" rows={[
+          ["Operating system", device.os || "Unknown"],
+          ["Version", device.os_version || "Unknown"],
+          ["Build", device.os_build || "Unknown"],
+          ["Architecture", formatArchitecture(device.arch)],
+        ]} />
+        <InventoryGroup title="Network" rows={[
+          ["Local IP", device.local_ip || "Unknown"],
+          ["Public IP", device.public_ip || "Unknown"],
+          ["MAC address", device.mac_address || "Unknown"],
+        ]} />
+        <InventoryGroup title="Agent" rows={[
+          ["Version", device.agent_version ? `v${device.agent_version}` : "Unknown"],
+          ["Last inventory", device.last_inventory_at ? new Date(device.last_inventory_at).toLocaleString() : "Not recorded"],
+        ]} />
+      </div>
+    );
+  }
 
-function DrawerSection({
+  if (tab === "activity") {
+    const events = (activity ?? []).filter((event) => event.target_id === device.id);
+    return (
+      <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
+        {events.length === 0 ? (
+          <DeviceTabEmpty title="No device activity yet" description="Device events will appear here through SentinelGrid's audit log." />
+        ) : (
+          <div className="divide-y divide-zinc-800">
+            {events.map((event) => (
+              <div key={event.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-zinc-200">{event.action}</p>
+                  <p className="mt-1 text-xs text-zinc-600">{new Date(event.created_at).toLocaleString()}</p>
+                </div>
+                <span className={event.status === "failed" ? "text-xs text-red-400" : "text-xs text-emerald-400"}>{event.status || "success"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (tab === "performance") {
+    return (
+      <div className="mt-6 space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {(["1 hour", "24 hours", "7 days", "30 days"] as const).map((range) => (
+            <button key={range} type="button" className="rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-500">{range}</button>
+          ))}
+        </div>
+        <DeviceTabEmpty title="No historical performance data" description="Charts will appear after metric samples are collected. Current values are not used as historical points." />
+      </div>
+    );
+  }
+
+  const labels: Record<Exclude<DeviceTab, "overview" | "performance" | "inventory" | "activity">, [string, string]> = {
+    software: ["Software inventory is not available", "This Agent version does not collect installed software yet."],
+    services: ["Services inventory is not available", "Windows service collection and actions are not available from this Agent version yet."],
+    security: ["Security posture is not available", "Security collectors have not reported data for this Agent yet."],
+  };
+
+  const unsupportedTab = tab as "software" | "services" | "security";
+
+  return <DeviceTabEmpty title={labels[unsupportedTab][0]} description={labels[unsupportedTab][1]} />;
+}
+
+function InventoryGroup({ title, rows }: { title: string; rows: Array<[string, string]> }) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
+      <h3 className="border-b border-zinc-800 px-4 py-3 text-sm font-semibold text-white">{title}</h3>
+      <div className="divide-y divide-zinc-800">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex items-center justify-between gap-4 px-4 py-3 text-xs">
+            <span className="text-zinc-600">{label}</span>
+            <span className="max-w-[65%] text-right text-zinc-300">{value}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DeviceTabEmpty({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="mt-6 rounded-2xl border border-dashed border-zinc-800 bg-[#0d0f12] px-5 py-14 text-center">
+      <Wrench size={22} className="mx-auto text-zinc-600" />
+      <h3 className="mt-4 text-sm font-semibold text-white">{title}</h3>
+      <p className="mx-auto mt-2 max-w-sm text-xs leading-5 text-zinc-600">{description}</p>
+    </div>
+  );
+}
+
+function OverviewCard({
   title,
   subtitle,
   icon,
@@ -2277,125 +2323,73 @@ function DrawerSection({
   icon: ReactNode;
   children: ReactNode;
 }) {
-  const [
-    open,
-    setOpen,
-  ] =
-    useState(false);
-
   return (
-    <div>
+    <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
+      <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3.5">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-zinc-500">
+          {icon}
+        </div>
 
-      <button
-        type="button"
-        aria-expanded={
-          open
-        }
-        onClick={() =>
-          setOpen(
-            (current) =>
-              !current
-          )
-        }
-        className="group flex w-full items-center justify-between gap-4 border-0 px-4 py-3.5 text-left outline-none ring-0 transition hover:bg-[#121417] focus:border-transparent focus:outline-none focus:ring-0 focus-visible:border-transparent focus-visible:outline-none focus-visible:ring-0"
-      >
-
-        <div className="flex min-w-0 items-center gap-3">
-
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-zinc-500 transition group-hover:text-zinc-300">
-            {icon}
-          </div>
-
-          <div className="min-w-0">
-
-            <p className="text-sm font-medium text-zinc-200">
-              {title}
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-white">{title}</h3>
+          {subtitle && (
+            <p className="mt-0.5 truncate text-xs text-zinc-600">
+              {subtitle}
             </p>
-
-            {subtitle && (
-              <p className="mt-0.5 truncate text-xs text-zinc-600">
-                {subtitle}
-              </p>
-            )}
-
-          </div>
-
+          )}
         </div>
-
-        <ChevronDown
-          size={15}
-          className={`shrink-0 text-zinc-600 transition-transform duration-200 group-hover:text-zinc-400 ${
-            open
-              ? "rotate-180"
-              : ""
-          }`}
-        />
-
-      </button>
-
-      <div
-        className={`grid transition-[grid-template-rows] duration-200 ease-out ${
-          open
-            ? "grid-rows-[1fr]"
-            : "grid-rows-[0fr]"
-        }`}
-      >
-
-        <div className="overflow-hidden">
-
-          <div className="border-t border-zinc-800 bg-[#090b0d] p-4">
-            {
-              children
-            }
-          </div>
-
-        </div>
-
       </div>
 
+      <div className="divide-y divide-zinc-800">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function OverviewInfoRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-5 px-4 py-3 text-sm">
+      <span className="shrink-0 text-zinc-600">{label}</span>
+      <span
+        title={value}
+        className="min-w-0 max-w-[68%] break-words text-right text-zinc-300"
+      >
+        {value}
+      </span>
     </div>
   );
 }
 
-/* =========================
-   INFO ROW
-========================= */
-
-function InfoRow({
-  icon,
+function RemoteAccessRow({
   label,
+  available,
   value,
-  allowWrap = false,
 }: {
-  icon: ReactNode;
   label: string;
+  available: boolean;
   value: string;
-  allowWrap?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-5 border-b border-zinc-800 bg-[#0d0f12] px-4 py-3 last:border-b-0">
-
-      <div className="flex shrink-0 items-center gap-3 text-zinc-600">
-
-        {icon}
-
-        <span className="text-sm">
-          {label}
-        </span>
-
+    <div className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+      <div className="flex items-center gap-2.5">
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${
+            available ? "bg-emerald-400" : "bg-zinc-600"
+          }`}
+        />
+        <span className="text-zinc-400">{label}</span>
       </div>
 
-      <span
-        title={value}
-        className={`min-w-0 max-w-[62%] text-right text-sm text-zinc-300 ${
-          allowWrap
-            ? "leading-5"
-            : "truncate"
-        }`}
-      >
+      <span className={available ? "text-emerald-400" : "text-zinc-600"}>
         {value}
       </span>
-
     </div>
   );
 }
@@ -2464,27 +2458,22 @@ function MetricCard({
         </p>
       )}
 
-      <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-zinc-800">
-
-        {safePercentage !==
-          null && (
+      {safePercentage !== null && (
+        <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-zinc-800">
           <div
             className={`h-full rounded-full transition-all duration-500 ${
-              safePercentage >=
-              90
+              safePercentage >= 90
                 ? "bg-red-500"
-                : safePercentage >=
-                  75
-                ? "bg-amber-500"
-                : "bg-emerald-500"
+                : safePercentage >= 75
+                  ? "bg-amber-500"
+                  : "bg-emerald-500"
             }`}
             style={{
               width: `${safePercentage}%`,
             }}
           />
-        )}
-
-      </div>
+        </div>
+      )}
 
     </div>
   );

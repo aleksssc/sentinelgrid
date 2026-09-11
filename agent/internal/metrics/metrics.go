@@ -165,29 +165,21 @@ $uptime = (
 	}
 
 	return Metrics{
-			CPUUsage:
-				windowsData.CPUUsage,
+			CPUUsage: windowsData.CPUUsage,
 
-			RAMUsage:
-				windowsData.RAMUsage,
+			RAMUsage: windowsData.RAMUsage,
 
-			RAMTotalBytes:
-				windowsData.RAMTotalBytes,
+			RAMTotalBytes: windowsData.RAMTotalBytes,
 
-			RAMUsedBytes:
-				windowsData.RAMUsedBytes,
+			RAMUsedBytes: windowsData.RAMUsedBytes,
 
-			DiskUsage:
-				windowsData.DiskUsage,
+			DiskUsage: windowsData.DiskUsage,
 
-			DiskTotalBytes:
-				windowsData.DiskTotalBytes,
+			DiskTotalBytes: windowsData.DiskTotalBytes,
 
-			DiskUsedBytes:
-				windowsData.DiskUsedBytes,
+			DiskUsedBytes: windowsData.DiskUsedBytes,
 
-			UptimeSeconds:
-				windowsData.UptimeSeconds,
+			UptimeSeconds: windowsData.UptimeSeconds,
 		},
 		nil
 }

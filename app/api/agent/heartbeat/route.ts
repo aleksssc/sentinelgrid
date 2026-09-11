@@ -16,6 +16,7 @@ import {
 ========================= */
 
 type AgentInventory = {
+  capabilities?: unknown;
   hostname?: unknown;
 
   os?: unknown;
@@ -238,10 +239,7 @@ export async function POST(
     ========================= */
 
     const updateData:
-      Record<
-        string,
-        string | number
-      > = {
+      Record<string, unknown> = {
         status:
           "online",
 
@@ -411,6 +409,17 @@ export async function POST(
         "ram_total_bytes",
         inventory.ram_total_bytes
       );
+
+      const capabilities =
+        normalizeCapabilities(
+          inventory.capabilities
+        );
+
+      if (capabilities) {
+        updateData.capabilities = capabilities;
+        updateData.last_inventory_at =
+          new Date().toISOString();
+      }
     }
 
     /* =========================
@@ -501,10 +510,7 @@ function safeString(
 ========================= */
 
 function assignString(
-  target: Record<
-    string,
-    string | number
-  >,
+  target: Record<string, unknown>,
   key: string,
   value: unknown
 ) {
@@ -524,10 +530,7 @@ function assignString(
 ========================= */
 
 function assignNumber(
-  target: Record<
-    string,
-    string | number
-  >,
+  target: Record<string, unknown>,
   key: string,
   value: unknown
 ) {
@@ -581,5 +584,29 @@ function getPublicIP(
   return (
     realIP?.trim() ||
     ""
+  );
+}
+
+function normalizeCapabilities(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const input = value as Record<string, unknown>;
+  const names = [
+    "agent_update",
+    "commands",
+    "terminal",
+    "force_inventory",
+    "restart_agent",
+    "services",
+    "software",
+    "security",
+    "tcp_tunnel",
+    "rdp",
+  ];
+
+  return Object.fromEntries(
+    names.map((name) => [name, input[name] === true])
   );
 }

@@ -35,6 +35,8 @@
 # =========================================
 
 agent/SentinelGridAgent.exe
+agent/SentinelGridUpdater.exe
+/dist/
 
 
 # =========================================
@@ -105,3 +107,6 @@ next-env.d.ts
 # Local tooling
 .agents/
 skills-lock.json
+.vercel
+.env*
+!/.env.example

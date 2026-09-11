@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sentinelgrid/agent/internal/update"
 	"strings"
 )
 
@@ -15,6 +16,8 @@ import (
 ========================= */
 
 type Inventory struct {
+	Capabilities map[string]bool `json:"capabilities"`
+
 	Hostname string `json:"hostname"`
 
 	OS        string `json:"os"`
@@ -120,23 +123,29 @@ func Collect(
 
 	result :=
 		Inventory{
-			Hostname:
-				hostname,
+			Capabilities: map[string]bool{
+				"agent_update":    update.Operational(),
+				"commands":        true,
+				"terminal":        true,
+				"force_inventory": false,
+				"restart_agent":   false,
+				"services":        false,
+				"software":        false,
+				"security":        false,
+				"tcp_tunnel":      false,
+				"rdp":             false,
+			},
+			Hostname: hostname,
 
-			OS:
-				runtime.GOOS,
+			OS: runtime.GOOS,
 
-			Arch:
-				runtime.GOARCH,
+			Arch: runtime.GOARCH,
 
-			LocalIP:
-				localIP,
+			LocalIP: localIP,
 
-			MACAddress:
-				macAddress,
+			MACAddress: macAddress,
 
-			AgentVersion:
-				version,
+			AgentVersion: version,
 		}
 
 	/* =========================
@@ -228,7 +237,7 @@ func collectWindowsSystemInfo() (
 	error,
 ) {
 
-const script = `
+	const script = `
 $ErrorActionPreference = "Stop"
 
 $os = Get-CimInstance Win32_OperatingSystem
@@ -342,9 +351,7 @@ func collectPrimaryNetwork() (
 		Find an UP adapter with a private IPv4.
 	*/
 
-	for _,
-		iface :=
-		range interfaces {
+	for _, iface := range interfaces {
 
 		if iface.Flags&
 			net.FlagUp == 0 {
@@ -366,9 +373,7 @@ func collectPrimaryNetwork() (
 			continue
 		}
 
-		for _,
-			address :=
-			range addresses {
+		for _, address := range addresses {
 
 			ip :=
 				parseAddressIP(
@@ -398,9 +403,7 @@ func collectPrimaryNetwork() (
 		Any non-loopback IPv4.
 	*/
 
-	for _,
-		iface :=
-		range interfaces {
+	for _, iface := range interfaces {
 
 		if iface.Flags&
 			net.FlagUp == 0 {
@@ -422,9 +425,7 @@ func collectPrimaryNetwork() (
 			continue
 		}
 
-		for _,
-			address :=
-			range addresses {
+		for _, address := range addresses {
 
 			ip :=
 				parseAddressIP(

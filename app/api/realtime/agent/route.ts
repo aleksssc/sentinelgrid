@@ -45,6 +45,22 @@ type AgentMessage = {
   stderr?: string;
 
   exit_code?: number;
+
+  command_type?: string;
+
+  payload?: Record<string, unknown>;
+
+  idempotency_key?: string;
+
+  expires_at?: string;
+
+  status?: "acknowledged" | "running" | "succeeded" | "failed";
+
+  result?: Record<string, unknown>;
+
+  error_code?: string;
+
+  error_message?: string;
 };
 
 type RemoteCommand = {
@@ -59,6 +75,16 @@ type RemoteCommand = {
     | "powershell";
 
   command: string;
+};
+
+type TypedRemoteCommand = {
+  type: "typed_command";
+  command_id: string;
+  command_type: string;
+  payload: Record<string, unknown>;
+  idempotency_key: string;
+  created_at: string;
+  expires_at: string;
 };
 
 /* =========================================
@@ -394,17 +420,14 @@ export async function GET() {
               ============================= */
 
               subscription =
-                subscribeRealtimeChannel<RemoteCommand>(
+                subscribeRealtimeChannel<RemoteCommand | TypedRemoteCommand>(
                   agentCommandChannel(
                     deviceId,
                   ),
                   async (
                     command,
                   ) => {
-                    if (
-                      command.type !==
-                      "command"
-                    ) {
+                    if (command.type !== "command" && command.type !== "typed_command") {
                       return;
                     }
 
@@ -571,6 +594,99 @@ export async function GET() {
               console.log(
                 `[Realtime Agent] Result published: ${hostname} | ${commandId}`,
               );
+
+              return;
+            }
+
+            if (
+              message.type === "typed_command_ack" ||
+              message.type === "typed_command_running"
+            ) {
+              const commandId =
+                typeof message.command_id === "string"
+                  ? message.command_id.trim()
+                  : "";
+
+              if (!commandId) return;
+
+              const supabase = createAdminClient();
+              const now = new Date().toISOString();
+              const isAcknowledged = message.type === "typed_command_ack";
+
+              await supabase
+                .from("device_commands")
+                .update({
+                  status: isAcknowledged ? "acknowledged" : "running",
+                  acknowledged_at: isAcknowledged ? now : undefined,
+                  started_at: isAcknowledged ? undefined : now,
+                })
+                .eq("id", commandId)
+                .eq("device_id", deviceId)
+                .in("status", ["dispatched", "acknowledged"]);
+
+              return;
+            }
+
+            if (message.type === "typed_command_result") {
+              const commandId =
+                typeof message.command_id === "string"
+                  ? message.command_id.trim()
+                  : "";
+              const status = message.status;
+
+              if (
+                !commandId ||
+                (status !== "succeeded" && status !== "failed")
+              ) {
+                return;
+              }
+
+              const supabase = createAdminClient();
+              const completedAt = new Date().toISOString();
+              const { data: command } = await supabase
+                .from("device_commands")
+                .select("id, organization_id, requested_by, command_type")
+                .eq("id", commandId)
+                .eq("device_id", deviceId)
+                .maybeSingle();
+
+              if (!command) return;
+
+              if (command.command_type === "update_agent") {
+                const { data: correlation, error: correlationError } = await supabase
+                  .from("device_commands").select("update_transaction_id")
+                  .eq("id", command.id).eq("device_id", deviceId).single();
+                if (correlationError) throw new Error("UPDATE_CORRELATION_LOOKUP_FAILED");
+                if (correlation.update_transaction_id) return;
+              }
+
+              await supabase
+                .from("device_commands")
+                .update({
+                  status,
+                  completed_at: completedAt,
+                  result: message.result ?? {},
+                  error_code: message.error_code ?? null,
+                  error_message: message.error_message ?? null,
+                })
+                .eq("id", command.id)
+                .eq("device_id", deviceId)
+                .in("status", ["dispatched", "acknowledged", "running"]);
+
+              await supabase.from("audit_logs").insert({
+                organization_id: command.organization_id,
+                user_id: command.requested_by,
+                action: status === "succeeded"
+                  ? "device.command.succeeded"
+                  : "device.command.failed",
+                target_type: "device",
+                target_id: deviceId,
+                status: status === "succeeded" ? "success" : "failed",
+                metadata: {
+                  commandId,
+                  errorCode: message.error_code ?? null,
+                },
+              });
 
               return;
             }

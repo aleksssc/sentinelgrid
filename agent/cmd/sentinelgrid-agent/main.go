@@ -8,39 +8,41 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kardianos/service"
 
+	buildinfo "sentinelgrid/agent"
 	"sentinelgrid/agent/internal/api"
 	"sentinelgrid/agent/internal/config"
 	"sentinelgrid/agent/internal/inventory"
 	"sentinelgrid/agent/internal/metrics"
 	"sentinelgrid/agent/internal/realtime"
+	"sentinelgrid/agent/internal/update"
 )
 
 /* =========================
    AGENT
 ========================= */
 
-const version = "0.1.3"
+var version = buildinfo.Version()
 
-const defaultServerURL =
-	"https://sentinelgrid-one.vercel.app"
+const defaultServerURL = "https://sentinelgrid-one.vercel.app"
 
-const heartbeatInterval =
-	30 * time.Second
+const heartbeatInterval = 30 * time.Second
 
-const inventoryRefreshInterval =
-	30 * time.Minute
+const inventoryRefreshInterval = 30 * time.Minute
 
 /* =========================
    WINDOWS SERVICE
 ========================= */
 
 type program struct {
-	stop chan struct{}
-	done chan struct{}
+	stop     chan struct{}
+	done     chan struct{}
+	cancel   context.CancelFunc
+	stopOnce sync.Once
 }
 
 /* =========================
@@ -60,7 +62,9 @@ func (p *program) Start(
 			chan struct{},
 		)
 
-	go p.run()
+	ctx, cancel := context.WithCancel(context.Background())
+	p.cancel = cancel
+	go p.run(ctx)
 
 	return nil
 }
@@ -69,7 +73,7 @@ func (p *program) Start(
    SERVICE LOOP
 ========================= */
 
-func (p *program) run() {
+func (p *program) run(ctx context.Context) {
 	defer close(
 		p.done,
 	)
@@ -83,17 +87,19 @@ func (p *program) run() {
 		REALTIME
 	========================= */
 
-		realtimeContext,
-			cancelRealtime :=
-			context.WithCancel(
-				context.Background(),
-			)
-
-		defer cancelRealtime()
-
-		go realtime.Run(
-			realtimeContext,
+	realtimeContext,
+		cancelRealtime :=
+		context.WithCancel(
+			ctx,
 		)
+
+	defer cancelRealtime()
+
+	go update.Run(realtimeContext, version)
+
+	go realtime.Run(
+		realtimeContext,
+	)
 
 	/* =========================
 	   LOAD CONFIG
@@ -126,8 +132,7 @@ func (p *program) run() {
 	   INVENTORY CACHE
 	========================= */
 
-	var cachedInventory *
-		inventory.Inventory
+	var cachedInventory *inventory.Inventory
 
 	lastInventoryRefresh :=
 		time.Time{}
@@ -336,6 +341,7 @@ func sendHeartbeat(
 			"Heartbeat sent without telemetry. Device: %s",
 			response.DeviceID,
 		)
+		update.ConfirmHeartbeat(version, cfg.Server, cfg.DeviceID, response.DeviceID, response.OK)
 
 		return
 	}
@@ -349,11 +355,9 @@ func sendHeartbeat(
 			HeartbeatWithData(
 				cfg.AgentToken,
 				api.HeartbeatData{
-					Metrics:
-						deviceMetrics,
+					Metrics: deviceMetrics,
 
-					Inventory:
-						cachedInventory,
+					Inventory: cachedInventory,
 				},
 			)
 
@@ -371,6 +375,7 @@ func sendHeartbeat(
 	========================= */
 
 	if cachedInventory != nil {
+		update.ConfirmHeartbeat(version, cfg.Server, cfg.DeviceID, response.DeviceID, response.OK)
 		log.Printf(
 			"Heartbeat sent. Device: %s | CPU %.1f%% | RAM %.1f%% | Disk %.1f%% | Agent %s",
 			response.DeviceID,
@@ -390,6 +395,7 @@ func sendHeartbeat(
 		deviceMetrics.RAMUsage,
 		deviceMetrics.DiskUsage,
 	)
+	update.ConfirmHeartbeat(version, cfg.Server, cfg.DeviceID, response.DeviceID, response.OK)
 }
 
 /* =========================
@@ -399,11 +405,15 @@ func sendHeartbeat(
 func (p *program) Stop(
 	s service.Service,
 ) error {
-	if p.stop != nil {
-		close(
-			p.stop,
-		)
+	update.BeginShutdown()
+	if p.cancel != nil {
+		p.cancel()
 	}
+	p.stopOnce.Do(func() {
+		if p.stop != nil {
+			close(p.stop)
+		}
+	})
 
 	if p.done != nil {
 		<-p.done
@@ -595,17 +605,13 @@ func runCLI(
 	err =
 		config.Save(
 			config.Config{
-				Server:
-					serverURL,
+				Server: serverURL,
 
-				DeviceID:
-					response.DeviceID,
+				DeviceID: response.DeviceID,
 
-				AgentID:
-					response.AgentID,
+				AgentID: response.AgentID,
 
-				AgentToken:
-					response.AgentToken,
+				AgentToken: response.AgentToken,
 			},
 		)
 
@@ -676,11 +682,9 @@ func enrollmentTokenFromInstallerPath(
 			installerPath,
 		)
 
-	const prefix =
-		"SentinelGridAgent__"
+	const prefix = "SentinelGridAgent__"
 
-	const suffix =
-		".msi"
+	const suffix = ".msi"
 
 	/* =========================
 	   PREFIX
@@ -782,7 +786,24 @@ func main() {
 			"Show Agent version",
 		)
 
+	showUpdateTrust := flag.Bool("update-build-info", false, "Show embedded update trust (no update)")
+	showReadiness := flag.Bool("update-readiness", false, "Inspect installed update readiness (no update; administrator required)")
 	flag.Parse()
+	if *showUpdateTrust || *showReadiness {
+		if flag.NArg() != 0 || flag.NFlag() != 1 {
+			log.Fatal("Update diagnostics accept no other flags or arguments")
+		}
+		if *showUpdateTrust {
+			fmt.Println(update.BuildTrustJSON())
+			return
+		}
+		if err := update.ReadinessDiagnostic(); err != nil {
+			fmt.Printf("AUTO-UPDATE NOT READY: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("AUTO-UPDATE READY")
+		return
+	}
 
 	/* =========================
 	   VERSION
@@ -869,14 +890,11 @@ func main() {
 
 	serviceConfig :=
 		&service.Config{
-			Name:
-				"SentinelGridAgent",
+			Name: "SentinelGridAgent",
 
-			DisplayName:
-				"SentinelGrid Agent",
+			DisplayName: "SentinelGrid Agent",
 
-			Description:
-				"SentinelGrid monitoring and remote management agent.",
+			Description: "SentinelGrid monitoring and remote management agent.",
 		}
 
 	program :=

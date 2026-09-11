@@ -235,6 +235,9 @@ export default async function ClientDetailsPage({
       agent_id,
       agent_version,
 
+      capabilities,
+      last_inventory_at,
+
       last_seen,
       site_id,
       created_at,
@@ -264,6 +267,27 @@ export default async function ClientDetailsPage({
 
   const deviceList =
     devices ?? [];
+
+  const deviceIds = deviceList.map((device) => device.id);
+  let deviceActivity: Array<{
+    id: string;
+    action: string;
+    status: string | null;
+    target_id: string | null;
+    created_at: string;
+    metadata: Record<string, unknown> | null;
+  }> = [];
+
+  if (deviceIds.length > 0) {
+    const { data: activity } = await supabase
+      .from("audit_logs")
+      .select("id, action, status, target_id, created_at, metadata")
+      .in("target_id", deviceIds)
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    deviceActivity = activity ?? [];
+  }
 
   /* =========================
      EFFECTIVE STATUS
@@ -581,8 +605,14 @@ export default async function ClientDetailsPage({
             sites={
               siteList
             }
+            clientName={
+              client.name
+            }
             canManage={
               canManageInfrastructure
+            }
+            activity={
+              deviceActivity
             }
           />
 

@@ -42,6 +42,12 @@ export async function POST(
         | null
         | undefined;
 
+    const capabilities =
+      body.capabilities as
+        | Record<string, unknown>
+        | null
+        | undefined;
+
     /* =========================
        VALIDATION
     ========================= */
@@ -74,6 +80,7 @@ export async function POST(
         arch,
         localIp,
         macAddress,
+        capabilities,
       });
 
     /* =========================

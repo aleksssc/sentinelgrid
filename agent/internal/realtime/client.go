@@ -73,6 +73,16 @@ type serverMessage struct {
 	Shell string `json:"shell,omitempty"`
 
 	Command string `json:"command,omitempty"`
+
+	CommandType string `json:"command_type,omitempty"`
+
+	Payload map[string]any `json:"payload,omitempty"`
+
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+
+	CreatedAt string `json:"created_at,omitempty"`
+
+	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
 /* =========================================
@@ -501,6 +511,22 @@ func readLoop(
 			*/
 
 			go handleCommand(
+				ctx,
+				conn,
+				writeMu,
+				message,
+			)
+
+		case "typed_command":
+			if message.CommandID == "" ||
+				message.CommandType == "" ||
+				message.IdempotencyKey == "" ||
+				message.ExpiresAt == "" {
+				log.Println("Typed command rejected: missing required fields.")
+				continue
+			}
+
+			go handleTypedCommand(
 				ctx,
 				conn,
 				writeMu,

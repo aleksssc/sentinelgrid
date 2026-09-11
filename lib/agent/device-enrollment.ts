@@ -14,6 +14,8 @@ type EnrollAgentInput = {
   arch?: string | null;
   localIp?: string | null;
   macAddress?: string | null;
+
+  capabilities?: Record<string, unknown> | null;
 };
 
 export async function enrollAgent({
@@ -23,6 +25,7 @@ export async function enrollAgent({
   arch,
   localIp,
   macAddress,
+  capabilities,
 }: EnrollAgentInput) {
   const admin =
     createAdminClient();
@@ -210,6 +213,9 @@ export async function enrollAgent({
         mac_address:
           macAddress ?? null,
 
+        capabilities:
+          normalizeCapabilities(capabilities),
+
         status:
           "online",
 
@@ -277,4 +283,28 @@ export async function enrollAgent({
 
     agentToken,
   };
+}
+
+function normalizeCapabilities(
+  value?: Record<string, unknown> | null
+) {
+  const names = [
+    "agent_update",
+    "commands",
+    "terminal",
+    "force_inventory",
+    "restart_agent",
+    "services",
+    "software",
+    "security",
+    "tcp_tunnel",
+    "rdp",
+  ];
+
+  return Object.fromEntries(
+    names.map((name) => [
+      name,
+      value?.[name] === true,
+    ])
+  );
 }

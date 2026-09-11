@@ -75,6 +75,8 @@ type enrollRequest struct {
 
 	Inventory inventory.Inventory `json:"inventory"`
 
+	Capabilities map[string]bool `json:"capabilities"`
+
 	Hostname string `json:"hostname"`
 
 	OS string `json:"os"`
@@ -148,20 +150,20 @@ func NewClient(
 ) *Client {
 
 	return &Client{
-		serverURL:
-			strings.TrimRight(
-				strings.TrimSpace(
-					serverURL,
-				),
-				"/",
+		serverURL: strings.TrimRight(
+			strings.TrimSpace(
+				serverURL,
 			),
+			"/",
+		),
 
-		httpClient:
-			&http.Client{
-				Timeout:
-					20 *
-						time.Second,
+		httpClient: &http.Client{
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return fmt.Errorf("SentinelGrid API redirects are forbidden")
 			},
+			Timeout: 20 *
+				time.Second,
+		},
 	}
 }
 
@@ -179,56 +181,41 @@ func (c *Client) Enroll(
 
 	requestBody :=
 		enrollRequest{
-			Token:
-				enrollmentToken,
+			Token: enrollmentToken,
 
-			EnrollmentToken:
-				enrollmentToken,
+			EnrollmentToken: enrollmentToken,
 
-			Inventory:
-				deviceInventory,
+			Inventory: deviceInventory,
 
-			Hostname:
-				deviceInventory.Hostname,
+			Capabilities: deviceInventory.Capabilities,
 
-			OS:
-				deviceInventory.OS,
+			Hostname: deviceInventory.Hostname,
 
-			OSVersion:
-				deviceInventory.OSVersion,
+			OS: deviceInventory.OS,
 
-			OSBuild:
-				deviceInventory.OSBuild,
+			OSVersion: deviceInventory.OSVersion,
 
-			Arch:
-				deviceInventory.Arch,
+			OSBuild: deviceInventory.OSBuild,
 
-			DeviceType:
-				deviceInventory.DeviceType,
+			Arch: deviceInventory.Arch,
 
-			LocalIP:
-				deviceInventory.LocalIP,
+			DeviceType: deviceInventory.DeviceType,
 
-			MACAddress:
-				deviceInventory.MACAddress,
+			LocalIP: deviceInventory.LocalIP,
 
-			Manufacturer:
-				deviceInventory.Manufacturer,
+			MACAddress: deviceInventory.MACAddress,
 
-			Model:
-				deviceInventory.Model,
+			Manufacturer: deviceInventory.Manufacturer,
 
-			SerialNumber:
-				deviceInventory.SerialNumber,
+			Model: deviceInventory.Model,
 
-			CPUName:
-				deviceInventory.CPUName,
+			SerialNumber: deviceInventory.SerialNumber,
 
-			RAMTotalBytes:
-				deviceInventory.RAMTotalBytes,
+			CPUName: deviceInventory.CPUName,
 
-			AgentVersion:
-				deviceInventory.AgentVersion,
+			RAMTotalBytes: deviceInventory.RAMTotalBytes,
+
+			AgentVersion: deviceInventory.AgentVersion,
 		}
 
 	var response EnrollResponse
@@ -320,11 +307,9 @@ func (c *Client) heartbeat(
 
 	requestBody :=
 		heartbeatRequest{
-			AgentToken:
-				agentToken,
+			AgentToken: agentToken,
 
-			Token:
-				agentToken,
+			Token: agentToken,
 		}
 
 	if data != nil {
