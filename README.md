@@ -316,6 +316,28 @@ Open:
 http://localhost:3000
 ```
 
+## Device Activity timeline
+
+The device Activity tab groups recent audit events and `device_commands` by
+command ID or update transaction ID, scoped to the selected device. It retains
+the audit trail in keyboard-accessible expandable rows, with action labels,
+status badges, local Today/Yesterday/Older groups, category filters and search.
+The existing 30-second dashboard refresh also refreshes Activity; a manual
+refresh button is available. Query failures are shown explicitly.
+
+The dashboard reads up to 100 recent audit events and 100 recent commands for
+the client, plus commands referenced by those audit events. This is a recent
+activity view, not a complete audit-log export. Reads use the signed-in user's
+Supabase client and existing RLS; no audit records, policies or schemas change.
+
+Update versions and errors come from recorded metadata/command results, never
+the device's current version. Duration is request-to-completion when both
+timestamps exist, otherwise a recorded duration when available. Missing versions
+are not invented. Technical IDs and original audit actions stay inside details;
+arbitrary metadata, tokens and download URLs are not rendered.
+
+Run the normalization and rendering checks with `node --test scripts\test-device-activity.mjs`.
+
 ### Windows Agent development signing and baseline repair
 
 Use `scripts\build-agent.ps1 -Version 0.1.6 -Channel beta -DevSign` with the

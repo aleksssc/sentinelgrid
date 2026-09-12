@@ -6,6 +6,10 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 import DeviceDashboard from "./device-dashboard";
+import {
+  activityCorrelation,
+  type DeviceActivity, type DeviceActivityCommand,
+} from "@/lib/activity/device-activity";
 
 import {
   ArrowLeft,
@@ -269,24 +273,58 @@ export default async function ClientDetailsPage({
     devices ?? [];
 
   const deviceIds = deviceList.map((device) => device.id);
-  let deviceActivity: Array<{
-    id: string;
-    action: string;
-    status: string | null;
-    target_id: string | null;
-    created_at: string;
-    metadata: Record<string, unknown> | null;
-  }> = [];
+  let deviceActivity: DeviceActivity[] = [];
+  let activityCommands: DeviceActivityCommand[] = [];
+  const activityErrors: string[] = [];
+  const commandColumns = "id, device_id, command_type, status, created_at, requested_by, dispatched_at, acknowledged_at, started_at, completed_at, result, error_code, error_message, update_transaction_id";
 
   if (deviceIds.length > 0) {
-    const { data: activity } = await supabase
-      .from("audit_logs")
-      .select("id, action, status, target_id, created_at, metadata")
-      .in("target_id", deviceIds)
-      .order("created_at", { ascending: false })
-      .limit(100);
+    const [auditResult, commandResult] = await Promise.all([
+      supabase.from("audit_logs")
+        .select("id, action, status, target_id, created_at, metadata, actor_email, user_id")
+        .in("target_id", deviceIds)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      supabase.from("device_commands")
+        .select(commandColumns)
+        .in("device_id", deviceIds)
+        .order("created_at", { ascending: false })
+        .limit(100),
+    ]);
+    if (auditResult.error) {
+      console.error("Device activity audit query failed:", auditResult.error);
+      activityErrors.push("Audit events could not be loaded.");
+    }
+    if (commandResult.error) {
+      console.error("Device activity command query failed:", commandResult.error);
+      activityErrors.push("Command details could not be loaded.");
+    }
+    deviceActivity = auditResult.data ?? [];
+    activityCommands = commandResult.data ?? [];
 
-    deviceActivity = activity ?? [];
+    // A recent completion can refer to a request outside the recent-command window.
+    const loadedIds = new Set(activityCommands.map((command) => command.id));
+    const loadedTransactions = new Set(activityCommands.map((command) => command.update_transaction_id));
+    const correlations = deviceActivity.map((event) => activityCorrelation(event.metadata));
+    const isId = (id: string | undefined): id is string => Boolean(id && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id));
+    const missingIds = [...new Set(correlations.map(({ commandId }) => commandId).filter(isId).filter((id) => !loadedIds.has(id)))];
+    const missingTransactions = [...new Set(correlations.map(({ transactionId }) => transactionId).filter(isId).filter((id) => !loadedTransactions.has(id)))];
+    const correlationFilters = [
+      missingIds.length ? `id.in.(${missingIds.join(",")})` : null,
+      missingTransactions.length ? `update_transaction_id.in.(${missingTransactions.join(",")})` : null,
+    ].filter((value): value is string => value !== null);
+    if (correlationFilters.length > 0 && !commandResult.error) {
+      const { data: correlated, error } = await supabase.from("device_commands")
+        .select(commandColumns)
+        .in("device_id", deviceIds)
+        .or(correlationFilters.join(","));
+      if (error) {
+        console.error("Device activity correlation query failed:", error);
+        activityErrors.push("Some related command details could not be loaded.");
+      } else {
+        activityCommands.push(...(correlated ?? []).filter((command) => !loadedIds.has(command.id)));
+      }
+    }
   }
 
   /* =========================
@@ -599,6 +637,8 @@ export default async function ClientDetailsPage({
           </div>
 
           <DeviceDashboard
+            activityCommands={activityCommands}
+            activityError={activityErrors.length ? activityErrors.join(" ") : undefined}
             rdpConfigured={Boolean(process.env.SENTINELGRID_RELAY_URL && process.env.SENTINELGRID_RDP_RELAY_SECRET)}
             devices={
               deviceList

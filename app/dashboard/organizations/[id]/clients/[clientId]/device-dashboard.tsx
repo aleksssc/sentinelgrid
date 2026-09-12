@@ -17,6 +17,8 @@ import DeviceTerminal, {
   type TerminalShell,
 } from "@/components/dashboard/devices/device-terminal";
 import DeviceRDP from "@/components/dashboard/devices/device-rdp";
+import DeviceActivityTimeline from "@/components/dashboard/devices/device-activity";
+import type { DeviceActivity, DeviceActivityCommand } from "@/lib/activity/device-activity";
 
 import {
   Activity,
@@ -185,15 +187,8 @@ type Props = {
   rdpConfigured: boolean;
 
   activity: DeviceActivity[];
-};
-
-type DeviceActivity = {
-  id: string;
-  action: string;
-  status: string | null;
-  target_id: string | null;
-  created_at: string;
-  metadata: Record<string, unknown> | null;
+  activityCommands: DeviceActivityCommand[];
+  activityError?: string;
 };
 
 type DeviceTab =
@@ -216,6 +211,8 @@ export default function DeviceDashboard({
   canManage,
   rdpConfigured,
   activity,
+  activityCommands,
+  activityError,
 }: Props) {
   const router =
     useRouter();
@@ -1884,6 +1881,9 @@ export default function DeviceDashboard({
                   tab={activeTab}
                   device={selectedDevice}
                   activity={activity}
+                  activityCommands={activityCommands}
+                  activityError={activityError}
+                  now={now}
                 />
               )}
 
@@ -2138,9 +2138,27 @@ function ActionsMenu({
         <span>Force inventory</span>
         <span className="text-[10px] text-zinc-600">Agent update required</span>
       </button>
-      <button type="button" className={itemClass} disabled onClick={() => undefined}>
+      <button
+        type="button"
+        className={itemClass}
+        disabled={
+          busy ||
+          !online ||
+          device.capabilities?.restart_agent !== true
+        }
+        onClick={() =>
+          onAction("restart_agent", {
+            confirm: `Restart SentinelGrid Agent on ${deviceName}?`,
+          })
+        }
+      >
         <span>Restart Agent</span>
-        <span className="text-[10px] text-zinc-600">Coming later</span>
+
+        <span className="text-[10px] text-zinc-600">
+          {device.capabilities?.restart_agent === true
+            ? "Available"
+            : "Unavailable"}
+        </span>
       </button>
       <button type="button" className={itemClass}
         disabled={busy || !online || device.capabilities?.agent_update !== true}
@@ -2215,10 +2233,16 @@ function DeviceTabPanel({
   tab,
   device,
   activity,
+  activityCommands,
+  activityError,
+  now,
 }: {
   tab: DeviceTab;
   device: Device;
   activity?: DeviceActivity[];
+  activityCommands: DeviceActivityCommand[];
+  activityError?: string;
+  now: number;
 }) {
   if (tab === "inventory") {
     return (
@@ -2251,25 +2275,15 @@ function DeviceTabPanel({
   }
 
   if (tab === "activity") {
-    const events = (activity ?? []).filter((event) => event.target_id === device.id);
     return (
-      <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
-        {events.length === 0 ? (
-          <DeviceTabEmpty title="No device activity yet" description="Device events will appear here through SentinelGrid's audit log." />
-        ) : (
-          <div className="divide-y divide-zinc-800">
-            {events.map((event) => (
-              <div key={event.id} className="flex items-center justify-between gap-4 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-zinc-200">{event.action}</p>
-                  <p className="mt-1 text-xs text-zinc-600">{new Date(event.created_at).toLocaleString()}</p>
-                </div>
-                <span className={event.status === "failed" ? "text-xs text-red-400" : "text-xs text-emerald-400"}>{event.status || "success"}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <DeviceActivityTimeline
+        key={device.id}
+        deviceId={device.id}
+        events={activity ?? []}
+        commands={activityCommands}
+        error={activityError}
+        now={now}
+      />
     );
   }
 
