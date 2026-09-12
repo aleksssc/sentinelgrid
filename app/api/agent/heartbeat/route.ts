@@ -1,4 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
+import { performanceSample } from "@/lib/performance/metrics";
+import { storePerformanceSample } from "@/lib/performance/history";
 import { createHash } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -51,6 +53,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Could not update device." }, { status: 503, headers });
     }
     if (!device) return NextResponse.json({ error: "Invalid agent token." }, { status: 401, headers });
+    const sample = performanceSample(body, Date.parse(now));
+    if (sample) after(async () => {
+      try {
+        await storePerformanceSample(device.id, sample);
+      } catch {
+        // History is optional telemetry: never withhold heartbeat/update health acknowledgement.
+        console.error("[Performance] SAMPLE_STORE_FAILED", device.id);
+      }
+    });
     let rdpPending: boolean | undefined;
     if (body.rdp_control === true) {
       rdpPending = false;

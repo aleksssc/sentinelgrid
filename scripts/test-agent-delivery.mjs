@@ -11,6 +11,9 @@ function loadRoute(file, admin) {
  const exports = {};
  new Function("require", "exports", compiled)((name) => {
   if (name === "@/lib/supabase/admin") return { createAdminClient: () => admin };
+  if (name === "@/lib/performance/metrics") return loadRoute("../lib/performance/metrics.ts", admin);
+  if (name === "@/lib/performance/history") return { storePerformanceSample: async () => {} };
+  if (name === "next/server") return { ...require(name), after: (callback) => { void callback(); } };
   if (name === "@/lib/agent/update-policy") return { effectiveChannel: (ring) => { assert.ok(["stable","beta","dev"].includes(ring)); return ring; } };
   return require(name);
  }, exports);

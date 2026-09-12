@@ -108,6 +108,30 @@ Dashboard
 └── Settings
 ```
 
+### Device Performance
+
+The device Performance tab reads real CPU, memory and system-disk capacity usage
+from authenticated Agent heartbeats. Collection starts after deploying this version;
+old `devices` values are never backfilled as historical measurements. Existing Agents
+need no update. Inventory-only/basic heartbeats do not create samples.
+
+History uses the existing server-only Upstash Redis configuration (no new environment
+variables, SQL migrations or RLS changes). Each heartbeat writes one atomic Redis EVAL
+after its HTTP response; storage failures log `[Performance] SAMPLE_STORE_FAILED` and
+never fail heartbeat/update health or Force Inventory acknowledgements. This adds one
+Redis request per metrics heartbeat, not a persistent connection. History is bounded:
+1h/30-second, 24h/5-minute, 7d/30-minute and 30d/2-hour sampling, at most 1,108 points
+per device across four TTL-expiring keys. Each bucket holds the latest real measurement,
+not an average; brief spikes between retained samples may not appear at wider ranges.
+Redis eviction/reset loses history; this is rolling telemetry, not a durable audit store.
+
+`GET /api/devices/:deviceId/performance?range=1h|24h|7d|30d` authorizes each read using
+the signed-in user's device RLS before reading Redis. The tab refreshes every 30 seconds
+only while mounted and visible, with immediate period selection, cancellation, retry,
+explicit errors and offline gaps. Disk usage is capacity used, not disk I/O throughput.
+
+Run `npm run test:performance` for telemetry, HTTP authorization, storage and chart tests.
+
 ### Operations: Incidents and Alerts
 
 Both pages use the existing dark dropdown menus for status and time filters. Selections

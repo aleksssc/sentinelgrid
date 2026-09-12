@@ -19,6 +19,7 @@ import DeviceTerminal, {
 } from "@/components/dashboard/devices/device-terminal";
 import DeviceRDP from "@/components/dashboard/devices/device-rdp";
 import DeviceActivityTimeline from "@/components/dashboard/devices/device-activity";
+import DevicePerformance from "@/components/dashboard/devices/device-performance";
 import ActionsMenu from "@/components/dashboard/devices/device-actions-menu";
 import { ACTIVE_COMMAND_STATUSES } from "@/lib/remote/action-definitions";
 import DeviceActionNotice from "@/components/dashboard/devices/device-action-notice";
@@ -2120,16 +2121,7 @@ function DeviceTabPanel({
   }
 
   if (tab === "performance") {
-    return (
-      <div className="mt-6 space-y-4">
-        <div className="flex flex-wrap gap-2">
-          {(["1 hour", "24 hours", "7 days", "30 days"] as const).map((range) => (
-            <button key={range} type="button" className="rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-500">{range}</button>
-          ))}
-        </div>
-        <DeviceTabEmpty title="No historical performance data" description="Charts will appear after metric samples are collected. Current values are not used as historical points." />
-      </div>
-    );
+    return <DevicePerformance key={device.id} deviceId={device.id} />;
   }
 
   const labels: Record<Exclude<DeviceTab, "overview" | "performance" | "inventory" | "activity">, [string, string]> = {
