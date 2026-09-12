@@ -323,20 +323,110 @@ command ID or update transaction ID, scoped to the selected device. It retains
 the audit trail in keyboard-accessible expandable rows, with action labels,
 status badges, local Today/Yesterday/Older groups, category filters and search.
 The existing 30-second dashboard refresh also refreshes Activity; a manual
-refresh button is available. Query failures are shown explicitly.
+refresh button is available. Audit/command query failures are shown explicitly;
+optional update-transaction failures are logged only on the server, without an
+Activity warning. Enrichment has a three-second timeout and is retried on the
+next normal refresh.
 
 The dashboard reads up to 100 recent audit events and 100 recent commands for
 the client, plus commands referenced by those audit events. This is a recent
-activity view, not a complete audit-log export. Reads use the signed-in user's
-Supabase client and existing RLS; no audit records, policies or schemas change.
+activity view, not a complete audit-log export. Audit/command/device reads use
+the signed-in user's Supabase client and existing RLS. The server-only update
+transaction table is read with the existing admin client only after verifying
+the user's organization ownership/membership, constrained to RLS-visible device
+IDs, linked transaction IDs and the devices' organization. Only recorded version
+fields reach the browser; no audit records, policies or schemas change.
 
-Update versions and errors come from recorded metadata/command results, never
-the device's current version. Duration is request-to-completion when both
+Update versions prefer audit metadata/command results, then the device-scoped
+`agent_update_transactions` linked by `device_commands.update_transaction_id`,
+then the command payload. The transaction query selects existing ID/target fields;
+previous versions come from recorded audit/result metadata or its update journal.
+A recorded previous version shows the version transition;
+target-only success shows `Updated to <version>`. Versions never come from the
+device's current version. Errors come from recorded metadata/command results.
+Duration is request-to-completion when both
 timestamps exist, otherwise a recorded duration when available. Missing versions
 are not invented. Technical IDs and original audit actions stay inside details;
 arbitrary metadata, tokens and download URLs are not rendered.
 
 Run the normalization and rendering checks with `node --test scripts\test-device-activity.mjs`.
+
+### Device Actions
+
+Actions are grouped as Maintenance (Force Inventory, Flush DNS, GPUpdate), Agent
+(Restart Agent, Update Agent) and Power (Lock, Restart Computer, Shutdown Computer).
+All eight use the existing authorized `device_commands` API and typed Realtime
+channel. Availability is checked server-side for ownership/admin role,
+organization policy, liveness, active commands and incompatible update transactions.
+All actions can be requested without relying on cached capability flags. Update
+Agent requests a live check even when no newer release is known to the dashboard;
+release selection, installation enablement, readiness and failed-release protection
+remain enforced by the existing update API and Agent. No eligible release or an
+unsupported action produces the existing command result in Activity, not a fabricated
+success. Restart and shutdown require confirmation. Disabled actions expose their
+reason by mouse hover and keyboard focus, without availability badges.
+The menu prefetches availability while closed and retains it between openings;
+pending checks alone do not disable actions. Command submission still enforces all
+server-side checks. Opening uses a brief reduced-motion-aware animation; clicking
+or moving focus outside, or pressing Escape, dismisses the menu.
+
+Action notifications use blue for queued/informational outcomes, amber for running
+or unconfirmed operations, green only for confirmed completion, and red for errors.
+They include a human-readable action/result, actionable explanation, and error code
+when available; dismissing a notification never cancels a command. Invalid/non-JSON
+submission responses and network failures are treated as unconfirmed submissions,
+not proof that the command was rejected. Status polling retries transient failures
+up to three consecutive times and never describes an accepted command as unsubmitted.
+The Agent distinguishes an already-current version from failed-release protection
+and disabled installation using structured error codes on the existing command result.
+For older Agents, the authorized command-status endpoint can also confirm an
+already-current version using the existing update-check state, but only when that
+check occurred between this command's start and completion. This optional, device-scoped
+server-side lookup has a two-second timeout and never changes command/audit records.
+Missing, stale or inaccessible state leaves the legacy no-eligible-release result
+as neutral information, not proof of being up to date. Rebuilding/signing the Agent
+enables precise no-newer/blocked/policy codes without that optional lookup.
+Transaction execution, terminal command statuses and audit history are unchanged.
+Notification checks: `node --test scripts\test-device-action-feedback.mjs scripts\test-update-command-feedback.mjs`.
+
+Deploy the website **and rebuild/restart the Realtime relay** (`npm run build:realtime`).
+Build/sign and install an MSI containing both the new Agent and Updater before
+qualifying the new actions. The existing Agent-only auto-update intentionally does
+not replace the Updater. `SentinelGridUpdater.exe -command-protocol` must report
+`sentinelgrid-device-commands-v1` for Restart Agent execution to be supported. Do not replace
+installed EXEs manually or sign artifacts after hashes/manifests are generated.
+No schema changes or Terminal/RDP deployment changes are required.
+
+The remote terminal restores input focus when connected and after each command
+finishes (including errors), in both PowerShell and CMD. Local `clear`/`cls`
+commands also keep the input focused. Escape closes the terminal using the same
+session cleanup as the close button; command delivery and history are unchanged.
+
+Non-update commands persist delivery and recovery in protected `updates\command.json`.
+The Agent waits for a Realtime receipt confirming the persisted running state
+before executing. Results survive disconnects and are retried until acknowledged;
+duplicate/expired commands are not executed again. Force Inventory recollects the
+full supported inventory, uploads it immediately without resetting metrics, and
+refreshes the service's cache only after acceptance. Flush DNS and GPUpdate retain
+bounded stdout/stderr and exit code; GPUpdate has a ten-minute execution timeout.
+Failures remain failures in Activity, including their real error codes.
+
+Restart Agent is performed by the signed recovery service (up to three attempts),
+not by the Agent killing itself. Success requires an authenticated heartbeat from
+a different process identity. Reboot requires a different Windows boot identity.
+Power requests allow at least 30 seconds to persist Windows' acceptance. Shutdown
+completion means Windows accepted the request and the device subsequently stopped
+heartbeating (or a later boot was confirmed); offline alone is not proof of success.
+The relay reconciles deadlines even without connected agents: five minutes for
+ordinary actions/restart/shutdown, fifteen for GPUpdate, thirty for reboot, plus
+any requested power delay. Update transactions keep their existing recovery flow.
+Only orphaned update commands expire here, with an additional fifteen-minute
+staging grace for acknowledged/running requests that never established a transaction.
+
+Safe automated checks: `node --test scripts\test-device-actions.mjs scripts\test-device-activity.mjs`,
+`npm run test:realtime`, and from `agent`, `go test ./...` and `go vet ./...`.
+These do not restart/lock/shut down the developer machine. Qualify live power and
+service actions on a disposable Windows device with console access after deployment.
 
 ### Windows Agent development signing and baseline repair
 

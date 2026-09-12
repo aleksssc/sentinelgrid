@@ -74,7 +74,7 @@ async function main() {
   if (!cert && host !== "127.0.0.1" && host !== "::1") throw new Error("Cleartext realtime must bind loopback behind a TLS proxy");
   const port = Number(process.env.SENTINELGRID_REALTIME_PORT ?? "8444");
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid realtime port");
-  const [{ attachAgentSocket }, { attachBrowserSocket }] = await Promise.all([
+  const [{ attachAgentSocket, startCommandRecovery }, { attachBrowserSocket }] = await Promise.all([
     import("../dist/realtime/lib/realtime/agent-socket.js"),
     import("../dist/realtime/lib/realtime/browser-socket.js"),
   ]);
@@ -89,7 +89,9 @@ async function main() {
     relay.server.listen(port, host, resolve);
   });
   console.log("Realtime relay listening", host, port);
+  const stopCommandRecovery = startCommandRecovery();
   for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => {
+    stopCommandRecovery();
     void relay.close().catch(() => { console.error("[Realtime relay] Shutdown failed"); process.exitCode = 1; });
   });
 }

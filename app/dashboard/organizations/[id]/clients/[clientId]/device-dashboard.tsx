@@ -3,6 +3,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -18,6 +19,10 @@ import DeviceTerminal, {
 } from "@/components/dashboard/devices/device-terminal";
 import DeviceRDP from "@/components/dashboard/devices/device-rdp";
 import DeviceActivityTimeline from "@/components/dashboard/devices/device-activity";
+import ActionsMenu from "@/components/dashboard/devices/device-actions-menu";
+import { ACTIVE_COMMAND_STATUSES } from "@/lib/remote/action-definitions";
+import DeviceActionNotice from "@/components/dashboard/devices/device-action-notice";
+import { ActionSubmissionError, completionNotice, progressNotice, record, statusUnavailableNotice, submissionNotice, submitDeviceAction, type ActionNotice } from "@/lib/remote/action-feedback";
 import type { DeviceActivity, DeviceActivityCommand } from "@/lib/activity/device-activity";
 
 import {
@@ -40,6 +45,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import DeviceTabs from "@/components/dashboard/devices/device-tabs";
 
 /* =========================
    TYPES
@@ -375,13 +381,21 @@ export default function DeviceDashboard({
     actionMessage,
     setActionMessage,
   ] =
-    useState("");
+    useState<ActionNotice | null>(null);
 
   const [
     actionBusy,
     setActionBusy,
   ] =
     useState<string | null>(null);
+
+  const actionController = useRef<AbortController | null>(null);
+  useEffect(() => {
+    actionController.current?.abort();
+    actionController.current = null;
+    setActionBusy(null);
+    return () => { actionController.current?.abort(); };
+  }, [selectedDevice?.id]);
 
   /* =========================
      REMOTE TERMINAL
@@ -591,7 +605,7 @@ export default function DeviceDashboard({
       device
     );
 
-    setActionMessage("");
+    setActionMessage(null);
 
     setActiveTab("overview");
 
@@ -641,7 +655,7 @@ export default function DeviceDashboard({
           null
         );
 
-        setActionMessage("");
+        setActionMessage(null);
       },
       280
     );
@@ -695,109 +709,70 @@ export default function DeviceDashboard({
     }
 
     setActionBusy(action);
-    setActionMessage(`Sending ${action}...`);
+    const controller = new AbortController();
+    actionController.current = controller;
+    setActionMessage(progressNotice(action, "sending"));
 
     try {
-      const response = await fetch(
-        `/api/devices/${selectedDevice.id}/commands`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            command_type: action,
-            payload: options?.payload ?? {},
-          }),
-        }
-      );
-
-      const result = (await response.json()) as {
-        commandId?: string;
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(result.error || "ACTION_FAILED");
-      }
-
-      setActionMessage(
-        `${action} queued. Command ${result.commandId?.slice(0, 8) ?? "created"}.`
-      );
-
-      if (result.commandId) {
-        void watchQuickAction(
-          selectedDevice.id,
-          result.commandId,
-          action
-        );
-      }
+      const result = await submitDeviceAction(selectedDevice.id, action, options?.payload ?? {});
+      if (controller.signal.aborted) return;
+      setActionMessage(progressNotice(action, result.status));
+      await watchQuickAction(selectedDevice.id, result.commandId, action, controller.signal);
     } catch (error) {
-      const code =
-        error instanceof Error
-          ? error.message
-          : "ACTION_FAILED";
-
-      const messages: Record<string, string> = {
-      DEVICE_OFFLINE: "This device is offline.",
-      REMOTE_ACCESS_DISABLED: "Remote access is disabled by organization policy.",
-      FORBIDDEN: "You do not have permission for remote actions.",
-    };
-
-      setActionMessage(
-        messages[code] || "The action could not be submitted."
-      );
+      if (controller.signal.aborted) return;
+      setActionMessage(submissionNotice(action,
+        error instanceof ActionSubmissionError ? error.code : "NETWORK_ERROR",
+        error instanceof ActionSubmissionError ? error.status : undefined));
     } finally {
-      setActionBusy(null);
+      if (actionController.current === controller) setActionBusy(null);
     }
   }
 
   async function watchQuickAction(
     deviceId: string,
     commandId: string,
-    action: string
+    action: string,
+    signal: AbortSignal
   ) {
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      await new Promise((resolve) => {
-        window.setTimeout(resolve, 1000);
-      });
+    let refreshFailures = 0;
+    for (let attempt = 0; attempt < 1050; attempt += 1) {
+      await new Promise((resolve) => { window.setTimeout(resolve, 2000); });
+      if (signal.aborted) return;
 
       try {
         const response = await fetch(
           `/api/devices/${deviceId}/commands?command_id=${commandId}`,
-          { cache: "no-store" }
+          { cache: "no-store", signal }
         );
-
-        if (!response.ok) return;
-
-        const command = (await response.json()) as {
-          status?: string;
-          error_message?: string | null;
-        };
-
-        if (
-          command.status === "succeeded" ||
-          command.status === "failed" ||
-          command.status === "expired"
-        ) {
-          setActionMessage(
-            command.status === "succeeded"
-              ? `${action} completed successfully.`
-              : `${action} ${command.status}: ${command.error_message || "No further details."}`
-          );
-
+        if (signal.aborted) return;
+        if (!response.ok) {
+          setActionMessage(statusUnavailableNotice(action));
+          refreshFailures += 1;
+          if ([401, 403, 404].includes(response.status) || refreshFailures >= 3) return;
+          continue;
+        }
+        const command = record(await response.json());
+        if (signal.aborted) return;
+        if (typeof command.status !== "string" ||
+            ![...ACTIVE_COMMAND_STATUSES, "succeeded", "failed", "expired"].includes(command.status)) {
+          setActionMessage(statusUnavailableNotice(action));
           return;
         }
-
-        setActionMessage(
-          `${action}: ${command.status || "queued"}...`
-        );
+        refreshFailures = 0;
+        if (["succeeded", "failed", "expired"].includes(command.status)) {
+          setActionMessage(completionNotice(action, command));
+          router.refresh();
+          return;
+        }
+        setActionMessage(progressNotice(action, command.status));
       } catch {
-        return;
+        if (signal.aborted) return;
+        setActionMessage(statusUnavailableNotice(action));
+        refreshFailures += 1;
+        if (refreshFailures >= 3) return;
       }
     }
-
-    setActionMessage(`${action} is still processing.`);
+    setActionMessage(statusUnavailableNotice(action));
   }
 
   /* =========================
@@ -898,7 +873,7 @@ export default function DeviceDashboard({
         280
       );
 
-      setActionMessage("");
+      setActionMessage(null);
 
       router.refresh();
     } catch (error) {
@@ -1616,32 +1591,18 @@ export default function DeviceDashboard({
                 </button>
 
                 {canManage && (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setActionsOpen((open) => !open)}
-                      className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-800 px-4 text-sm font-medium text-zinc-300 transition hover:bg-zinc-900 hover:text-white"
-                    >
-                      Actions
-                      <ChevronDown size={15} className={actionsOpen ? "rotate-180 transition-transform" : "transition-transform"} />
-                    </button>
-
-                    {actionsOpen && (
-                      <ActionsMenu
-                        device={selectedDevice}
-                        busy={Boolean(actionBusy)}
-                        online={selectedDeviceStatus === "online"}
-                        onAction={(action, options) => {
-                          setActionsOpen(false);
-                          void runQuickAction(action, options);
-                        }}
-                        onUnavailable={(message) => {
-                          setActionsOpen(false);
-                          setActionMessage(message);
-                        }}
-                      />
-                    )}
-                  </div>
+                  <ActionsMenu
+                    key={selectedDevice.id}
+                    device={selectedDevice}
+                    busy={Boolean(actionBusy)}
+                    online={selectedDeviceStatus === "online"}
+                    open={actionsOpen}
+                    onOpenChange={setActionsOpen}
+                    onAction={(action, options) => {
+                      setActionsOpen(false);
+                      void runQuickAction(action, options);
+                    }}
+                  />
                 )}
               </div>
 
@@ -1687,26 +1648,14 @@ export default function DeviceDashboard({
               </div>
 
               {actionMessage && (
-                <div className="mt-5 flex items-start gap-2 rounded-xl border border-zinc-800 bg-[#111317] px-3.5 py-3 text-xs text-zinc-400">
-                  <CircleAlert size={14} className="mt-0.5 shrink-0" />
-                  {actionBusy ? `${actionBusy} is sending...` : actionMessage}
-                </div>
+                <DeviceActionNotice notice={actionMessage} onDismiss={() => setActionMessage(null)} />
               )}
 
-              <div className="mt-5 overflow-x-auto border-b border-zinc-800">
-                <div className="flex min-w-max gap-5">
-                  {DEVICE_TABS.map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`border-b-2 pb-3 text-xs font-medium transition ${activeTab === tab.id ? "border-emerald-400 text-white" : "border-transparent text-zinc-600 hover:text-zinc-300"}`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <DeviceTabs
+                tabs={DEVICE_TABS}
+                value={activeTab}
+                onChange={setActiveTab}
+              />
 
               {/* =========================
                   DEVICE DETAILS
@@ -2111,123 +2060,6 @@ const DEVICE_TABS: Array<{ id: DeviceTab; label: string }> = [
   { id: "security", label: "Security" },
   { id: "activity", label: "Activity" },
 ];
-
-function ActionsMenu({
-  device,
-  busy,
-  online,
-  onAction,
-  onUnavailable,
-}: {
-  device: Device;
-  busy: boolean;
-  online: boolean;
-  onAction: (
-    action: string,
-    options?: { confirm?: string },
-  ) => void;
-  onUnavailable: (message: string) => void;
-}) {
-  const itemClass = "flex w-full items-center justify-between gap-4 px-3 py-2 text-left text-xs text-zinc-300 transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-35";
-  const deviceName = device.display_name || device.hostname;
-
-  return (
-    <div className="absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-zinc-800 bg-[#111317] p-1 shadow-2xl">
-      <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Device</p>
-      <button type="button" className={itemClass} disabled onClick={() => undefined}>
-        <span>Force inventory</span>
-        <span className="text-[10px] text-zinc-600">Agent update required</span>
-      </button>
-      <button
-        type="button"
-        className={itemClass}
-        disabled={
-          busy ||
-          !online ||
-          device.capabilities?.restart_agent !== true
-        }
-        onClick={() =>
-          onAction("restart_agent", {
-            confirm: `Restart SentinelGrid Agent on ${deviceName}?`,
-          })
-        }
-      >
-        <span>Restart Agent</span>
-
-        <span className="text-[10px] text-zinc-600">
-          {device.capabilities?.restart_agent === true
-            ? "Available"
-            : "Unavailable"}
-        </span>
-      </button>
-      <button type="button" className={itemClass}
-        disabled={busy || !online || device.capabilities?.agent_update !== true}
-        onClick={() => onAction("update_agent", { confirm: `Check for and install the newest permitted Agent release on ${deviceName}?` })}
-        title="Requires an operational secure updater and enabled server policy">
-        <span>Update Agent</span>
-        <span className="text-[10px] text-zinc-600">
-          {device.capabilities?.agent_update === true ? "Available" : "Unavailable"}
-      </span>
-      </button>
-
-      <div className="my-1 border-t border-zinc-800" />
-      <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">System</p>
-      <button type="button" className={itemClass} disabled={busy || !online} onClick={() => onAction("flush_dns")}>
-        <span>Flush DNS</span>
-        <Wrench size={14} className="text-zinc-600" />
-      </button>
-      <button type="button" className={itemClass} disabled={busy || !online} onClick={() => onAction("gpupdate")}>
-        <span>GPUpdate</span>
-        <Wrench size={14} className="text-zinc-600" />
-      </button>
-
-      <div className="my-1 border-t border-zinc-800" />
-      <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Power</p>
-      <button
-        type="button"
-        className={itemClass}
-        disabled={busy || !online}
-        onClick={() => onAction("lock")}
-      >
-        <span>Lock</span>
-      </button>
-
-      <button
-        type="button"
-        className={itemClass}
-        disabled={busy || !online}
-        onClick={() =>
-          onAction("reboot", {
-            confirm: `Restart ${deviceName}?`,
-          })
-        }
-      >
-        <span>Restart</span>
-      </button>
-
-      <button
-        type="button"
-        className={`${itemClass} text-red-300`}
-        disabled={busy || !online}
-        onClick={() =>
-          onAction("shutdown", {
-            confirm: `Shutdown ${deviceName}?`,
-          })
-        }
-      >
-        <span>Shutdown</span>
-      </button>
-
-      <button
-        type="button"
-        className="mt-1 w-full border-t border-zinc-800 px-3 py-2 text-left text-[10px] text-zinc-600 transition hover:text-zinc-400"
-        onClick={() => onUnavailable("Restart Agent and Force inventory are not available from this Agent version yet. Update Agent remains disabled until the secure updater is qualified and operational.")}
-      >
-        Why are some actions disabled?
-      </button>
-    </div>
-  );
-}
 
 function DeviceTabPanel({
   tab,

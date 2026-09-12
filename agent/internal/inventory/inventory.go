@@ -1,14 +1,17 @@
 package inventory
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/exec"
 	"runtime"
 	"sentinelgrid/agent/internal/update"
 	"strings"
+	"time"
 )
 
 /* =========================
@@ -76,6 +79,18 @@ func Collect(
 	Inventory,
 	error,
 ) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	return collect(ctx, false, agentVersion...)
+}
+
+func CollectFull(ctx context.Context, version string) (Inventory, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	return collect(ctx, true, version)
+}
+
+func collect(ctx context.Context, strict bool, agentVersion ...string) (Inventory, error) {
 
 	/* =========================
 	   HOSTNAME
@@ -127,7 +142,7 @@ func Collect(
 				"agent_update":    update.Operational(),
 				"commands":        true,
 				"terminal":        true,
-				"force_inventory": false,
+				"force_inventory": runtime.GOOS == "windows",
 				"restart_agent":   false,
 				"services":        false,
 				"software":        false,
@@ -148,6 +163,9 @@ func Collect(
 			AgentVersion: version,
 		}
 	RefreshRemoteCapabilities(&result)
+	restartCtx, restartCancel := context.WithTimeout(ctx, 30*time.Second)
+	result.Capabilities["restart_agent"] = update.RestartCommandAvailable(restartCtx) == nil
+	restartCancel()
 
 	/* =========================
 	   WINDOWS DETAILS
@@ -161,9 +179,13 @@ func Collect(
 	}
 
 	systemInfo, err :=
-		collectWindowsSystemInfo()
+		collectWindowsSystemInfo(ctx)
 
 	if err != nil {
+		if strict {
+			return Inventory{}, fmt.Errorf("full Windows inventory failed: %w", err)
+		}
+		log.Printf("Windows inventory incomplete: %v", err)
 
 		/*
 			Inventory should still work
@@ -233,7 +255,7 @@ func Collect(
    WINDOWS SYSTEM INVENTORY
 ========================= */
 
-func collectWindowsSystemInfo() (
+func collectWindowsSystemInfo(ctx context.Context) (
 	windowsSystemInfo,
 	error,
 ) {
@@ -300,7 +322,7 @@ else {
 
 	output, err :=
 		runPowerShell(
-			script,
+			ctx, script,
 		)
 
 	if err != nil {
@@ -479,6 +501,7 @@ func parseAddressIP(
 ========================= */
 
 func runPowerShell(
+	ctx context.Context,
 	script string,
 ) (
 	[]byte,
@@ -490,7 +513,7 @@ func runPowerShell(
 			script
 
 	command :=
-		exec.Command(
+		exec.CommandContext(ctx,
 			"powershell.exe",
 			"-NoLogo",
 			"-NoProfile",
@@ -498,6 +521,8 @@ func runPowerShell(
 			"-Command",
 			fullScript,
 		)
+	hideInventoryWindow(command)
+	command.WaitDelay = 5 * time.Second
 
 	output, err :=
 		command.CombinedOutput()

@@ -48,6 +48,11 @@ async function fixture(t) {
     "@supabase/supabase-js":{createClient:()=>admin},
     "./redis":{getRedis:()=>({set:async(key,value)=>presence.set(key,value),get:async key=>presence.get(key)})},
     "./pubsub":pubsub,
+    "./typed-commands": {
+      acceptTypedResult: async () => undefined,
+      recoverTypedCommands: async () => {},
+      pendingTypedCommands: async () => publishes.filter((entry) => entry.payload.type === "typed_command").map((entry) => entry.payload),
+    },
   };
   const oldURL=process.env.NEXT_PUBLIC_SUPABASE_URL, oldKey=process.env.SUPABASE_SERVICE_ROLE_KEY;
   process.env.NEXT_PUBLIC_SUPABASE_URL="https://isolated.example";

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -412,6 +413,22 @@ func (c *Client) postJSON(
 	bearerToken string,
 	responseTarget any,
 ) error {
+	return c.postJSONContext(context.Background(), path, body, bearerToken, responseTarget)
+}
+
+func (c *Client) SendInventory(ctx context.Context, token string, value *inventory.Inventory) (*HeartbeatResponse, error) {
+	var response HeartbeatResponse
+	err := c.postJSONContext(ctx, "/api/agent/heartbeat", heartbeatRequest{Inventory: value}, token, &response)
+	if err != nil {
+		return nil, err
+	}
+	if !response.OK || response.DeviceID == "" {
+		return nil, fmt.Errorf("inventory was not acknowledged")
+	}
+	return &response, nil
+}
+
+func (c *Client) postJSONContext(ctx context.Context, path string, body any, bearerToken string, responseTarget any) error {
 
 	data, err :=
 		json.Marshal(
@@ -427,7 +444,7 @@ func (c *Client) postJSON(
 	}
 
 	request, err :=
-		http.NewRequest(
+		http.NewRequestWithContext(ctx,
 			http.MethodPost,
 			c.serverURL+
 				path,

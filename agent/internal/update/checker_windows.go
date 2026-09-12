@@ -127,13 +127,13 @@ func (h *WindowsHost) checkAndStage(ctx context.Context, version, commandID stri
 	}
 	if !release.Available || !allowed {
 		if commandID != "" {
-			return fmt.Errorf("no newer permitted, unfailed Agent release")
+			return noUpdateReason(version, release.Version, release.Available)
 		}
 		return nil
 	}
 	if !ready || !release.InstallationEnabled || (commandID == "" && !release.Automatic) {
 		if commandID != "" {
-			return fmt.Errorf("trusted update policy disables installation")
+			return errInstallationDisabled
 		}
 		return updateRequest(ctx, cfg, "/api/agent/update/report", map[string]string{"update_status": "available", "update_target_version": release.Version, "update_error": "UPDATER_NOT_OPERATIONAL"}, nil)
 	}

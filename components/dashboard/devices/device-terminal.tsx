@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -150,6 +151,9 @@ export default function DeviceTerminal({
       null,
     );
 
+  const inputRef =
+    useRef<HTMLInputElement | null>(null);
+
   const bottomRef =
     useRef<HTMLDivElement | null>(
       null,
@@ -182,7 +186,7 @@ export default function DeviceTerminal({
     );
   }
 
-  function disconnectSocket() {
+  const disconnectSocket = useCallback(() => {
     if (
       pingRef.current !==
       null
@@ -211,9 +215,9 @@ export default function DeviceTerminal({
         "Terminal closed",
       );
     }
-  }
+  }, []);
 
-  function closeTerminal() {
+  const closeTerminal = useCallback(() => {
     disconnectSocket();
 
     setBusy(
@@ -227,7 +231,7 @@ export default function DeviceTerminal({
     setError("");
 
     onClose();
-  }
+  }, [disconnectSocket, onClose]);
 
   function runCommand() {
     if (
@@ -244,6 +248,8 @@ export default function DeviceTerminal({
     if (!command) {
       return;
     }
+
+    inputRef.current?.focus({ preventScroll: true });
 
     if (
       command.toLowerCase() ===
@@ -968,6 +974,26 @@ export default function DeviceTerminal({
     open,
   ]);
 
+  useEffect(() => {
+    if (open && device?.id && canManage && status === "connected" && !busy) {
+      inputRef.current?.focus({ preventScroll: true });
+    }
+  }, [open, device?.id, canManage, status, busy]);
+
+  useEffect(() => {
+    if (!open || !device) return;
+
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeTerminal();
+    }
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [open, device, closeTerminal]);
+
   if (
     !open ||
     !device
@@ -1057,10 +1083,20 @@ export default function DeviceTerminal({
 
           <div className="flex items-center gap-2">
 
-            <div className="flex rounded-lg border border-zinc-800 bg-[#08090b] p-1">
+            <div className="relative isolate grid grid-cols-2 rounded-lg border border-zinc-800 bg-[#08090b] p-1">
+
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none absolute inset-y-1 left-1 -z-10 w-[calc((100%-0.5rem)/2)] rounded-md bg-zinc-800 transition-transform duration-200 ease-out motion-reduce:transition-none ${
+                  shell === "cmd"
+                    ? "translate-x-full"
+                    : "translate-x-0"
+                } ${busy ? "opacity-50" : ""}`}
+              />
 
               <button
                 type="button"
+                aria-pressed={shell === "powershell"}
                 onClick={() =>
                   setShell(
                     "powershell",
@@ -1069,10 +1105,10 @@ export default function DeviceTerminal({
                 disabled={
                   busy
                 }
-                className={`rounded-md px-3 py-1.5 text-xs font-medium outline-none transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`rounded-md px-3 py-1.5 text-xs font-medium outline-none transition-colors duration-200 motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50 ${
                   shell ===
                   "powershell"
-                    ? "bg-zinc-800 text-white"
+                    ? "text-white"
                     : "text-zinc-500 hover:text-zinc-200"
                 }`}
               >
@@ -1081,6 +1117,7 @@ export default function DeviceTerminal({
 
               <button
                 type="button"
+                aria-pressed={shell === "cmd"}
                 onClick={() =>
                   setShell(
                     "cmd",
@@ -1089,10 +1126,10 @@ export default function DeviceTerminal({
                 disabled={
                   busy
                 }
-                className={`rounded-md px-3 py-1.5 text-xs font-medium outline-none transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`rounded-md px-3 py-1.5 text-xs font-medium outline-none transition-colors duration-200 motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50 ${
                   shell ===
                   "cmd"
-                    ? "bg-zinc-800 text-white"
+                    ? "text-white"
                     : "text-zinc-500 hover:text-zinc-200"
                 }`}
               >
@@ -1253,6 +1290,7 @@ export default function DeviceTerminal({
             </span>
 
             <input
+              ref={inputRef}
               data-terminal-input
               autoFocus
               type="text"

@@ -1,4 +1,5 @@
 import type { WebSocket, RawData as WebSocketData } from "ws";
+import { acceptTypedResult, pendingTypedCommands, recoverTypedCommands } from "./typed-commands";
 
 
 import {
@@ -117,6 +118,20 @@ function createAdminClient() {
     },
   );
 }
+export function startCommandRecovery() {
+  let running = false;
+  const recover = async () => {
+    if (running) return;
+    running = true;
+    try { await recoverTypedCommands(createAdminClient()); }
+    catch (error) { console.error("[Realtime Agent] Command deadline recovery:", error); }
+    finally { running = false; }
+  };
+  const timer = setInterval(() => { void recover(); }, 30_000);
+  timer.unref();
+  void recover();
+  return () => clearInterval(timer);
+}
 export function attachAgentSocket(ws: WebSocket) {
       let authenticated =
         false;
@@ -126,6 +141,22 @@ export function attachAgentSocket(ws: WebSocket) {
 
       let deviceId =
         "";
+
+      let typedQueue = Promise.resolve();
+      let commandTimer: ReturnType<typeof setInterval> | null = null;
+      let commandPolling = false;
+      async function deliverPending() {
+        if (commandPolling || !authenticated || !deviceId || ws.readyState !== ws.OPEN) return;
+        commandPolling = true;
+        try {
+          const admin = createAdminClient();
+          await recoverTypedCommands(admin, deviceId);
+          for (const command of await pendingTypedCommands(admin, deviceId)) {
+            if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(command));
+          }
+        } catch (error) { console.error("[Realtime Agent] Command recovery:", error); }
+        finally { commandPolling = false; }
+      }
 
       let hostname =
         "";
@@ -206,6 +237,7 @@ export function attachAgentSocket(ws: WebSocket) {
       let closed = false;
 
       function cleanup() {
+        if (commandTimer) clearInterval(commandTimer);
         closed = true;
         authenticated = false;
         clearTimeout(
@@ -427,6 +459,13 @@ export function attachAgentSocket(ws: WebSocket) {
                     }
 
                     try {
+                      if (command.type === "typed_command") {
+                        const commandId = command.command_id;
+                        const pending = await pendingTypedCommands(createAdminClient(), deviceId);
+                        const canonical = pending.find((item) => item.command_id === commandId);
+                        if (!canonical) return;
+                        command = canonical;
+                      }
                       ws.send(
                         JSON.stringify(
                           command,
@@ -490,6 +529,9 @@ export function attachAgentSocket(ws: WebSocket) {
               console.log(
                 `[Realtime Agent] Connected: ${hostname} | ${deviceId}`,
               );
+              commandTimer = setInterval(() => { void deliverPending(); }, 15_000);
+              commandTimer.unref?.();
+              void deliverPending();
 
               return;
             }
@@ -593,94 +635,16 @@ export function attachAgentSocket(ws: WebSocket) {
 
             if (
               message.type === "typed_command_ack" ||
-              message.type === "typed_command_running"
+              message.type === "typed_command_running" ||
+              message.type === "typed_command_result"
             ) {
-              const commandId =
-                typeof message.command_id === "string"
-                  ? message.command_id.trim()
-                  : "";
-
-              if (!commandId) return;
-
-              const supabase = createAdminClient();
-              const now = new Date().toISOString();
-              const isAcknowledged = message.type === "typed_command_ack";
-
-              await supabase
-                .from("device_commands")
-                .update({
-                  status: isAcknowledged ? "acknowledged" : "running",
-                  acknowledged_at: isAcknowledged ? now : undefined,
-                  started_at: isAcknowledged ? undefined : now,
-                })
-                .eq("id", commandId)
-                .eq("device_id", deviceId)
-                .in("status", ["dispatched", "acknowledged"]);
-
-              return;
-            }
-
-            if (message.type === "typed_command_result") {
-              const commandId =
-                typeof message.command_id === "string"
-                  ? message.command_id.trim()
-                  : "";
-              const status = message.status;
-
-              if (
-                !commandId ||
-                (status !== "succeeded" && status !== "failed")
-              ) {
-                return;
-              }
-
-              const supabase = createAdminClient();
-              const completedAt = new Date().toISOString();
-              const { data: command } = await supabase
-                .from("device_commands")
-                .select("id, organization_id, requested_by, command_type")
-                .eq("id", commandId)
-                .eq("device_id", deviceId)
-                .maybeSingle();
-
-              if (!command) return;
-
-              if (command.command_type === "update_agent") {
-                const { data: correlation, error: correlationError } = await supabase
-                  .from("device_commands").select("update_transaction_id")
-                  .eq("id", command.id).eq("device_id", deviceId).single();
-                if (correlationError) throw new Error("UPDATE_CORRELATION_LOOKUP_FAILED");
-                if (correlation.update_transaction_id) return;
-              }
-
-              await supabase
-                .from("device_commands")
-                .update({
-                  status,
-                  completed_at: completedAt,
-                  result: message.result ?? {},
-                  error_code: message.error_code ?? null,
-                  error_message: message.error_message ?? null,
-                })
-                .eq("id", command.id)
-                .eq("device_id", deviceId)
-                .in("status", ["dispatched", "acknowledged", "running"]);
-
-              await supabase.from("audit_logs").insert({
-                organization_id: command.organization_id,
-                user_id: command.requested_by,
-                action: status === "succeeded"
-                  ? "device.command.succeeded"
-                  : "device.command.failed",
-                target_type: "device",
-                target_id: deviceId,
-                status: status === "succeeded" ? "success" : "failed",
-                metadata: {
-                  commandId,
-                  errorCode: message.error_code ?? null,
-                },
-              });
-
+              typedQueue = typedQueue.then(async () => {
+                const status = await acceptTypedResult(createAdminClient(), deviceId, message);
+                if (status && ws.readyState === ws.OPEN) ws.send(JSON.stringify({
+                  type: "typed_command_receipt", command_id: message.command_id, status,
+                }));
+              }).catch((error) => { console.error("[Realtime Agent] Typed command persistence:", error); });
+              await typedQueue;
               return;
             }
 

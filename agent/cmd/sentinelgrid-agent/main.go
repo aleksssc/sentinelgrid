@@ -212,6 +212,30 @@ func (p *program) run(ctx context.Context) {
 
 	for {
 		select {
+		case request := <-realtime.InventoryRequests:
+			err := func() error {
+				if cfg == nil {
+					loaded, err := config.Load()
+					if err != nil {
+						return err
+					}
+					cfg, client = loaded, api.NewClient(loaded.Server)
+				}
+				collected, err := inventory.CollectFull(request.Context, version)
+				if err != nil {
+					return err
+				}
+				response, err := client.SendInventory(request.Context, cfg.AgentToken, &collected)
+				if err != nil {
+					return err
+				}
+				if response.DeviceID != cfg.DeviceID {
+					return fmt.Errorf("inventory acknowledgement device mismatch")
+				}
+				cachedInventory, lastInventoryRefresh = &collected, time.Now()
+				return nil
+			}()
+			request.Done <- err
 
 		case <-ticker.C:
 
@@ -346,6 +370,7 @@ func sendHeartbeat(
 		)
 		rdp.HeartbeatControl(response.RDPPending)
 		update.ConfirmHeartbeat(version, cfg.Server, cfg.DeviceID, response.DeviceID, response.OK)
+		update.ConfirmCommandHeartbeat(cfg.Server, cfg.DeviceID, response.DeviceID, response.OK)
 
 		return
 	}
@@ -379,6 +404,7 @@ func sendHeartbeat(
 	========================= */
 
 	rdp.HeartbeatControl(response.RDPPending)
+	update.ConfirmCommandHeartbeat(cfg.Server, cfg.DeviceID, response.DeviceID, response.OK)
 	if cachedInventory != nil {
 		update.ConfirmHeartbeat(version, cfg.Server, cfg.DeviceID, response.DeviceID, response.OK)
 		log.Printf(
@@ -796,7 +822,17 @@ func main() {
 	validateConfig := flag.Bool("validate-config", false, "Validate preserved configuration without enrolling or changing it")
 	showRDPReadiness := flag.Bool("rdp-readiness", false, "Probe the fixed local RDP listener and NLA (no changes)")
 	showReadiness := flag.Bool("update-readiness", false, "Inspect installed update readiness (no update; administrator required)")
+	lockSession := flag.Bool("lock-session", false, "Lock only the current interactive Windows session")
 	flag.Parse()
+	if *lockSession {
+		if flag.NArg() != 0 || flag.NFlag() != 1 {
+			log.Fatal("Session lock accepts no other arguments")
+		}
+		if err := realtime.LockInteractiveSession(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if *showChannel {
 		fmt.Println(buildinfo.Channel)
 		return

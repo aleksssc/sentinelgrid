@@ -30,6 +30,10 @@ func handleTypedCommand(
 	writeMu *sync.Mutex,
 	message serverMessage,
 ) {
+	if message.CommandType != "update_agent" {
+		handleDurableTypedCommand(parentContext, conn, writeMu, message)
+		return
+	}
 	if _, loaded := processedTypedCommands.LoadOrStore(message.IdempotencyKey, struct{}{}); loaded {
 		if message.CommandType == "update_agent" {
 			return
@@ -67,7 +71,7 @@ func handleTypedCommand(
 		if err != nil {
 			sendTypedResult(conn, writeMu, typedCommandResult{
 				Type: "typed_command_result", CommandID: message.CommandID, Status: "failed",
-				ErrorCode: "UPDATE_FAILED", ErrorMessage: safeActionError(err),
+				ErrorCode: update.CommandErrorCode(err), ErrorMessage: safeActionError(err),
 			})
 		}
 		return
@@ -91,6 +95,10 @@ func handleTypedCommand(
 func sendTypedResult(conn *websocket.Conn, writeMu *sync.Mutex, result typedCommandResult) {
 	writeMu.Lock()
 	defer writeMu.Unlock()
+	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		log.Printf("Command write deadline: %v", err)
+		return
+	}
 	if err := conn.WriteJSON(result); err != nil {
 		log.Printf("Could not send typed command result: %v", err)
 	}
@@ -127,6 +135,8 @@ func validateForce(payload map[string]any) (bool, bool) {
 
 func executeTypedAction(ctx context.Context, commandType string, payload map[string]any) (map[string]any, string, error) {
 	switch commandType {
+	case "force_inventory":
+		return executeForceInventory(ctx)
 	case "update_agent":
 		if len(payload) != 0 {
 			return nil, "INVALID_PAYLOAD", fmt.Errorf("update_agent accepts no payload or download URL")

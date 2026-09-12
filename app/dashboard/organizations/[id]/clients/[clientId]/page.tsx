@@ -4,10 +4,11 @@ import { connection } from "next/server";
 import { notFound } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 import DeviceDashboard from "./device-dashboard";
 import {
-  activityCorrelation,
+  activityCorrelation, enrichActivityUpdateCommands,
   type DeviceActivity, type DeviceActivityCommand,
 } from "@/lib/activity/device-activity";
 
@@ -117,8 +118,8 @@ export default async function ClientDetailsPage({
     }
 
     memberRole =
-      membership?.role ??
-      null;
+      membershipError ? null :
+      membership?.role ?? null;
   }
 
   const isAdmin =
@@ -276,7 +277,7 @@ export default async function ClientDetailsPage({
   let deviceActivity: DeviceActivity[] = [];
   let activityCommands: DeviceActivityCommand[] = [];
   const activityErrors: string[] = [];
-  const commandColumns = "id, device_id, command_type, status, created_at, requested_by, dispatched_at, acknowledged_at, started_at, completed_at, result, error_code, error_message, update_transaction_id";
+  const commandColumns = "id, device_id, command_type, status, created_at, requested_by, dispatched_at, acknowledged_at, started_at, completed_at, result, payload, error_code, error_message, update_transaction_id";
 
   if (deviceIds.length > 0) {
     const [auditResult, commandResult] = await Promise.all([
@@ -323,6 +324,26 @@ export default async function ClientDetailsPage({
         activityErrors.push("Some related command details could not be loaded.");
       } else {
         activityCommands.push(...(correlated ?? []).filter((command) => !loadedIds.has(command.id)));
+      }
+    }
+    const transactionIds = [...new Set(activityCommands
+      .filter((command) => command.command_type === "update_agent")
+      .map((command) => command.update_transaction_id ?? undefined).filter(isId))];
+    if (transactionIds.length > 0 && (isOwner || memberRole)) {
+      try {
+        // Transactions are server-only. Scope to RLS-visible devices and verified org membership.
+        const { data: transactions, error } = await createAdminClient().from("agent_update_transactions")
+          .select("id, device_id, target_version, devices!inner(clients!inner(organization_id))")
+          .eq("devices.clients.organization_id", organization.id)
+          .in("device_id", deviceIds)
+          .in("id", transactionIds)
+          .abortSignal(AbortSignal.timeout(3_000));
+        if (error) throw error;
+        activityCommands = enrichActivityUpdateCommands(activityCommands, transactions ?? []);
+      } catch (error) {
+        // Optional enrichment must not affect the audit/command timeline or its refresh.
+        console.error("Device activity update transaction enrichment failed:",
+          error instanceof Error ? `${error.name}: ${error.message}` : JSON.stringify(error));
       }
     }
   }

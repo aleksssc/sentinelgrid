@@ -31,6 +31,20 @@ func windowsStopping() bool {
 }
 
 func (h *WindowsHost) CanDispatch(ctx context.Context) error {
+	var command DeviceCommand
+	commandErr := readMetadata(filepath.Join(h.Root, "command.json"), &command)
+	if commandErr != nil && !errors.Is(commandErr, os.ErrNotExist) {
+		return commandErr
+	}
+	if commandErr == nil && command.Phase == "power_pending" && !command.Terminal() && time.Now().Before(command.Deadline) {
+		boot, err := commandBootID()
+		if err != nil {
+			return err
+		}
+		if command.Boot == boot {
+			return fmt.Errorf("a device power command is pending")
+		}
+	}
 	_, err := os.Lstat(filepath.Join(h.Root, "maintenance.json"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -235,7 +249,7 @@ func operationalFor(ctx context.Context, diagnostic bool) error {
 }
 
 // The same update lock excludes a typed power action from an active transaction.
-// The in-process stop flag lasts until restart, including a delayed shutdown.
+// The caller sets the stop flag only after Windows accepts the power request.
 func GuardPowerAction(ctx context.Context) (func() error, error) {
 	if !sourceQualified() {
 		return func() error { return nil }, nil
@@ -258,6 +272,5 @@ func GuardPowerAction(ctx context.Context) (func() error, error) {
 		}
 		return nil, errors.Join(err, unlock())
 	}
-	BeginShutdown()
 	return unlock, nil
 }

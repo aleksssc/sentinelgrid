@@ -21,6 +21,9 @@ func (recoveryService) Execute(_ []string, requests <-chan svc.ChangeRequest, ch
 	defer cancel()
 	done := make(chan struct{})
 	go func() { defer close(done); update.RunRecovery(ctx) }()
+	commandDone := make(chan struct{})
+	go func() { defer close(commandDone); update.RunCommandRecovery(ctx) }()
+	defer func() { cancel(); <-commandDone }()
 	status := svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPreShutdown}
 	changes <- status
 	for request := range requests {
@@ -54,6 +57,7 @@ func main() {
 	channel := flag.Bool("release-channel", false, "Show embedded release channel")
 	version := flag.Bool("version", false, "Show updater version")
 	protocol := flag.Bool("protocol", false, "Show fixed journal protocol")
+	commandProtocol := flag.Bool("command-protocol", false, "Show fixed device command recovery protocol")
 	configure := flag.Bool("configure-recovery", false, "Configure fixed recovery service restart policy")
 	maintenanceBegin := flag.Bool("maintenance-begin", false, "Quiesce only SentinelGrid update recovery for MSI")
 	maintenanceEnd := flag.Bool("maintenance-end", false, "Finish only SentinelGrid MSI maintenance")
@@ -63,7 +67,7 @@ func main() {
 		log.Fatal("Updater accepts no positional arguments")
 	}
 	modes := 0
-	for _, enabled := range []bool{*channel, *version, *protocol, *configure, *maintenanceBegin, *maintenanceEnd, *showTrust} {
+	for _, enabled := range []bool{*channel, *version, *protocol, *commandProtocol, *configure, *maintenanceBegin, *maintenanceEnd, *showTrust} {
 		if enabled {
 			modes++
 		}
@@ -85,6 +89,10 @@ func main() {
 	}
 	if *protocol {
 		fmt.Println(update.Protocol)
+		return
+	}
+	if *commandProtocol {
+		fmt.Println(update.CommandProtocol)
 		return
 	}
 	if *configure {

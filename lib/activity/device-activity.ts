@@ -25,6 +25,17 @@ export type DeviceActivityCommand = {
   error_code?: string | null;
   error_message?: string | null;
   update_transaction_id?: string | null;
+  update_transaction?: DeviceActivityUpdateTransaction;
+};
+
+export type DeviceActivityUpdateTransaction = {
+  id: string;
+  device_id: string;
+  target_version?: string | null;
+  previous_version?: string | null;
+  metadata?: unknown;
+  journal?: unknown;
+  update_journal?: unknown;
 };
 
 export type ActivityStatus = "succeeded" | "failed" | "running" | "requested" | "queued" | "warning" | "info";
@@ -52,6 +63,9 @@ export type ActivityEntry = {
   targetVersion?: string;
   errorCode?: string;
   errorMessage?: string;
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number;
   events: DeviceActivity[];
 };
 
@@ -65,6 +79,10 @@ function sources(value: unknown): Data[] {
   const result = record(root.result);
   return [root, metadata, result, record(root.payload), record(root.update), record(root.transaction),
     record(metadata.result), record(metadata.update), record(metadata.transaction), record(result.update), record(result.transaction)];
+}
+function versionSources(value: unknown): Data[] {
+  const data = sources(value);
+  return [...data, ...data.flatMap((source) => [record(source.journal), record(source.update_journal)])];
 }
 function text(data: Data[], ...keys: string[]): string | undefined {
   for (const source of data) {
@@ -92,12 +110,34 @@ export function activityCorrelation(value: unknown) {
   };
 }
 
+const FROM_VERSION_KEYS = ["from_version", "fromVersion", "previous_version", "previousVersion", "source_version", "sourceVersion", "old_version", "current_version"];
+const TARGET_VERSION_KEYS = ["target_version", "targetVersion", "update_target_version", "updateTargetVersion", "to_version", "toVersion", "new_version"];
+
+export function enrichActivityUpdateCommands(
+  commands: DeviceActivityCommand[], transactions: DeviceActivityUpdateTransaction[],
+): DeviceActivityCommand[] {
+  const byId = new Map(transactions.map((transaction) => [transaction.id, transaction]));
+  return commands.map((command) => {
+    const transaction = command.update_transaction_id ? byId.get(command.update_transaction_id) : undefined;
+    if (command.command_type !== "update_agent" || !transaction || transaction.device_id !== command.device_id) return command;
+    const data = versionSources(transaction);
+    return {
+      ...command,
+      update_transaction: {
+        id: transaction.id, device_id: transaction.device_id,
+        target_version: text(data, ...TARGET_VERSION_KEYS),
+        previous_version: text(data, ...FROM_VERSION_KEYS),
+      },
+    };
+  });
+}
+
 const ACTIONS: Record<string, { label: string; icon: ActivityIcon }> = {
   update_agent: { label: "Update Agent", icon: "update" },
   restart_agent: { label: "Restart Agent", icon: "restart" },
   reboot: { label: "Restart Computer", icon: "restart" },
   restart: { label: "Restart Computer", icon: "restart" },
-  shutdown: { label: "Shutdown", icon: "shutdown" },
+  shutdown: { label: "Shutdown Computer", icon: "shutdown" },
   lock: { label: "Lock Computer", icon: "lock" },
   flush_dns: { label: "Flush DNS", icon: "network" },
   gpupdate: { label: "GPUpdate", icon: "system" },
@@ -131,6 +171,9 @@ type Snapshot = {
   key: string;
   deviceId: string;
   data: Data[];
+  versionData?: Data[];
+  transactionData?: Data[];
+  payloadData?: Data[];
   action: string;
   phase: string;
   status: ActivityStatus;
@@ -160,6 +203,7 @@ export function normalizeDeviceActivity(
     const status = statusOf(phase);
     snapshots.push({
       key: `audit:${event.id}`, deviceId, data, action: event.action, phase, status,
+      versionData: versionSources(event.metadata),
       timestamp: event.created_at, ...activityCorrelation(event.metadata),
       commandType: text(data, "commandType", "command_type"),
       requestedAt: validDate(text(data, "requested_at", "requestedAt")) ?? (phase === "requested" ? validDate(event.created_at) : undefined),
@@ -172,10 +216,15 @@ export function normalizeDeviceActivity(
   for (const command of commands) {
     if (command.device_id !== deviceId) continue;
     const data = sources(command);
+    const transaction = command.update_transaction;
+    const linkedTransaction = transaction?.id === command.update_transaction_id && transaction?.device_id === deviceId
+      ? transaction : undefined;
     const reportedPhase = text(sources(command.result), "update_status", "updateStatus");
     const phase = terminal(statusOf(command.status)) ? command.status : reportedPhase ?? command.status;
     snapshots.push({
       key: `command:${command.id}`, deviceId, data, action: "device.command", phase, status: statusOf(phase),
+      versionData: versionSources({ ...command, payload: undefined }),
+      transactionData: versionSources(linkedTransaction), payloadData: versionSources(command.payload),
       timestamp: validDate(command.completed_at ?? undefined) ?? validDate(command.started_at ?? undefined) ??
         validDate(command.acknowledged_at ?? undefined) ?? validDate(command.dispatched_at ?? undefined) ?? command.created_at,
       commandId: command.id, transactionId: activityCorrelation(command).transactionId,
@@ -232,9 +281,23 @@ export function normalizeDeviceActivity(
     const action = commandType ? ACTIONS[commandType] : undefined;
     let title = action?.label ?? (commandType ? humanizeActivity(commandType) : command ? "Device command" :
       remote ? (latest.action.includes("terminal") ? "Terminal session" : latest.action.includes("rdp") ? "Remote Desktop session" : "Remote session") : humanizeActivity(latest.action));
-    const fromVersion = text(data, "from_version", "fromVersion", "previous_version", "previousVersion", "source_version", "sourceVersion", "old_version", "current_version");
-    const targetVersion = text(data, "target_version", "targetVersion", "update_target_version", "updateTargetVersion", "to_version", "toVersion", "new_version");
+    // Recorded audit/result metadata wins over the linked journal, then the requested payload.
+    const versionData = update ? [
+      ...reversed.filter((snapshot) => snapshot.event).flatMap((snapshot) => snapshot.versionData ?? []),
+      ...reversed.filter((snapshot) => !snapshot.event).flatMap((snapshot) => snapshot.versionData ?? []),
+      ...reversed.flatMap((snapshot) => snapshot.transactionData ?? []),
+      ...reversed.flatMap((snapshot) => snapshot.payloadData ?? []),
+    ] : data;
+    const fromVersion = text(versionData, ...FROM_VERSION_KEYS);
+    const targetVersion = text(versionData, ...TARGET_VERSION_KEYS);
     if (update) title = status === "failed" ? "Agent update failed" : status === "succeeded" && targetVersion ? `Agent updated to ${targetVersion}` : "Update Agent";
+    if (!update && status === "succeeded" && commandType) {
+      const completed: Record<string, string> = {
+        force_inventory: "Force inventory completed", flush_dns: "DNS cache flushed", gpupdate: "Group Policy updated",
+        restart_agent: "Agent restarted", lock: "Computer locked", reboot: "Computer restarted", shutdown: "Computer shut down",
+      };
+      title = completed[commandType] ?? title;
+    }
     const requestedAt = group.map((snapshot) => snapshot.requestedAt).filter((value): value is string => Boolean(value)).sort((a, b) => (time(a) ?? 0) - (time(b) ?? 0))[0];
     const startedAt = group.find((snapshot) => snapshot.startedAt)?.startedAt;
     const completedAt = terminal(status) ? resolved.completedAt : undefined;
@@ -266,6 +329,9 @@ export function normalizeDeviceActivity(
       requestedBy: group.find((snapshot) => snapshot.actorEmail)?.actorEmail ?? group.find((snapshot) => snapshot.actor)?.actor,
       requestedAt, startedAt, completedAt, timestamp: latest.timestamp, duration,
       fromVersion, targetVersion, errorCode, errorMessage,
+      stdout: text(data, "stdout")?.slice(0, 4096),
+      stderr: text(data, "stderr")?.slice(0, 4096),
+      exitCode: data.map((source) => source.exit_code).find((value): value is number => typeof value === "number" && Number.isInteger(value)),
       events: [...uniqueEvents.values()].reverse(),
     };
   }).sort((a, b) => (time(b.timestamp) ?? 0) - (time(a.timestamp) ?? 0) || a.id.localeCompare(b.id));

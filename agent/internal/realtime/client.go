@@ -84,6 +84,8 @@ type serverMessage struct {
 	CreatedAt string `json:"created_at,omitempty"`
 
 	ExpiresAt string `json:"expires_at,omitempty"`
+
+	Status string `json:"status,omitempty"`
 }
 
 /* =========================================
@@ -371,6 +373,18 @@ func connect(
 			&writeMu,
 		)
 	}()
+	go func() {
+		timer := time.NewTicker(10 * time.Second)
+		defer timer.Stop()
+		for {
+			replayTypedResult(ctx, conn, &writeMu)
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+			}
+		}
+	}()
 
 	ticker :=
 		time.NewTicker(
@@ -507,6 +521,9 @@ func readLoop(
 
 		case "rdp_available":
 			rdp.Wake()
+
+		case "typed_command_receipt":
+			go receiveTypedReceipt(ctx, message)
 
 		case "typed_command":
 			if message.CommandID == "" ||

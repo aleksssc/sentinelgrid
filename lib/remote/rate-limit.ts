@@ -14,7 +14,7 @@ export async function enforceRemoteRateLimit(
     await redis.expire(key, 60);
   }
 
-  const limit = scope === "commands" ? 30 : 10;
+  const limit = scope === "commands" ? 300 : 50;
   if (count > limit) {
     throw new Error("RATE_LIMITED");
   }

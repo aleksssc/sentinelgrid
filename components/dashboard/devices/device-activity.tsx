@@ -61,6 +61,9 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
     ["Transaction ID", entry.transactionId],
     ["Error code", entry.errorCode],
     ["Error message", entry.errorMessage],
+    ["Exit code", entry.exitCode?.toString()],
+    ["Standard output", entry.stdout],
+    ["Standard error", entry.stderr],
   ];
 
   return (
@@ -76,7 +79,7 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
               {entry.category === "updates" && (entry.fromVersion || entry.targetVersion) && (
                 <p className="mt-1 break-words font-mono text-xs text-zinc-400">
                   {entry.fromVersion && entry.targetVersion ? <>{entry.fromVersion} <span className="px-1 text-zinc-600">&rarr;</span> {entry.targetVersion}</> :
-                    entry.targetVersion ? `Target ${entry.targetVersion}` : `From ${entry.fromVersion}`}
+                    entry.targetVersion ? `${entry.status === "succeeded" ? "Updated to" : "Target"} ${entry.targetVersion}` : `From ${entry.fromVersion}`}
                 </p>
               )}
               <p className={`mt-1 break-words text-xs ${entry.status === "failed" ? "text-red-400/90" : "text-zinc-400"}`}>{entry.summary}</p>

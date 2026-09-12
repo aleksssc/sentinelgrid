@@ -7,6 +7,8 @@ import (
 	"fmt"
 )
 
+func LockInteractiveSession() error { return fmt.Errorf("Windows required") }
+
 func executePowerAction(context.Context, string, int, bool) (map[string]any, string, error) {
 	return nil, "WINDOWS_REQUIRED", fmt.Errorf("this action is only available on Windows")
 }
