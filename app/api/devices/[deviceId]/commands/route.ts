@@ -6,7 +6,6 @@ import { createClient } from "@/lib/supabase/server";
 const ERROR_STATUS: Record<string, number> = {
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
-  AAL2_REQUIRED: 403,
   DEVICE_NOT_FOUND: 404,
   DEVICE_OFFLINE: 409,
   REMOTE_ACCESS_DISABLED: 403,

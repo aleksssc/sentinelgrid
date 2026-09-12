@@ -9,10 +9,28 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync/atomic"
 	"time"
 
 	"sentinelgrid/agent/internal/config"
 )
+
+var controlAvailable atomic.Bool
+var wake = make(chan struct{}, 1)
+
+func Wake() {
+	select {
+	case wake <- struct{}{}:
+	default:
+	}
+}
+
+func HeartbeatControl(pending *bool) {
+	controlAvailable.Store(pending != nil)
+	if pending != nil && *pending {
+		Wake()
+	}
+}
 
 func Run(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Second)
@@ -21,7 +39,11 @@ func Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-wake:
 		case <-ticker.C:
+			if controlAvailable.Load() {
+				continue
+			}
 		}
 		if err := Available(ctx); err != nil {
 			continue

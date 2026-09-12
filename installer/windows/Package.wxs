@@ -1,5 +1,9 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <?ifndef AgentProductCode ?>
+  <?define AgentProductCode="*" ?>
+  <?endif ?>
   <Package
+    ProductCode="$(var.AgentProductCode)"
     Name="SentinelGrid Agent"
     Manufacturer="SentinelGrid"
     Version="$(var.AgentVersion)"
@@ -14,12 +18,13 @@
     </Upgrade>
     <Launch Condition="Installed OR NOT SG_SAME_VERSION"
       Message="This Agent version is already installed. Use the installed package for repair, or install a newer version; a second same-version product is not supported." />
-    <Property Id="SENTINELGRID_SERVER" Value="https://sentinelgrid-one.vercel.app" Secure="yes" />
+    <Property Id="SENTINELGRID_SERVER" Value="$(var.AgentServer)" Secure="yes" />
     <Property Id="SG_EXISTING_CONFIG">
       <DirectorySearch Id="SentinelGridConfigSearch" Path="[CommonAppDataFolder]SentinelGrid">
         <FileSearch Id="SentinelGridConfigFileSearch" Name="agent.json" />
       </DirectorySearch>
     </Property>
+    <Property Id="SENTINELGRID_CHANNEL" Value="$(var.AgentChannel)" />
     <MediaTemplate EmbedCab="yes" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">

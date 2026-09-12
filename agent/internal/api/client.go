@@ -20,7 +20,9 @@ import (
 type Client struct {
 	serverURL string
 
-	httpClient *http.Client
+	httpClient      *http.Client
+	lastInventory   string
+	lastInventoryAt time.Time
 }
 
 /* =========================
@@ -40,6 +42,8 @@ type EnrollResponse struct {
 ========================= */
 
 type HeartbeatResponse struct {
+	RDPPending *bool `json:"rdp_pending"`
+
 	OK bool `json:"ok"`
 
 	DeviceID string `json:"device_id"`
@@ -111,6 +115,8 @@ type enrollRequest struct {
 ========================= */
 
 type heartbeatRequest struct {
+	RDPControl bool `json:"rdp_control"`
+
 	/*
 		Body token is kept as fallback.
 
@@ -307,6 +313,7 @@ func (c *Client) heartbeat(
 
 	requestBody :=
 		heartbeatRequest{
+			RDPControl: true,
 			AgentToken: agentToken,
 
 			Token: agentToken,
@@ -358,6 +365,17 @@ func (c *Client) heartbeat(
 			data.Inventory
 	}
 
+	var inventoryJSON string
+	if requestBody.Inventory != nil {
+		encoded, err := json.Marshal(requestBody.Inventory)
+		if err != nil {
+			return nil, fmt.Errorf("encode inventory: %w", err)
+		}
+		inventoryJSON = string(encoded)
+		if inventoryJSON == c.lastInventory && time.Since(c.lastInventoryAt) < 30*time.Minute {
+			requestBody.Inventory = nil
+		}
+	}
 	var response HeartbeatResponse
 
 	err :=
@@ -374,6 +392,12 @@ func (c *Client) heartbeat(
 			err
 	}
 
+	if !response.OK || response.DeviceID == "" {
+		return nil, fmt.Errorf("heartbeat was not acknowledged")
+	}
+	if requestBody.Inventory != nil {
+		c.lastInventory, c.lastInventoryAt = inventoryJSON, time.Now()
+	}
 	return &response,
 		nil
 }

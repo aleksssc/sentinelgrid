@@ -3,7 +3,17 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $build = Join-Path $PSScriptRoot 'build-agent.ps1'
+foreach ($name in @('build-agent.ps1', 'validate-agent-release.ps1')) {
+    $tokens = $null; $errors = $null
+    [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $name), [ref]$tokens, [ref]$errors)
+    if ($errors.Count -ne 0) { throw "PowerShell parse failed: $name" }
+}
 $cases = @(
+    @{ Arguments = @('-DevRepairProductCode', '954F563F-B9A8-4B6C-AF67-E50DE8E52376'); Reason = '-DevRepairProductCode requires' },
+    @{ Arguments = @('-DevSign', '-Publish', '-DevRepairProductCode', '954F563F-B9A8-4B6C-AF67-E50DE8E52376'); Reason = '-DevRepairProductCode requires' },
+    @{ Arguments = @('-DevSign', '-DevRepairProductCode', '00000000-0000-0000-0000-000000000000'); Reason = '-DevRepairProductCode requires' },
+    @{ Arguments = @('-Dev', '-Publish'); Reason = '-Publish requires a complete signed release' },
+    @{ Arguments = @('-Dev', '-ServerURL', 'http://insecure.example'); Reason = 'ServerURL must be an HTTPS enrollment origin' },
     @{ Arguments = @('-DevSign', '-Dev'); Reason = '-DevSign cannot be combined' },
     @{ Arguments = @('-DevSign', '-Sign'); Reason = '-DevSign cannot be combined' },
     @{ Arguments = @('-DevSign', '-SkipMSI'); Reason = '-DevSign cannot be combined' },
@@ -33,4 +43,4 @@ foreach ($case in $cases) {
         Write-Host "PASS: $($case.Arguments -join ' ')"
     } finally { $process.Dispose() }
 }
-Write-Host 'Ten fail-closed build mode tests passed. No certificate, artifacts, services or trust stores were changed.'
+Write-Host "$($cases.Count) fail-closed build mode tests and PowerShell syntax checks passed. No certificate, artifacts, services or trust stores were changed."

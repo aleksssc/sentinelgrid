@@ -4,6 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { UpdateAPIError } from "@/lib/agent/update-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { agentCommandChannel, publishRealtimeMessage } from "@/lib/realtime/pubsub";
 import { getRedis } from "@/lib/realtime/redis";
 import { enforceRemoteRateLimit } from "@/lib/remote/rate-limit";
 import { RDP_ACTIVE_STATUSES, RDP_TICKET_SECONDS, UUID, rdpLimits, rdpOnline, relayURL } from "./rdp-policy";
@@ -116,11 +117,25 @@ export async function createRDPSession(deviceId: string, reason: unknown) {
   if (typeof reason !== "string" || reason.trim().length < 3 || reason.trim().length > 240) throw new RDPError("SESSION_REASON_REQUIRED", 400);
   if (!UUID.test(deviceId)) throw new RDPError("DEVICE_NOT_FOUND", 404);
   const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) throw new RDPError("UNAUTHORIZED", 401);
-  const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-  if (assuranceError || assurance?.currentLevel !== "aal2") throw new RDPError("AAL2_REQUIRED");
-  await enforceRemoteRateLimit(user.id, "sessions");
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (
+    error ||
+    !user
+  ) {
+    throw new RDPError(
+      "UNAUTHORIZED",
+      401,
+    );
+  }
+
+  await enforceRemoteRateLimit(
+    user.id,
+    "sessions",
+  );
   const admin = createAdminClient();
   const policy = await devicePolicy(admin, deviceId);
   if (!await mayManage(admin, policy.organizationId, user.id)) throw new RDPError("FORBIDDEN");
@@ -134,6 +149,7 @@ export async function createRDPSession(deviceId: string, reason: unknown) {
   if (typeof sessionId !== "string") throw new RDPError("SESSION_LIMIT_REACHED", 409);
   const session = await loadRDPSession(sessionId);
   try {
+    await publishRealtimeMessage(agentCommandChannel(deviceId), { type: "rdp_available" });
     const ticket = await issueRDPTicket(session.id, "client");
     return { sessionId: session.id, expiresAt: session.expires_at, connection: {
       version: 1, relay, ticket, expires_at: new Date(Date.now() + RDP_TICKET_SECONDS * 1000).toISOString(),

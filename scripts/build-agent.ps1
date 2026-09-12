@@ -1,9 +1,12 @@
 [CmdletBinding()]
 param(
     [string]$Version,
+    [string]$ServerURL = 'https://sentinelgrid-one.vercel.app',
     [ValidateSet('stable', 'beta', 'dev')][string]$Channel = 'stable',
     [switch]$Sign,
+    [switch]$Publish,
     [switch]$DevSign,
+    [guid]$DevRepairProductCode = [guid]::Empty,
     [string]$DevCertificateThumbprint = $env:SENTINELGRID_DEV_SIGN_CERT_THUMBPRINT,
     [string]$DevSignerSHA256 = $env:SENTINELGRID_DEV_UPDATE_SIGNER_SHA256,
     [ValidateSet('CurrentUser', 'LocalMachine')][string]$DevCertificateStore = $(if ($env:SENTINELGRID_DEV_SIGN_CERT_STORE) { $env:SENTINELGRID_DEV_SIGN_CERT_STORE } else { 'LocalMachine' }),
@@ -56,12 +59,20 @@ function Sign-Artifact([string]$Path, [string]$Label) {
 
 try {
     if ($env:OS -ne 'Windows_NT') { throw 'Build on Windows (native Windows tests, Authenticode and WiX are required).' }
+    $server = [uri]$ServerURL
+    if (-not $server.IsAbsoluteUri -or $server.Scheme -ne 'https' -or -not $server.Host -or $server.UserInfo -or $server.Query -or $server.Fragment -or $server.AbsolutePath -ne '/') { throw 'ServerURL must be an HTTPS enrollment origin.' }
+    $ServerURL = $server.GetLeftPart([UriPartial]::Authority)
     if (-not $Version) { $Version = (Get-Content -LiteralPath (Join-Path $agent 'VERSION') -Raw).Trim() }
     if ($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
         throw 'Version must be major.minor.patch without prerelease/build suffixes, so MSI and Agent versions match exactly. Use -Channel for release rings.'
     }
     $parts = $Version.Split('.')
     if ([decimal]$parts[0] -gt 255 -or [decimal]$parts[1] -gt 255 -or [decimal]$parts[2] -gt 65535) { throw 'Version exceeds MSI limits (255.255.65535).' }
+    if ($PSBoundParameters.ContainsKey('DevRepairProductCode')) {
+        if (-not $DevSign -or $Publish -or $DevRepairProductCode -eq [guid]::Empty) {
+            throw '-DevRepairProductCode requires a nonempty installed product GUID, -DevSign and build-only mode.'
+        }
+    }
     if ($DevSign) {
         if ($Dev -or $Sign -or $SkipMSI) { throw '-DevSign cannot be combined with -Dev, -Sign or -SkipMSI.' }
         foreach ($name in @('CertificateThumbprint', 'CertificateStore', 'TrustedSignerSHA256')) {
@@ -80,6 +91,8 @@ try {
         if ($PSBoundParameters.ContainsKey('Channel') -and $Channel -ne 'dev') { throw '-Dev requires the dev channel.' }
         $Channel = 'dev'
     }
+    if ($Publish -and ($Dev -or $SkipMSI)) { throw '-Publish requires a complete signed release, not -Dev or -SkipMSI.' }
+    if ($Publish) { $node = Require-Tool 'node.exe' }
     if ($SkipMSI -and -not $Dev) { throw '-SkipMSI is allowed only with explicit -Dev.' }
     $signEnabled = -not $Dev -or $Sign.IsPresent
     $go = Require-Tool 'go.exe'
@@ -121,7 +134,7 @@ try {
         Invoke-Checked $go @('test', '-tags', 'sentinelgrid_dev_update', './...') 'Dev Go tests'
         Invoke-Checked $go @('vet', '-tags', 'sentinelgrid_dev_update', './...') 'Dev Go vet'
     }
-    $ldflags = "-s -w -X sentinelgrid/agent.Override=$Version"
+    $ldflags = "-s -w -X sentinelgrid/agent.Override=$Version -X sentinelgrid/agent.Channel=$Channel"
     if ($DevSign) { $ldflags += " -X sentinelgrid/agent/internal/update.DevelopmentSignerSHA256=$TrustedSignerSHA256" }
     elseif ($TrustedSignerSHA256) { $ldflags += " -X sentinelgrid/agent/internal/update.TrustedSignerSHA256=$TrustedSignerSHA256" }
     $agentExe = Join-Path $output 'SentinelGridAgent.exe'
@@ -152,19 +165,31 @@ try {
             throw 'Built executable does not match the requested qualification mode and signer pin.'
         }
     }
-    $msi = Join-Path $output "SentinelGridAgent-$Version.msi"
+    $msi = Join-Path $output 'SentinelGridAgent.msi'
     if (-not $SkipMSI) {
-        Invoke-Checked $wix @('build', (Join-Path $root 'installer\windows\Package.wxs'), '-arch', 'x64', '-d', "AgentVersion=$Version", '-d', "AgentSource=$agentExe", '-d', "UpdaterSource=$updaterExe", '-o', $msi) 'MSI build'
+        $msiArguments = @('build', (Join-Path $root 'installer\windows\Package.wxs'), '-arch', 'x64', '-d', "AgentVersion=$Version", '-d', "AgentChannel=$Channel", '-d', "AgentServer=$ServerURL", '-d', "AgentSource=$agentExe", '-d', "UpdaterSource=$updaterExe", '-o', $msi)
+        if ($DevRepairProductCode -ne [guid]::Empty) {
+            $installer = New-Object -ComObject WindowsInstaller.Installer
+            try {
+                $code = $DevRepairProductCode.ToString('B').ToUpperInvariant()
+                if ($installer.ProductInfo($code, 'ProductName') -cne 'SentinelGrid Agent' -or $installer.ProductInfo($code, 'VersionString') -cne $Version) {
+                    throw 'Development repair must retain the installed SentinelGrid Agent product and version.'
+                }
+                $msiArguments += @('-d', "AgentProductCode=$code")
+            } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) }
+        }
+        Invoke-Checked $wix $msiArguments 'MSI build'
         Sign-Artifact $msi 'MSI signing'
     } else {
         $report['MSI build'] = 'SKIPPED (explicit -SkipMSI)'
         $report['MSI signing'] = 'SKIPPED (explicit -SkipMSI)'
     }
     $manifest = [ordered]@{
-        schema_version = 1; product = 'SentinelGridAgent'; version = $Version; channel = $Channel
-        platform = 'windows'; architecture = 'amd64'; published_at = [DateTime]::UtcNow.ToString('o')
+        schema_version = 1; server_url = $ServerURL; product = 'SentinelGridAgent'; version = $Version; channel = $Channel
+        platform = 'windows'; architecture = 'amd64'; built_at = [DateTime]::UtcNow.ToString('o')
         signed = $signEnabled; updater_qualified = $false; trusted_signer_sha256 = $pins
         development_update_build = $DevSign.IsPresent; qualification_requires_installed_windows_checks = $true
+        development_repair_package = ($DevRepairProductCode -ne [guid]::Empty)
     }
     $checksums = [Collections.Generic.List[string]]::new()
     $artifacts = [ordered]@{ agent = $agentExe; updater = $updaterExe; rdp_client = $rdpExe }
@@ -183,10 +208,18 @@ try {
     $checksums.Add("$((Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant())  manifest.json")
     [IO.File]::WriteAllLines((Join-Path $output 'checksums.txt'), $checksums, $utf8)
     $report['SHA256'] = 'OK'
+    if ($signEnabled -and -not $SkipMSI) {
+        & (Join-Path $PSScriptRoot 'validate-agent-release.ps1') -ArtifactDirectory $output -ExpectedVersion $Version -ExpectedChannel $Channel -ExpectedSignerSHA256 $selectedFingerprint
+        $report['Release validation'] = 'OK'
+    }
+    if ($Publish) {
+        Invoke-Checked $node @((Join-Path $PSScriptRoot 'publish-agent.mjs'), $output, $Version, $Channel, $selectedFingerprint) 'Publication and website verification'
+    }
     Write-Host "`nSentinelGrid Agent $Version`n"
     foreach ($entry in $report.GetEnumerator()) { Write-Host ('{0,-16} {1}' -f $entry.Key, $entry.Value) }
     Write-Host "`nArtifacts:`ndist\agent\$Version\"
-    if ($DevSign) { Write-Host 'DEVELOPMENT ONLY update eligibility embedded. Installed Windows readiness is UNVERIFIED; no machine was qualified. Nothing was published.' }
+    if ($Publish) { Write-Host 'Explicit publication completed. Installed lifecycle qualification is separate.' }
+    elseif ($DevSign) { Write-Host 'DEVELOPMENT ONLY update eligibility embedded. Installed Windows readiness is UNVERIFIED; no machine was qualified. Nothing was published.' }
     else { Write-Host 'Auto-update execution: DISABLED (production Windows qualification pending). Nothing was published.' }
 } catch {
     Write-Error "Agent build failed: $($_.Exception.Message)" -ErrorAction Continue

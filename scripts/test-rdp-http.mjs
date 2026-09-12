@@ -15,6 +15,7 @@ mkdirSync(resolve("dist", "qualification"), { recursive: true });
 const log = createWriteStream(resolve("dist", "qualification", "web-smoke.log"));
 const child = spawn(process.execPath, [resolve("node_modules", "next", "dist", "bin", "next"), "start", "-H", "127.0.0.1", "-p", String(port)], {
  stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
+ env: { ...process.env, SENTINELGRID_REALTIME_URL: "wss://realtime-test.invalid" },
 });
 child.stdout.pipe(log, { end: false });
 child.stderr.pipe(log, { end: false });
@@ -31,6 +32,11 @@ try {
   catch { await delay(250); }
  }
  assert.ok(ready, "Local Next server did not become responsive");
+ const endpoint = await request("/api/realtime/endpoint");
+ assert.equal(endpoint.status, 200);
+ assert.equal(endpoint.headers.get("cache-control"), "no-store");
+ assert.deepEqual(await endpoint.json(), { origin: "wss://realtime-test.invalid" });
+ console.log("PASS GET /api/realtime/endpoint: runtime configuration, public discovery, no cache or redirect");
  const device = "40000000-0000-4000-8000-000000000001";
  const cases = [
   ["/api/remote/rdp/relay", { method: "POST" }, 401],

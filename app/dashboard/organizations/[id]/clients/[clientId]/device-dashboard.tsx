@@ -742,11 +742,10 @@ export default function DeviceDashboard({
           : "ACTION_FAILED";
 
       const messages: Record<string, string> = {
-        AAL2_REQUIRED: "MFA is required for this action.",
-        DEVICE_OFFLINE: "This device is offline.",
-        REMOTE_ACCESS_DISABLED: "Remote access is disabled by organization policy.",
-        FORBIDDEN: "You do not have permission for remote actions.",
-      };
+      DEVICE_OFFLINE: "This device is offline.",
+      REMOTE_ACCESS_DISABLED: "Remote access is disabled by organization policy.",
+      FORBIDDEN: "You do not have permission for remote actions.",
+    };
 
       setActionMessage(
         messages[code] || "The action could not be submitted."
@@ -2148,7 +2147,9 @@ function ActionsMenu({
         onClick={() => onAction("update_agent", { confirm: `Check for and install the newest permitted Agent release on ${deviceName}?` })}
         title="Requires an operational secure updater and enabled server policy">
         <span>Update Agent</span>
-        <span className="text-[10px] text-zinc-600">{device.capabilities?.agent_update === true ? "AAL2" : "Unavailable"}</span>
+        <span className="text-[10px] text-zinc-600">
+          {device.capabilities?.agent_update === true ? "Available" : "Unavailable"}
+      </span>
       </button>
 
       <div className="my-1 border-t border-zinc-800" />
@@ -2164,17 +2165,39 @@ function ActionsMenu({
 
       <div className="my-1 border-t border-zinc-800" />
       <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Power</p>
-      <button type="button" className={itemClass} disabled={busy || !online} onClick={() => onAction("lock")}>
+      <button
+        type="button"
+        className={itemClass}
+        disabled={busy || !online}
+        onClick={() => onAction("lock")}
+      >
         <span>Lock</span>
-        <span className="text-zinc-600">AAL2</span>
       </button>
-      <button type="button" className={itemClass} disabled={busy || !online} onClick={() => onAction("reboot", { confirm: `Restart ${deviceName}?` })}>
+
+      <button
+        type="button"
+        className={itemClass}
+        disabled={busy || !online}
+        onClick={() =>
+          onAction("reboot", {
+            confirm: `Restart ${deviceName}?`,
+          })
+        }
+      >
         <span>Restart</span>
-        <span className="text-amber-500/70">AAL2</span>
       </button>
-      <button type="button" className={`${itemClass} text-red-300`} disabled={busy || !online} onClick={() => onAction("shutdown", { confirm: `Shutdown ${deviceName}?` })}>
+
+      <button
+        type="button"
+        className={`${itemClass} text-red-300`}
+        disabled={busy || !online}
+        onClick={() =>
+          onAction("shutdown", {
+            confirm: `Shutdown ${deviceName}?`,
+          })
+        }
+      >
         <span>Shutdown</span>
-        <span className="text-red-400/70">AAL2</span>
       </button>
 
       <button

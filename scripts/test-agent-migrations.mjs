@@ -34,7 +34,7 @@ test("PostgreSQL migrations, RLS, isolated RDP lifecycle and durable update rece
   grant select on public.organizations,public.organization_members,public.clients,public.devices,storage.objects to authenticated;
   grant all on all tables in schema public,storage to service_role;
  `);
- for (let pass = 0; pass < 2; pass++) for (const name of ["202609110001_remote_management_foundation.sql", "202609110002_rdp.sql", "202609110003_agent_build_and_update.sql"]) {
+ for (let pass = 0; pass < 2; pass++) for (const name of ["202609110001_remote_management_foundation.sql", "202609110002_rdp.sql", "202609110003_agent_build_and_update.sql", "202609120001_release_publication.sql"]) {
   await db.exec(readFileSync(new URL(`../supabase/migrations/${name}`,import.meta.url),"utf8"));
  }
  await db.exec(`
@@ -99,7 +99,19 @@ test("PostgreSQL migrations, RLS, isolated RDP lifecycle and durable update rece
  await db.query("update public.rdp_sessions set status='active',relay_seen_at=now()-interval '31 seconds' where id=$1",[stale]);
  assert.ok(await scalar("select public.create_rdp_session($1,$2,'After relay crash')",[ids.device,ids.owner]));
  assert.equal(await scalar("select status from public.rdp_sessions where id=$1",[stale]),"failed");
+ const publish = (version, channel='beta', extra={}) => db.query("select public.publish_agent_release($1::jsonb)", [JSON.stringify({version,channel,sha256:'a'.repeat(64),size_bytes:100,msi_sha256:'b'.repeat(64),msi_size_bytes:100,updater_sha256:'c'.repeat(64),updater_size_bytes:100,manifest_sha256:'d'.repeat(64),signer_sha256:'A'.repeat(64),development_build:true,...extra})]);
+ await publish('0.1.7');
+ assert.equal(await scalar("select r.version from public.agent_release_channels c join public.agent_releases r on r.id=c.release_id where c.channel='beta'"),'0.1.7');
+ await assert.rejects(publish('0.1.8','stable'));
+ await assert.rejects(publish('0.1.6'));
+ await assert.rejects(publish('0.1.7'));
+ await assert.rejects(publish('0.1.8','beta',{msi_sha256:'bad'}));
+ assert.equal(await scalar("select count(*) from public.agent_releases where version='0.1.8'"),0);
+ assert.equal(await scalar("select r.version from public.agent_release_channels c join public.agent_releases r on r.id=c.release_id where c.channel='beta'"),'0.1.7');
+ await publish('0.1.8');
  await asUser(ids.owner);
+ await assert.rejects(publish('0.1.9'));
+ assert.equal(await scalar("select count(*) from public.agent_release_channels").catch(()=>-1),-1);
  await assert.rejects(db.query("update public.agent_releases set is_active=false"));
  await assert.rejects(db.query("update public.device_agent_update_state set update_status='succeeded'"));
 });

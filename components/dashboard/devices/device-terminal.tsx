@@ -11,6 +11,7 @@ import {
 import { Terminal, X } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
+import { browserRealtimeURL } from "@/lib/realtime/endpoint";
 
 export type TerminalShell =
   | "cmd"
@@ -561,16 +562,19 @@ export default function DeviceTerminal({
         return;
       }
 
-      const protocol =
-        window.location.protocol ===
-        "https:"
-          ? "wss:"
-          : "ws:";
-
-      const socket =
-        new WebSocket(
-          `${protocol}//${window.location.host}/api/realtime/browser`,
-        );
+      let socket: WebSocket;
+      try {
+        const url = await browserRealtimeURL(window.location.origin, AbortSignal.timeout(15000));
+        if (cancelled) return;
+        socket = new WebSocket(url);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Realtime endpoint connection failed:", error);
+        setStatus("error");
+        setError("Could not connect to the realtime service.");
+        reconnectTimer = window.setTimeout(() => { void connectTerminal(); }, 10000);
+        return;
+      }
 
       socketRef.current =
         socket;

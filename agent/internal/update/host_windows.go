@@ -76,6 +76,23 @@ try { [Console]::Write(([BitConverter]::ToString($h.ComputeHash($s.SignerCertifi
 	return fmt.Errorf("unexpected Authenticode signer")
 }
 
+const protectedPathValidation = `
+$allowed = @('S-1-5-18','S-1-5-32-544','S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+function Assert-Protected([string]$p, [bool]$ancestor = $false) {
+ $item = Get-Item -LiteralPath $p -Force
+ if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse path' }
+ $acl = Get-Acl -LiteralPath $p
+ if ($allowed -notcontains $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value) { throw 'Untrusted owner' }
+ $mask = 0x000d0156
+ if ($ancestor) { $mask = 0x000d0040 }
+ foreach ($ace in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+  if ($ace.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
+  $sid = $ace.IdentityReference.Value
+  if ($ace.AccessControlType -eq 'Allow' -and ($ace.FileSystemRights -band $mask) -ne 0 -and $allowed -notcontains $sid) { throw 'Writable path' }
+ }
+}
+`
+
 func NewWindowsHost(ctx context.Context) (*WindowsHost, error) {
 	programData, err := windows.KnownFolderPath(windows.FOLDERID_ProgramData, 0)
 	if err != nil {
@@ -88,21 +105,7 @@ func NewWindowsHost(ctx context.Context) (*WindowsHost, error) {
 	host := &WindowsHost{Root: filepath.Join(programData, "SentinelGrid", "updates"), InstallDir: filepath.Join(programFiles, "SentinelGrid")}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	_, err = systemPowerShell(ctx, `
-$allowed = @('S-1-5-18','S-1-5-32-544','S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
-function Assert-Protected([string]$p, [bool]$ancestor = $false) {
- $item = Get-Item -LiteralPath $p -Force
- if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse path' }
- $acl = Get-Acl -LiteralPath $p
- if ($allowed -notcontains $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value) { throw 'Untrusted owner' }
- $mask = 0x000d0156
- if ($ancestor) { $mask = 0x000d0040 }
- foreach ($ace in $acl.Access) {
-  if ($ace.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
-  $sid = $ace.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
-  if ($ace.AccessControlType -eq 'Allow' -and ($ace.FileSystemRights -band $mask) -ne 0 -and $allowed -notcontains $sid) { throw 'Writable path' }
- }
-}
+	_, err = systemPowerShell(ctx, protectedPathValidation+`
 foreach ($p in @((Split-Path -Parent $env:SG_UPDATE_ROOT), $env:SG_INSTALL_ROOT)) {
  if (Test-Path -LiteralPath $p) { Assert-Protected $p }
  elseif ($p -ne $env:SG_INSTALL_ROOT) { throw 'Missing config directory' }

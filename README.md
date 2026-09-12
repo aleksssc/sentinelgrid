@@ -315,6 +315,28 @@ Open:
 ```text
 http://localhost:3000
 ```
+
+### Windows Agent development signing and baseline repair
+
+Use `scripts\build-agent.ps1 -Version 0.1.6 -Channel beta -DevSign` with the
+explicit development certificate thumbprint, certificate store and SHA256 signer
+pin. `-Sign` is the production signing mode; the development certificate requires
+`-DevSign` and cannot produce stable releases. No private-key export is needed.
+
+The pipeline signs and verifies Agent, Updater and RDP executables before MSI
+packaging, signs the MSI, and only then generates hashes and the manifest. A
+failed build may leave incomplete artifacts; archive that version directory
+before rebuilding. Never sign an existing manifest's artifacts in place.
+
+For an installed development baseline whose MSI maintenance coordinator needs
+repair, `-DevRepairProductCode <installed-product-guid>` retains the same product
+and version. This requires `-DevSign`, forbids `-Publish`, and produces a manifest
+that the publisher also rejects. Use elevated Windows Installer
+`msiexec /fvamus <rebuilt-baseline-msi> /qn /norestart` for that baseline only,
+then run `scripts\test-agent-update-readiness.ps1 -ExpectedSignerSHA256 <pin>`.
+The installer applies service ACLs that reserve lifecycle control for SYSTEM and
+Administrators. Readiness evaluates filesystem ACLs by SID, without requiring
+account-name resolution. Baseline repair is not evidence of an automatic update.
 ---
 
 ## 🎯 Vision

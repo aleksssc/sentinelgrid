@@ -1,612 +1,73 @@
-import {
-  NextRequest,
-  NextResponse,
-} from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-import {
-  createHash,
-} from "crypto";
+const headers = { "Cache-Control": "no-store" };
+const metricNames = ["cpu_usage", "ram_usage", "ram_total_bytes", "ram_used_bytes", "disk_usage", "disk_total_bytes", "disk_used_bytes", "uptime_seconds"];
+const inventoryNames = ["hostname", "os", "os_version", "os_build", "arch", "device_type", "local_ip", "mac_address", "manufacturer", "model", "serial_number", "cpu_name", "agent_version"];
+const capabilityNames = ["agent_update", "commands", "terminal", "force_inventory", "restart_agent", "services", "software", "security", "tcp_tunnel", "rdp"];
 
-import {
-  createClient,
-} from "@supabase/supabase-js";
-
-/* =========================
-   TYPES
-========================= */
-
-type AgentInventory = {
-  capabilities?: unknown;
-  hostname?: unknown;
-
-  os?: unknown;
-
-  os_version?: unknown;
-
-  os_build?: unknown;
-
-  arch?: unknown;
-
-  device_type?: unknown;
-
-  local_ip?: unknown;
-
-  mac_address?: unknown;
-
-  manufacturer?: unknown;
-
-  model?: unknown;
-
-  serial_number?: unknown;
-
-  cpu_name?: unknown;
-
-  ram_total_bytes?: unknown;
-
-  agent_version?: unknown;
-};
-
-type HeartbeatBody = {
-  agent_token?: unknown;
-
-  token?: unknown;
-
-  cpu_usage?: unknown;
-
-  ram_usage?: unknown;
-
-  ram_total_bytes?: unknown;
-
-  ram_used_bytes?: unknown;
-
-  disk_usage?: unknown;
-
-  disk_total_bytes?: unknown;
-
-  disk_used_bytes?: unknown;
-
-  uptime_seconds?: unknown;
-
-  inventory?: AgentInventory;
-};
-
-/* =========================
-   SUPABASE ADMIN
-========================= */
-
-function createAdminClient() {
-  const url =
-    process.env
-      .NEXT_PUBLIC_SUPABASE_URL;
-
-  const serviceRoleKey =
-    process.env
-      .SUPABASE_SERVICE_ROLE_KEY;
-
-  if (
-    !url ||
-    !serviceRoleKey
-  ) {
-    throw new Error(
-      "Supabase server environment variables are missing."
-    );
-  }
-
-  return createClient(
-    url,
-    serviceRoleKey,
-    {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    }
-  );
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
+function text(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 
-/* =========================
-   POST
-========================= */
-
-export async function POST(
-  request: NextRequest
-) {
+export async function POST(request: NextRequest) {
   try {
-    const body =
-      (await request
-        .json()
-        .catch(() => ({}))) as HeartbeatBody;
-
-    /* =========================
-       AGENT TOKEN
-    ========================= */
-
-    const authorization =
-      request.headers.get(
-        "authorization"
-      );
-
-    let bearerToken =
-      "";
-
-    if (
-      authorization
-        ?.toLowerCase()
-        .startsWith(
-          "bearer "
-        )
-    ) {
-      bearerToken =
-        authorization
-          .slice(7)
-          .trim();
+    let body: unknown;
+    try { body = await request.json(); }
+    catch { return NextResponse.json({ error: "Invalid heartbeat JSON." }, { status: 400, headers }); }
+    if (!record(body)) return NextResponse.json({ error: "Invalid heartbeat." }, { status: 400, headers });
+    const authorization = request.headers.get("authorization") ?? "";
+    const token = /^Bearer\s+(\S+)$/i.exec(authorization)?.[1] || text(body.agent_token) || text(body.token);
+    if (!token || token.length > 512) return NextResponse.json({ error: "Missing or invalid agent token." }, { status: 401, headers });
+    const admin = createAdminClient();
+    const now = new Date().toISOString();
+    const update: Record<string, unknown> = { status: "online", last_seen: now };
+    const publicIP = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip")?.trim();
+    if (publicIP) update.public_ip = publicIP;
+    for (const name of metricNames) {
+      if (typeof body[name] === "number" && Number.isFinite(body[name])) update[name] = body[name];
     }
-
-    const bodyAgentToken =
-      safeString(
-        body.agent_token
-      ) ||
-      safeString(
-        body.token
-      );
-
-    const agentToken =
-      bearerToken ||
-      bodyAgentToken;
-
-    if (!agentToken) {
-      return NextResponse.json(
-        {
-          error:
-            "Missing agent token.",
-        },
-        {
-          status: 401,
-        }
-      );
+    if (record(body.inventory)) {
+      const inventory = body.inventory;
+      for (const name of inventoryNames) {
+        const value = text(inventory[name]);
+        if (value) update[name] = value;
+      }
+      if (typeof inventory.ram_total_bytes === "number" && Number.isFinite(inventory.ram_total_bytes)) update.ram_total_bytes = inventory.ram_total_bytes;
+      if (record(inventory.capabilities)) {
+        const capabilities = inventory.capabilities;
+        update.capabilities = Object.fromEntries(capabilityNames.map((name) => [name, capabilities[name] === true]));
+      }
+      update.last_inventory_at = now;
     }
-
-    /* =========================
-       HASH TOKEN
-    ========================= */
-
-    const tokenHash =
-      createHash(
-        "sha256"
-      )
-        .update(
-          agentToken
-        )
-        .digest(
-          "hex"
-        );
-
-    const supabase =
-      createAdminClient();
-
-    /* =========================
-       FIND DEVICE
-    ========================= */
-
-    const {
-      data: device,
-      error: deviceError,
-    } =
-      await supabase
-        .from(
-          "devices"
-        )
-        .select(
-          "id"
-        )
-        .eq(
-          "agent_token_hash",
-          tokenHash
-        )
-        .maybeSingle();
-
-    if (deviceError) {
-      console.error(
-        "Heartbeat lookup error:",
-        deviceError
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "Could not validate agent.",
-        },
-        {
-          status: 500,
-        }
-      );
+    // Token authentication and telemetry update share one database statement, including token revocation races.
+    const { data: device, error } = await admin.from("devices").update(update)
+      .eq("agent_token_hash", createHash("sha256").update(token).digest("hex"))
+      .select("id, capabilities").maybeSingle();
+    if (error) {
+      console.error("[Heartbeat] DEVICE_UPDATE_FAILED", error.code);
+      return NextResponse.json({ error: "Could not update device." }, { status: 503, headers });
     }
-
-    if (!device) {
-      return NextResponse.json(
-        {
-          error:
-            "Invalid agent token.",
-        },
-        {
-          status: 401,
-        }
-      );
-    }
-
-    /* =========================
-       BASE UPDATE
-    ========================= */
-
-    const updateData:
-      Record<string, unknown> = {
-        status:
-          "online",
-
-        last_seen:
-          new Date()
-            .toISOString(),
-      };
-
-    /* =========================
-       PUBLIC IP
-    ========================= */
-
-    const publicIP =
-      getPublicIP(
-        request
-      );
-
-    if (publicIP) {
-      updateData.public_ip =
-        publicIP;
-    }
-
-    /* =========================
-       METRICS
-    ========================= */
-
-    assignNumber(
-      updateData,
-      "cpu_usage",
-      body.cpu_usage
-    );
-
-    assignNumber(
-      updateData,
-      "ram_usage",
-      body.ram_usage
-    );
-
-    assignNumber(
-      updateData,
-      "ram_total_bytes",
-      body.ram_total_bytes
-    );
-
-    assignNumber(
-      updateData,
-      "ram_used_bytes",
-      body.ram_used_bytes
-    );
-
-    assignNumber(
-      updateData,
-      "disk_usage",
-      body.disk_usage
-    );
-
-    assignNumber(
-      updateData,
-      "disk_total_bytes",
-      body.disk_total_bytes
-    );
-
-    assignNumber(
-      updateData,
-      "disk_used_bytes",
-      body.disk_used_bytes
-    );
-
-    assignNumber(
-      updateData,
-      "uptime_seconds",
-      body.uptime_seconds
-    );
-
-    /* =========================
-       INVENTORY
-    ========================= */
-
-    const inventory =
-      body.inventory;
-
-    if (
-      inventory &&
-      typeof inventory ===
-        "object"
-    ) {
-      assignString(
-        updateData,
-        "hostname",
-        inventory.hostname
-      );
-
-      assignString(
-        updateData,
-        "os",
-        inventory.os
-      );
-
-      assignString(
-        updateData,
-        "os_version",
-        inventory.os_version
-      );
-
-      assignString(
-        updateData,
-        "os_build",
-        inventory.os_build
-      );
-
-      assignString(
-        updateData,
-        "arch",
-        inventory.arch
-      );
-
-      assignString(
-        updateData,
-        "device_type",
-        inventory.device_type
-      );
-
-      assignString(
-        updateData,
-        "local_ip",
-        inventory.local_ip
-      );
-
-      assignString(
-        updateData,
-        "mac_address",
-        inventory.mac_address
-      );
-
-      assignString(
-        updateData,
-        "manufacturer",
-        inventory.manufacturer
-      );
-
-      assignString(
-        updateData,
-        "model",
-        inventory.model
-      );
-
-      assignString(
-        updateData,
-        "serial_number",
-        inventory.serial_number
-      );
-
-      assignString(
-        updateData,
-        "cpu_name",
-        inventory.cpu_name
-      );
-
-      assignString(
-        updateData,
-        "agent_version",
-        inventory.agent_version
-      );
-
-      assignNumber(
-        updateData,
-        "ram_total_bytes",
-        inventory.ram_total_bytes
-      );
-
-      const capabilities =
-        normalizeCapabilities(
-          inventory.capabilities
-        );
-
-      if (capabilities) {
-        updateData.capabilities = capabilities;
-        updateData.last_inventory_at =
-          new Date().toISOString();
+    if (!device) return NextResponse.json({ error: "Invalid agent token." }, { status: 401, headers });
+    let rdpPending: boolean | undefined;
+    if (body.rdp_control === true) {
+      rdpPending = false;
+      if (process.env.SENTINELGRID_RELAY_URL && device.capabilities?.rdp === true) {
+        const { data: session, error: sessionError } = await admin.from("rdp_sessions").select("id")
+          .eq("device_id", device.id).eq("status", "requested")
+          .gt("created_at", new Date(Date.now() - 60000).toISOString()).limit(1).maybeSingle();
+        if (sessionError) {
+          // Preserve liveness/health and explicitly withdraw negotiation: the Agent resumes its legacy fallback.
+          console.error("[Heartbeat] RDP_DISCOVERY_FAILED", sessionError.code);
+          rdpPending = undefined;
+        } else { rdpPending = !!session; }
       }
     }
-
-    /* =========================
-       UPDATE DEVICE
-    ========================= */
-
-    const {
-      error: updateError,
-    } =
-      await supabase
-        .from(
-          "devices"
-        )
-        .update(
-          updateData
-        )
-        .eq(
-          "id",
-          device.id
-        );
-
-    if (updateError) {
-      console.error(
-        "Heartbeat update error:",
-        updateError
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "Could not update device.",
-        },
-        {
-          status: 500,
-        }
-      );
-    }
-
-    /* =========================
-       RESPONSE
-    ========================= */
-
-    return NextResponse.json(
-      {
-        ok: true,
-
-        device_id:
-          device.id,
-      }
-    );
-  } catch (error) {
-    console.error(
-      "Agent heartbeat failed:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        error:
-          "Internal server error.",
-      },
-      {
-        status: 500,
-      }
-    );
+    return NextResponse.json({ ok: true, device_id: device.id, rdp_pending: rdpPending }, { headers });
+  } catch {
+    console.error("[Heartbeat] HEARTBEAT_FAILED");
+    return NextResponse.json({ error: "Internal server error." }, { status: 500, headers });
   }
-}
-
-/* =========================
-   SAFE STRING
-========================= */
-
-function safeString(
-  value: unknown
-) {
-  if (
-    typeof value !==
-    "string"
-  ) {
-    return "";
-  }
-
-  return value.trim();
-}
-
-/* =========================
-   ASSIGN STRING
-========================= */
-
-function assignString(
-  target: Record<string, unknown>,
-  key: string,
-  value: unknown
-) {
-  const parsed =
-    safeString(
-      value
-    );
-
-  if (parsed) {
-    target[key] =
-      parsed;
-  }
-}
-
-/* =========================
-   ASSIGN NUMBER
-========================= */
-
-function assignNumber(
-  target: Record<string, unknown>,
-  key: string,
-  value: unknown
-) {
-  if (
-    typeof value !==
-    "number"
-  ) {
-    return;
-  }
-
-  if (
-    !Number.isFinite(
-      value
-    )
-  ) {
-    return;
-  }
-
-  target[key] =
-    value;
-}
-
-/* =========================
-   PUBLIC IP
-========================= */
-
-function getPublicIP(
-  request: NextRequest
-) {
-  const forwarded =
-    request.headers.get(
-      "x-forwarded-for"
-    );
-
-  if (forwarded) {
-    const first =
-      forwarded
-        .split(",")[0]
-        ?.trim();
-
-    if (first) {
-      return first;
-    }
-  }
-
-  const realIP =
-    request.headers.get(
-      "x-real-ip"
-    );
-
-  return (
-    realIP?.trim() ||
-    ""
-  );
-}
-
-function normalizeCapabilities(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-
-  const input = value as Record<string, unknown>;
-  const names = [
-    "agent_update",
-    "commands",
-    "terminal",
-    "force_inventory",
-    "restart_agent",
-    "services",
-    "software",
-    "security",
-    "tcp_tunnel",
-    "rdp",
-  ];
-
-  return Object.fromEntries(
-    names.map((name) => [name, input[name] === true])
-  );
 }

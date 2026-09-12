@@ -177,7 +177,7 @@ func (p *program) run(ctx context.Context) {
 		Collect immediately.
 
 		Inventory is then cached in memory and
-		sent with every heartbeat.
+		sent on change and at least every 30 minutes after acknowledgement.
 	*/
 
 	refreshInventory()
@@ -344,6 +344,7 @@ func sendHeartbeat(
 			"Heartbeat sent without telemetry. Device: %s",
 			response.DeviceID,
 		)
+		rdp.HeartbeatControl(response.RDPPending)
 		update.ConfirmHeartbeat(version, cfg.Server, cfg.DeviceID, response.DeviceID, response.OK)
 
 		return
@@ -377,6 +378,7 @@ func sendHeartbeat(
 	   LOG
 	========================= */
 
+	rdp.HeartbeatControl(response.RDPPending)
 	if cachedInventory != nil {
 		update.ConfirmHeartbeat(version, cfg.Server, cfg.DeviceID, response.DeviceID, response.OK)
 		log.Printf(
@@ -789,11 +791,16 @@ func main() {
 			"Show Agent version",
 		)
 
+	showChannel := flag.Bool("release-channel", false, "Show embedded release channel")
 	showUpdateTrust := flag.Bool("update-build-info", false, "Show embedded update trust (no update)")
 	validateConfig := flag.Bool("validate-config", false, "Validate preserved configuration without enrolling or changing it")
 	showRDPReadiness := flag.Bool("rdp-readiness", false, "Probe the fixed local RDP listener and NLA (no changes)")
 	showReadiness := flag.Bool("update-readiness", false, "Inspect installed update readiness (no update; administrator required)")
 	flag.Parse()
+	if *showChannel {
+		fmt.Println(buildinfo.Channel)
+		return
+	}
 	if *validateConfig {
 		if flag.NArg() != 0 || flag.NFlag() != 1 {
 			log.Fatal("Configuration validation accepts no other flags or arguments")

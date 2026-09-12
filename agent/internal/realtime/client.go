@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"sentinelgrid/agent/internal/config"
+	"sentinelgrid/agent/internal/rdp"
 )
 
 /* =========================================
@@ -177,61 +178,30 @@ func (b *limitedBuffer) String() string {
    RUN
 ========================================= */
 
-func Run(
-	ctx context.Context,
-) {
-	log.Println(
-		"SentinelGrid realtime client started.",
-	)
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println(
-				"SentinelGrid realtime client stopped.",
-			)
-
-			return
-
-		default:
+func Run(ctx context.Context) {
+	log.Println("SentinelGrid realtime client started.")
+	var delay time.Duration
+	for ctx.Err() == nil {
+		cfg, err := config.Load()
+		started := time.Now()
+		if err == nil {
+			err = connect(ctx, cfg)
 		}
-
-		cfg,
-			err :=
-			config.Load()
-
+		if ctx.Err() != nil {
+			break
+		}
 		if err != nil {
-			if !wait(
-				ctx,
-				reconnectDelay,
-			) {
-				return
-			}
-
-			continue
+			log.Printf("Realtime disconnected or configuration unavailable: %v", err)
 		}
-
-		err =
-			connect(
-				ctx,
-				cfg,
-			)
-
-		if err != nil &&
-			ctx.Err() == nil {
-			log.Printf(
-				"Realtime disconnected: %v",
-				err,
-			)
+		if time.Since(started) >= 2*time.Minute {
+			delay = 0
 		}
-
-		if !wait(
-			ctx,
-			reconnectDelay,
-		) {
-			return
+		delay = nextReconnectDelay(delay)
+		if !wait(ctx, jitterReconnectDelay(delay)) {
+			break
 		}
 	}
+	log.Println("SentinelGrid realtime client stopped.")
 }
 
 /* =========================================
@@ -248,11 +218,10 @@ func connect(
 		)
 	}
 
-	socketURL,
-		err :=
-		buildWebSocketURL(
-			cfg.Server,
-		)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	socketURL, err := discoverWebSocketURL(ctx, cfg.Server)
 
 	if err != nil {
 		return err
@@ -288,6 +257,15 @@ func connect(
 	}
 
 	defer conn.Close()
+	stopCancellation := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stopCancellation()
+	conn.SetReadLimit(1024 * 1024)
+	if err := conn.SetReadDeadline(time.Now().Add(15 * time.Second)); err != nil {
+		return err
+	}
+	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return err
+	}
 
 	log.Println(
 		"Realtime connected.",
@@ -383,6 +361,9 @@ func connect(
 			1,
 		)
 
+	if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		return err
+	}
 	go func() {
 		errChannel <- readLoop(
 			ctx,
@@ -423,6 +404,10 @@ func connect(
 
 		case <-ticker.C:
 			writeMu.Lock()
+			if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+				writeMu.Unlock()
+				return err
+			}
 
 			err :=
 				conn.WriteJSON(
@@ -453,6 +438,9 @@ func readLoop(
 	writeMu *sync.Mutex,
 ) error {
 	for {
+		if err := conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
+			return err
+		}
 		_,
 			raw,
 			err :=
@@ -516,6 +504,9 @@ func readLoop(
 				writeMu,
 				message,
 			)
+
+		case "rdp_available":
+			rdp.Wake()
 
 		case "typed_command":
 			if message.CommandID == "" ||
