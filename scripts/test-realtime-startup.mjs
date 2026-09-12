@@ -21,6 +21,7 @@ function environment() {
   for (const key of Object.keys(env)) if(key.startsWith("SENTINELGRID_REALTIME_")) delete env[key];
   return {
     ...env,
+    NODE_ENV:"test",
     NEXT_PUBLIC_SUPABASE_URL:"https://test.invalid",
     SUPABASE_SERVICE_ROLE_KEY:"synthetic-test-key",
     UPSTASH_REDIS_KV_REST_API_URL:"https://test.invalid",
@@ -30,10 +31,11 @@ function environment() {
   };
 }
 
-test("compiled standalone entrypoint starts, responds and exits without hosted credentials",{timeout:15000},async t=>{
+for (const proxy of [false, true]) test(`compiled standalone entrypoint starts and responds (${proxy ? "private TLS proxy" : "loopback"})`,{timeout:15000},async t=>{
   const selected = await port();
   const child = spawn(process.execPath,[entrypoint],{
-    env:{...environment(),SENTINELGRID_REALTIME_PORT:String(selected)},stdio:["ignore","pipe","pipe"],windowsHide:true,
+    env:{...environment(),PORT:String(selected),...(proxy ? {SENTINELGRID_REALTIME_TRUST_PROXY:"true",SENTINELGRID_REALTIME_BIND:"0.0.0.0"} : {})},
+    stdio:["ignore","pipe","pipe"],windowsHide:true,
   });
   const exited = once(child,"exit");
   t.after(async()=>{ if(child.exitCode===null && child.signalCode===null) child.kill(); await exited; });
@@ -48,6 +50,7 @@ test("compiled standalone entrypoint starts, responds and exits without hosted c
   assert.match(output,/Realtime relay listening/);
   const response=await fetch(`http://127.0.0.1:${selected}/healthz`,{signal:AbortSignal.timeout(2000)});
   assert.equal(response.status,200); assert.equal(await response.text(),"ok");
+  assert.doesNotMatch(output,/synthetic-test-key|synthetic-test-token/);
 });
 
 test("entrypoint refuses cleartext public binding",{timeout:5000},async()=>{

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import { BrandLogo } from "@/components/brand-logo";
 import { Suspense } from "react";
 import { AuthButton } from "@/components/auth-button";
 
@@ -19,17 +19,7 @@ export default function MarketingLayout({
             href="/"
             className="flex items-center gap-2 font-bold"
           >
-            <Image
-              src="/logos/sentinelgrid_png.png"
-              alt="SentinelGrid"
-              width={32}
-              height={32}
-              className="h-8 w-8 object-contain"
-            />
-
-            <span className="text-lg">
-              SentinelGrid
-            </span>
+            <BrandLogo variant="lockup" />
           </Link>
 
           {/* NAV */}

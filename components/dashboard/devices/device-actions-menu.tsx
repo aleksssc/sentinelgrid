@@ -17,6 +17,7 @@ export default function DeviceActionsMenu({ device, busy, online, open, onOpenCh
   const [error, setError] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const lastCheck = useRef<{ deviceId: string; busy: boolean; online: boolean; at: number } | null>(null);
   const panelId = useId();
 
   useEffect(() => {
@@ -44,24 +45,40 @@ export default function DeviceActionsMenu({ device, busy, online, open, onOpenCh
   useEffect(() => {
     const controller = new AbortController();
     let loading = false;
+    if (lastCheck.current && lastCheck.current.deviceId !== device.id) {
+      setAvailability(null);
+      setError("");
+    }
     async function refresh() {
-      if (loading) return;
+      if (loading || document.visibilityState === "hidden") return;
+      const previous = lastCheck.current;
+      const checkedAt = Date.now();
+      if (previous?.deviceId === device.id && previous.busy === busy && previous.online === online && checkedAt - previous.at < 5000) return;
       loading = true;
       try {
         const response = await fetch(`/api/devices/${device.id}/commands`, { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error(response.status === 403 ? "You do not have permission for device actions" : "Could not check action availability");
         const body = await response.json() as { actions: ActionAvailability };
         if (controller.signal.aborted) return;
+        lastCheck.current = { deviceId: device.id, busy, online, at: checkedAt };
         setAvailability(body.actions);
         setError("");
       } catch (cause) {
         if (!controller.signal.aborted) { setAvailability(null); setError(cause instanceof Error ? cause.message : "Could not check action availability"); }
       } finally { loading = false; }
     }
+    // Keep the initial prefetch, but only repeat while the menu can actually be used.
     void refresh();
-    const timer = setInterval(() => { void refresh(); }, 5000);
-    return () => { controller.abort(); clearInterval(timer); };
-  }, [device.id, busy, online]);
+    if (!open) return () => controller.abort();
+    const onVisible = () => { void refresh(); };
+    const timer = setInterval(onVisible, 5000);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [device.id, busy, online, open]);
   const name = device.display_name || device.hostname;
   return (
     <div ref={containerRef} className="relative">

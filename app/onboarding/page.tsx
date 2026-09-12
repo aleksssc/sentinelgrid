@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { BrandLogo } from "@/components/brand-logo";
 
 import OnboardingSubmit from "./onboarding-submit";
 
@@ -9,7 +10,6 @@ import {
   Building2,
   Check,
   Mail,
-  ShieldCheck,
   Users,
 } from "lucide-react";
 
@@ -739,10 +739,7 @@ export default async function OnboardingPage() {
               shadow-[0_12px_40px_rgba(0,0,0,0.3)]
             "
           >
-            <ShieldCheck
-              size={22}
-              className="text-zinc-300"
-            />
+            <BrandLogo className="h-8 w-8" />
           </div>
         </div>
 

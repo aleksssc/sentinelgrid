@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { BrandLogo } from "@/components/brand-logo";
 import { useFormStatus } from "react-dom";
 
 import {
@@ -196,18 +196,7 @@ export default function OnboardingSubmit({
                 shadow-[0_20px_60px_rgba(0,0,0,0.4)]
               "
             >
-              <Image
-                src="/logos/sentinelgrid_png.png"
-                alt="SentinelGrid"
-                width={36}
-                height={36}
-                className="
-                  h-9
-                  w-9
-
-                  object-contain
-                "
-              />
+              <BrandLogo className="h-9 w-9" />
 
               <span
                 className="

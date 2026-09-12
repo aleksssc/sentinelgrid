@@ -1,6 +1,6 @@
 import Link from "next/link";
-import Image from "next/image";
-import { ArrowLeft, Activity } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
+import { ArrowLeft } from "lucide-react";
 
 export default function AuthLayout({
   children,
@@ -18,17 +18,7 @@ export default function AuthLayout({
             href="/"
             className="flex items-center gap-2 font-bold"
           >
-            <Image
-              src="/logos/sentinelgrid_png.png"
-              alt="SentinelGrid"
-              width={32}
-              height={32}
-              className="h-8 w-8 object-contain"
-            />
-
-            <span className="text-lg">
-              SentinelGrid
-            </span>
+            <BrandLogo variant="lockup" />
           </Link>
 
           <Link

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
+import { BrandLogo } from "@/components/brand-logo";
 
 import {
   useEffect,
@@ -387,66 +387,12 @@ export default function DashboardSidebar() {
         <Link
           href="/dashboard"
           className="
-            flex items-center gap-3
+            inline-flex rounded-md outline-none
+            focus-visible:ring-2 focus-visible:ring-sky-400
+            focus-visible:ring-offset-4 focus-visible:ring-offset-[#101012]
           "
         >
-
-          <div
-            className="
-              flex h-9 w-9
-              items-center justify-center
-
-              rounded-xl
-
-              border border-white/[0.08]
-              bg-white/[0.04]
-            "
-          >
-
-            <Image
-              src="/logos/sentinelgrid_png.png"
-              alt="SentinelGrid"
-              width={25}
-              height={25}
-              className="
-                h-[25px] w-[25px]
-                object-contain
-              "
-            />
-
-          </div>
-
-          <div>
-
-            <div
-              className="
-                text-[15px]
-                font-semibold
-                tracking-tight
-                text-white
-              "
-            >
-              SentinelGrid
-            </div>
-
-            <div
-              className="
-                mt-[1px]
-
-                text-[10px]
-                font-medium
-                uppercase
-
-                tracking-[0.18em]
-
-                text-zinc-500
-              "
-            >
-              Infrastructure
-            </div>
-
-          </div>
-
+          <BrandLogo variant="lockup" />
         </Link>
 
       </div>

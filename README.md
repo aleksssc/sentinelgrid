@@ -99,12 +99,76 @@ Dashboard
 │   ├── Invitations
 │   └── Settings
 │
+├── Incidents
+│
 ├── Alerts
 │
 ├── Profile
 │
 └── Settings
 ```
+
+### Operations: Incidents and Alerts
+
+Both pages use the existing dark dropdown menus for status and time filters. Selections
+apply immediately; search updates automatically after a 250 ms typing pause (Enter
+applies immediately). Reset and clear-search cancel queued searches. Filters stay in
+the URL and reset pagination, with server-side queries, limits and tenant isolation
+unchanged. Only the filter toolbar is interactive; evidence remains server-rendered.
+
+
+`/dashboard/incidents` shows historical command failures/expirations and separate,
+uncorrelated failed audit events. Each command is represented once; audit events
+with command or transaction correlation are excluded from the audit-exceptions
+view. Confirmed no-newer-version and no-eligible-release codes are excluded from
+command failures. Legacy ambiguous no-eligible-release results remain informational,
+using the existing action-feedback helper rather than claiming an update failure
+or inventing a current version. Recorded result versions and transaction IDs remain
+available in expandable evidence. This is not a ticketing or incident-lifecycle system.
+
+`/dashboard/alerts` derives device signals from stored status and the existing
+90-second heartbeat cutoff. The personal-monitors tab shows failed last checks and
+monitors without a check. The current monitor schema uses `user_id`, not an
+organization relationship: this tab is explicitly personal and queries only the
+signed-in user's monitors. Last heartbeat/check timestamps are evidence timestamps,
+not invented incident start times. Existing monitor-history and client-device pages
+remain the destinations for investigation and actions.
+
+Both routes load on the server through the existing organization context and
+cookie-authenticated Supabase client. Organization filters and existing RLS apply
+to all organization data; browser-supplied organization/user IDs are never accepted
+as authority. No service-role client, schema, permission, MFA or policy changes are
+introduced. The new routes do not query the restricted `agent_update_transactions`
+table; they reuse recorded command results/transaction references instead. Existing
+Device Activity transaction enrichment is unchanged.
+
+Search, source/status filters, a 1/7/30/90-day incident window and pagination live in
+the URL. Lists read at most 26 records for 25 visible rows and a next-page indicator,
+with stable timestamp/ID ordering. Incident dates filter request/audit creation time;
+page summaries describe only displayed records, not fleet totals. Device context is
+loaded once per incident page for its visible device IDs, not once per row. Alerts
+use a single joined query for the selected source. Page offsets are bounded to 1,000
+pages; narrow filters for more history. Offset-based snapshots can shift when new
+records arrive; this is not a frozen audit export.
+
+Refresh is manual, with pending feedback and fresh server reads. There is no added
+polling or Realtime subscription. Native expandable evidence needs no client-side
+state; only refresh/error recovery uses Client Components. Query failures are logged
+server-side and displayed distinctly from empty results. Device-context failures
+preserve the recorded evidence. Reads have an eight-second timeout; loading uses
+the existing dashboard skeleton. No raw metadata, command payload, process output,
+monitor URL credentials or enrollment secrets are rendered.
+
+Assignment, acknowledgment, resolution, silencing, alert rules and notification
+channels are deliberately absent because no corresponding persisted backend was
+found. No mock production data or nonfunctional action buttons are supplied. Terminal,
+Actions, RDP, Agent Update, Dashboard, Clients and global navigation are unchanged.
+
+Run `node --test scripts\test-operations.mjs` for the server-loader, serialized
+Supabase query, scope, pagination, heartbeat boundary, error and SSR checks. These
+use the real Supabase query builder with an in-memory HTTP response harness, not
+an authenticated production database. Use `npm run build` and `npx tsc --noEmit`
+for production compilation/type checking.
 
 ---
 
@@ -450,6 +514,31 @@ The installer applies service ACLs that reserve lifecycle control for SYSTEM and
 Administrators. Readiness evaluates filesystem ACLs by SID, without requiring
 account-name resolution. Baseline repair is not evidence of an automatic update.
 ---
+
+
+## Brand assets
+
+The blue ribbon S and outlined SENTINEL / GRID lettering are SVG redraws based on
+the supplied brand reference, not an archived copy of the original uploaded PNG.
+Canonical transparent sources live in `public\logos\sentinelgrid-mark.svg`
+(symbol only) and `public\logos\sentinelgrid-wordmark.svg` (lettering only).
+The combined stacked logo is `public\logos\sentinelgrid-logo.svg`. Each variant
+also has a PNG export. Lettering uses vector paths, with no external fonts.
+
+Use `components\brand-logo.tsx` for UI branding. The marketing/auth headers,
+dashboard sidebar, onboarding and loading screens share these assets.
+Use `variant="lockup"` in compact navigation: the blue S alongside a single-line
+SentinelGrid label in the application's font, without a badge or tagline.
+The outlined two-row wordmark remains available as an asset for larger formats;
+do not shrink it into navigation headers. Legacy
+PNG URLs remain available with the new branding. `app\icon.png`,
+`app\apple-icon.png` and `public\og-image.png` cover browser bookmarks, Apple
+home-screen icons and social previews. The social image remains 1200 x 630.
+
+After changing the canonical SVGs, run `node scripts\generate-brand-assets.mjs`
+to regenerate the combined logo, PNG exports and metadata images using Sharp
+already supplied by Next.js. Check with `node --test scripts\test-brand-assets.mjs`.
+Do not use the white lettering on a light background.
 
 ## 🎯 Vision
 

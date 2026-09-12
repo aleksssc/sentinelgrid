@@ -112,3 +112,55 @@ test("outside pointer/focus and Escape dismiss; reopen retains availability with
   menu.flush();
   assert.equal(fetch.mock.callCount(), 1);
 });
+
+test("availability makes no periodic requests closed/hidden, refreshes stale reopen and invalidates on local state changes", async t => {
+  const originalDocument=globalThis.document;
+  const listeners=new Map(), timers=new Set();
+  globalThis.document={visibilityState:"visible",addEventListener:(name,callback)=>listeners.set(name,callback),removeEventListener:name=>listeners.delete(name)};
+  let now=10000;
+  t.mock.method(Date,"now",()=>now);
+  t.mock.method(globalThis,"setInterval",callback=>{timers.add(callback);return callback;});
+  t.mock.method(globalThis,"clearInterval",callback=>timers.delete(callback));
+  const actions=Object.fromEntries(definitions.DEVICE_ACTIONS.map(({type})=>[type,null]));
+  t.mock.method(globalThis,"fetch",async()=>({ok:true,json:async()=>({actions})}));
+  const menu=harness();
+  t.after(()=>{menu.dispose();if(originalDocument===undefined) delete globalThis.document;else globalThis.document=originalDocument;});
+  const settle=()=>new Promise(resolve=>setImmediate(resolve));
+  menu.render({open:false});menu.flush();await settle();
+  assert.equal(fetch.mock.callCount(),1);assert.equal(timers.size,0);
+  now+=60000;
+  assert.equal(fetch.mock.callCount(),1,"closed menu must not run periodic fetches");
+  menu.render();menu.flush();await settle();
+  assert.equal(fetch.mock.callCount(),2);assert.equal(timers.size,1);
+  globalThis.document.visibilityState="hidden";now+=60000;
+  for(const callback of timers) callback(); await settle();
+  assert.equal(fetch.mock.callCount(),2,"hidden tab must not poll");
+  globalThis.document.visibilityState="visible";listeners.get("visibilitychange")();await settle();
+  assert.equal(fetch.mock.callCount(),3);
+  for(const callback of timers) callback();await settle();
+  assert.equal(fetch.mock.callCount(),3,"fresh visibility fetch must not be duplicated by timer");
+  now+=5000;for(const callback of timers) callback();await settle();
+  assert.equal(fetch.mock.callCount(),4);
+  menu.render({busy:true});menu.flush();await settle();assert.equal(fetch.mock.callCount(),5);
+  menu.render({online:false});menu.flush();await settle();assert.equal(fetch.mock.callCount(),6);
+  menu.render({open:false,online:false});menu.flush();await settle();
+  assert.equal(timers.size,0);assert.equal(listeners.size,0);assert.equal(fetch.mock.callCount(),6);
+});
+
+test("availability aborts on close and failed refresh remains an explicit error", async t => {
+  const originalDocument=globalThis.document;
+  globalThis.document={visibilityState:"visible",addEventListener(){},removeEventListener(){}};
+  let signal;
+  t.mock.method(globalThis,"fetch",async(_url,options)=>{
+    signal=options.signal;
+    return {ok:false,status:503};
+  });
+  const menu=harness();
+  t.after(()=>{menu.dispose();if(originalDocument===undefined) delete globalThis.document;else globalThis.document=originalDocument;});
+  menu.render();menu.flush();await new Promise(resolve=>setImmediate(resolve));
+  assert.match(menu.render(),/Could not check action availability/);
+  const previousSignal=signal;
+  menu.render({open:false});menu.flush();
+  assert.equal(previousSignal.aborted,true);
+  await new Promise(resolve=>setImmediate(resolve));
+});

@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { BrandLogo } from "@/components/brand-logo";
 
 export default function Loading() {
   return (
@@ -62,14 +62,7 @@ export default function Loading() {
             shadow-[0_20px_60px_rgba(0,0,0,0.4)]
           "
         >
-          <Image
-            src="/logos/sentinelgrid_png.png"
-            alt="SentinelGrid"
-            width={36}
-            height={36}
-            priority
-            className="h-9 w-9 object-contain"
-          />
+          <BrandLogo className="h-9 w-9" preload />
 
           <span
             className="
