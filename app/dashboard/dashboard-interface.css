@@ -253,3 +253,70 @@ html[data-sg-presentation="bubbles"] .sg-dashboard .sg-client-item:focus-visible
 html[data-sg-motion="reduced"] .sg-dashboard .sg-client-item:hover, html[data-sg-motion="reduced"] .sg-dashboard .sg-client-item:focus-visible { transform: none; }
 
 html[data-sg-presentation="bubbles"] .sg-dashboard :is(.sg-client-row, .sg-client-card) { border: 1px solid var(--sg-border); border-radius: var(--sg-panel-radius); background: var(--sg-surface); box-shadow: 0 4px 20px rgb(0 0 0 / 16%); }
+
+/* Directory panels share the compact, single-surface inventory treatment used by Operations. */
+.sg-clients-panel { overflow: hidden; }
+.sg-clients-panel .sg-panel-body { padding: 0; }
+.sg-clients-panel .sg-client-toolbar,
+.sg-clients-panel .sg-panel-body > .sg-toolbar {
+  margin-bottom: 0;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--sg-border);
+}
+.sg-clients-panel .sg-client-list { border: 0; border-radius: 0; }
+.sg-clients-panel .sg-client-row {
+  min-height: 66px;
+  padding: 14px 20px;
+  background: var(--sg-surface);
+}
+.sg-clients-panel .sg-client-grid { padding: 12px; }
+.sg-clients-panel .sg-client-skeleton { border-radius: 0; }
+.sg-clients-panel .sg-client-skeleton > div { background: var(--sg-surface); }
+.sg-clients-panel .sg-panel-body > .mb-4 {
+  margin-bottom: 0;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--sg-border);
+}
+.sg-clients-panel .sg-panel-body > .sg-surface {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.sg-clients-panel .sg-table-heading { padding: 11px 20px; }
+.sg-clients-panel .sg-panel-body > .sg-surface .sg-row { padding: 13px 20px; }
+
+@media (max-width: 639px) {
+  .sg-clients-panel .sg-client-toolbar,
+  .sg-clients-panel .sg-panel-body > .sg-toolbar { padding: 14px; }
+  .sg-clients-panel .sg-client-row { min-height: 60px; padding: 12px 14px; }
+  .sg-clients-panel .sg-client-grid { padding: 10px; }
+  .sg-clients-panel .sg-panel-body > .mb-4 { padding: 11px 14px; }
+  .sg-clients-panel .sg-table-heading,
+  .sg-clients-panel .sg-panel-body > .sg-surface .sg-row { padding-inline: 14px; }
+}
+
+html[data-sg-density=compact] .sg-dashboard .sg-clients-panel .sg-client-row { min-height: 0; }
+
+html[data-sg-presentation=bubbles] .sg-dashboard .sg-clients-panel .sg-client-list {
+  display: block;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+html[data-sg-presentation=bubbles] .sg-dashboard .sg-clients-panel .sg-client-list .sg-client-row {
+  border: 0;
+  border-radius: 0;
+  background: var(--sg-surface);
+  box-shadow: none;
+}
+html[data-sg-presentation=bubbles] .sg-dashboard .sg-clients-panel .sg-client-list .sg-client-row + .sg-client-row {
+  border-top: 1px solid var(--sg-border);
+}
+html[data-sg-presentation=bubbles] .sg-dashboard .sg-clients-panel .sg-client-list .sg-client-row:is(:hover, :focus-visible) {
+  transform: none;
+  border-color: var(--sg-border);
+  background: var(--sg-hover);
+  box-shadow: none;
+}
