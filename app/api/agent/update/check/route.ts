@@ -16,6 +16,8 @@ import {
   type ProductRelease,
 } from "@/lib/agent/product-release";
 
+import { createHash } from "node:crypto";
+
 export async function POST(request: Request) {
   try {
     const {
@@ -377,8 +379,28 @@ export async function POST(request: Request) {
     }
 
     /* =========================================================
-       PRODUCT VALIDATION
+      PRODUCT VALIDATION
     ========================================================= */
+
+    const manifestBytes =
+      new Uint8Array(
+        await manifest.arrayBuffer()
+      );
+
+    const actualManifestSHA256 =
+      createHash("sha256")
+        .update(manifestBytes)
+        .digest("hex");
+
+    console.error(
+      "[Agent update manifest]",
+      {
+        expected:
+          bundle.manifest_sha256,
+        actual:
+          actualManifestSHA256,
+      }
+    );
 
     let artifact;
 
@@ -386,9 +408,7 @@ export async function POST(request: Request) {
       artifact =
         productArtifact(
           metadata,
-          new Uint8Array(
-            await manifest.arrayBuffer()
-          )
+          manifestBytes
         );
     } catch (error) {
       console.error(
