@@ -84,10 +84,10 @@ export default function DeviceRDP({ deviceId, available }: { deviceId: string; a
   }
 
   return <div className="max-w-xl">
-    {!session && available && <input aria-label="Remote Desktop session reason" maxLength={240} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Session reason (required)" className="mb-2 block w-full rounded border border-zinc-800 bg-transparent px-3 py-2 text-xs text-zinc-300" />}
+    {!session && available && <input aria-label="Remote Desktop session reason" maxLength={240} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Session reason (required)" className="sg-control mb-2 block w-full px-3 py-2" />}
     <button type="button" disabled={busy || (!session && (!available || reason.trim().length < 3))} onClick={() => void (session ? close() : start())}
       title={available ? "Outbound tunnel to Windows Remote Desktop" : "Requires an online RDP/NLA-capable Agent and configured relay"}
-      className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-800 px-4 text-sm font-medium text-zinc-300 transition hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-40">
+      className="sg-button sg-button-secondary">
       <ExternalLink size={16} />{busy ? "Please wait..." : session ? "Close Remote Desktop" : "Remote Desktop"}
     </button>
     {session && <p className="mt-2 text-xs text-zinc-400">Tunnel: {session.status}. Windows sign-in is separate.</p>}

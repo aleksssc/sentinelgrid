@@ -941,9 +941,13 @@ if (
 # ============================================================
 
 $EnvLines =
-    Get-Content `
-        -LiteralPath $EnvFile
-
+    @(
+        Get-Content `
+            -LiteralPath $EnvFile |
+        Where-Object {
+            -not [string]::IsNullOrWhiteSpace($_)
+        }
+    )
 
 $SupabaseURL =
     Get-DotEnvValue `

@@ -1,16 +1,16 @@
 export default function MonitorDetailsLoading() {
   return (
-    <main className="p-8">
-      <div className="mx-auto max-w-7xl animate-pulse">
+    <div className="sg-page-shell">
+      <div className="sg-page animate-pulse motion-reduce:animate-none">
 
         {/* BACK */}
-        <div className="mb-6 h-4 w-32 rounded bg-zinc-900" />
+        <div className="mb-6 h-4 w-32 rounded bg-surface" />
 
         {/* HEADER */}
         <div className="mb-8">
-          <div className="h-9 w-64 rounded-lg bg-zinc-800" />
+          <div className="h-9 w-64 max-w-full rounded-lg bg-zinc-800" />
 
-          <div className="mt-3 h-4 w-80 rounded bg-zinc-900" />
+          <div className="mt-3 h-4 w-80 max-w-full rounded bg-surface" />
         </div>
 
         {/* STATS */}
@@ -19,14 +19,14 @@ export default function MonitorDetailsLoading() {
           {Array.from({ length: 4 }).map((_, index) => (
             <div
               key={index}
-              className="h-32 rounded-2xl border border-zinc-800 bg-zinc-900"
+              className="h-32 rounded-2xl border border-surface-edge bg-surface"
             />
           ))}
 
         </div>
 
         {/* RESPONSE TIME */}
-        <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+        <div className="sg-surface mt-6 p-6">
 
           <div className="h-5 w-32 rounded bg-zinc-800" />
 
@@ -37,9 +37,9 @@ export default function MonitorDetailsLoading() {
         </div>
 
         {/* HISTORY */}
-        <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+        <div className="sg-surface mt-6 overflow-hidden">
 
-          <div className="border-b border-zinc-800 px-6 py-5">
+          <div className="border-b border-surface-edge px-6 py-5">
 
             <div className="h-5 w-28 rounded bg-zinc-800" />
 
@@ -52,7 +52,7 @@ export default function MonitorDetailsLoading() {
             {Array.from({ length: 4 }).map((_, index) => (
               <div
                 key={index}
-                className="h-16 border-b border-zinc-800/70 bg-zinc-900"
+                className="h-16 border-b border-zinc-800/70 bg-surface"
               />
             ))}
 
@@ -61,6 +61,6 @@ export default function MonitorDetailsLoading() {
         </div>
 
       </div>
-    </main>
+    </div>
   );
 }

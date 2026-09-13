@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import animate from "tailwindcss-animate";
 
 export default {
   darkMode: ["class"],
@@ -11,6 +12,18 @@ export default {
   theme: {
     extend: {
       colors: {
+        surface: {
+          DEFAULT: "var(--sg-surface, #0d0f12)",
+          raised: "var(--sg-raised, #12151a)",
+          inset: "var(--sg-inset, #090b0e)",
+          edge: "var(--sg-border, #252a32)",
+          muted: "var(--sg-muted, #959ca8)",
+          hover: "var(--sg-hover, #11151e)",
+          selected: "var(--sg-selected, #141c29)",
+          accent: "var(--sg-accent-text, #93c5fd)",
+          focus: "var(--sg-accent, #60a5fa)",
+          "accent-edge": "var(--sg-accent-edge, #2b466a)",
+        },
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: {
@@ -59,5 +72,5 @@ export default {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [animate],
 } satisfies Config;

@@ -145,11 +145,17 @@
    ACCESSIBILITY
 ========================= */
 
+html[data-sg-motion="reduced"] :is(.dashboard-grid, .dashboard-glow, .dashboard-scanline) {
+  animation: none;
+  will-change: auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .dashboard-grid,
-  .dashboard-glow-left,
-  .dashboard-glow-right,
-  .dashboard-scanline {
+  html:not([data-sg-motion="full"]) .dashboard-grid,
+  html:not([data-sg-motion="full"]) .dashboard-glow-left,
+  html:not([data-sg-motion="full"]) .dashboard-glow-right,
+  html:not([data-sg-motion="full"]) .dashboard-scanline {
     animation: none;
+    will-change: auto;
   }
 }

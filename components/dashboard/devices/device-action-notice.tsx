@@ -23,7 +23,7 @@ export default function DeviceActionNotice({ notice, onDismiss }: { notice: Acti
         {notice.code && <p className="mt-1.5 break-all font-mono text-[10px] text-zinc-500">{notice.code}</p>}
       </div>
       <button type="button" onClick={onDismiss} aria-label="Dismiss action notification"
-        className="-mr-1 -mt-1 rounded-md p-1.5 text-zinc-500 transition hover:bg-white/5 hover:text-zinc-200 focus-visible:outline focus-visible:outline-emerald-500">
+        className="-mr-1 -mt-1 rounded-md p-1.5 text-zinc-500 transition hover:bg-surface-hover hover:text-zinc-200 focus-visible:outline focus-visible:outline-surface-focus">
         <X size={14} aria-hidden="true" />
       </button>
     </div>

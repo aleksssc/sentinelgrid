@@ -25,6 +25,9 @@
       </DirectorySearch>
     </Property>
     <Property Id="SENTINELGRID_CHANNEL" Value="$(var.AgentChannel)" />
+    <Property Id="SENTINELGRID_UPDATE_PROTOCOL" Value="2" />
+    <Property Id="SENTINELGRID_UPDATE_DEVELOPMENT" Value="$(var.UpdateDevelopment)" />
+    <Property Id="SENTINELGRID_UPDATE_SIGNERS" Value="$(var.UpdateSigners)" />
     <MediaTemplate EmbedCab="yes" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
@@ -47,12 +50,15 @@
           <ServiceControl Id="SentinelGridUpdaterServiceControl" Name="SentinelGridUpdater"
             Start="install" Stop="both" Remove="uninstall" Wait="yes" />
         </Component>
+        <Component Id="SentinelGridRDPComponent" Guid="*">
+          <File Id="SentinelGridRDPExe" Source="$(var.RDPSource)" KeyPath="yes" />
+        </Component>
       </Directory>
     </StandardDirectory>
 
     <Binary Id="SentinelGridMSICoordinator" SourceFile="$(var.UpdaterSource)" />
     <CustomAction Id="RollbackSentinelGridMaintenance" BinaryRef="SentinelGridMSICoordinator"
-      ExeCommand="-maintenance-end" Execute="rollback" Impersonate="no" Return="check" />
+      ExeCommand="-maintenance-rollback" Execute="rollback" Impersonate="no" Return="check" />
     <CustomAction Id="BeginSentinelGridMaintenance" BinaryRef="SentinelGridMSICoordinator"
       ExeCommand="-maintenance-begin" Execute="deferred" Impersonate="no" Return="check" />
     <CustomAction Id="EndSentinelGridMaintenance" BinaryRef="SentinelGridMSICoordinator"
@@ -83,6 +89,7 @@
     <Feature Id="MainFeature" Title="SentinelGrid Agent" Level="1">
       <ComponentRef Id="SentinelGridAgentComponent" />
       <ComponentRef Id="SentinelGridUpdaterComponent" />
+      <ComponentRef Id="SentinelGridRDPComponent" />
     </Feature>
   </Package>
 </Wix>

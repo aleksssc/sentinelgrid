@@ -478,9 +478,11 @@ Transaction execution, terminal command statuses and audit history are unchanged
 Notification checks: `node --test scripts\test-device-action-feedback.mjs scripts\test-update-command-feedback.mjs`.
 
 Deploy the website **and rebuild/restart the Realtime relay** (`npm run build:realtime`).
-Build/sign and install an MSI containing both the new Agent and Updater before
-qualifying the new actions. The existing Agent-only auto-update intentionally does
-not replace the Updater. `SentinelGridUpdater.exe -command-protocol` must report
+Build/sign and install the full-product MSI containing Agent, Updater and RDP before
+qualifying the new actions. Auto Update and Force Update now share the protocol-2
+MSI pipeline; legacy endpoints require a one-time signed MSI bootstrap. See
+[Windows product updates](installer/windows/UPDATES.md) for security, recovery,
+rollout limitations and manual qualification. `SentinelGridUpdater.exe -command-protocol` must report
 `sentinelgrid-device-commands-v1` for Restart Agent execution to be supported. Do not replace
 installed EXEs manually or sign artifacts after hashes/manifests are generated.
 No schema changes or Terminal/RDP deployment changes are required.
@@ -540,6 +542,30 @@ account-name resolution. Baseline repair is not evidence of an automatic update.
 ---
 
 
+## Dashboard visual system
+
+Dashboard pages share `components\dashboard\dashboard-primitives.tsx` (page and section headers, surfaces, statistics and empty states) and `app\dashboard\dashboard-design.css`. The `sg-dashboard` scope keeps marketing and authentication styles unchanged. Surface tokens in Tailwind use an opaque Performance-inspired palette: inset `#090b0e`, panel `#0d0f12`, raised `#12151a` and border `#252a32`.
+
+Use one `sg-page` container per route (1440px including responsive gutters); the dashboard layout owns the only main landmark and scroll container. Use `PageHeader` for titles/actions, `SectionHeader` for panel headings, `CompactSummary` for Organization/Client counts, `StatCard` for richer dashboard metrics, and `sg-toolbar`, `sg-control`, `sg-button`, `sg-row` and `sg-badge` for existing native elements. Buttons have primary, secondary, ghost and danger variants. `FormSubmitButton` adds pending feedback without changing Server Actions. Keep destructive confirmations and permission checks in their existing owners.
+
+Device navigation uses `sg-tab`; time periods and filter toggles use `sg-segment` with `aria-pressed`. Avoid translucent panel backgrounds or per-page surface hex values. Drawer charts retain their collection, polling and gap semantics. The sidebar uses an independent accent marker at its left edge, never a border or permanent ring on the active link. On narrow viewports navigation opens in a modal drawer; reduced-motion preferences disable decorative transitions.
+
+Run `node --test scripts\test-dashboard-design.mjs` for presentation contracts, rendered page states and preserved settings form bindings. For responsive layout, focus and reduced-motion checks, run `node scripts\test-dashboard-browser.mjs "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"` (or supply another installed Chromium executable). The browser uses a disposable isolated profile and local fixtures, never a real account or Supabase connection; it does not install software. These checks do not replace authenticated end-to-end acceptance testing.
+
+### Personal appearance
+
+Open **Account menu > Settings** (`/dashboard/settings`) to preview and instantly apply Sentinel (charcoal/blue navigation), Midnight (navy/cyan), Aurora (violet/soft corners), or Graphite (neutral/angular with a static background). Reset restores Sentinel. These are dark themes; semantic status, destructive-action and performance-chart colours do not change.
+
+`lib\appearance.ts` defines the choices; `AppearanceProvider` centralizes theme and interface preferences. The existing `next-themes` integration retains `sentinelgrid-appearance`; density, motion, sidebar behavior, remembered sidebar state and the default client view use `sentinelgrid-interface`. Both synchronize across tabs. The previous saved client view is used only when no interface preferences exist. Storage failures show session-only feedback. Theme tokens also cover portalled dashboard menus; semantic status and chart colours remain unchanged.
+
+Onboarding (organization creation, pending invitations and invited-account setup) shares `OnboardingShell` and the dashboard's animated grid, glows and scanline, with a short content entrance. It uses the existing theme and Motion preferences without its own storage: Reduced/System reduced motion keeps the content static, and Graphite retains its static background. Forms, invitation checks and actions are unchanged. Run `node --test scripts\test-onboarding-appearance.mjs` for the onboarding presentation contracts.
+
+**Interface** offers Comfortable/Compact spacing (no scaling), System/Full/Reduced motion, Expanded/Compact/Remember last state desktop navigation, and List/Grid as the initial client view. Local list toggles do not overwrite the default; changing the default applies to mounted lists too. Only the organization directory currently supports both views; the device table retains its existing layout. Below 1024px the menu button opens a modal navigation drawer with Escape, backdrop dismissal and focus return. Desktop collapse controls update the preference, or the remembered state when Remember is selected. Reduced motion disables decorative movement and large transitions; System follows OS changes live. Full explicitly allows motion, except Graphite retains its static background. Preferences never change accounts, organizations or backend data.
+
+Run `node --test scripts\test-appearance.mjs scripts\test-interface.mjs scripts\test-dashboard-design.mjs scripts\test-dashboard-refinement.mjs` for theme and presentation contracts. The existing `scripts\test-dashboard-browser.mjs` also checks all four palettes on desktop/mobile and hydrates the real appearance controls to verify selection, reload persistence, cross-tab synchronization, reset, keyboard navigation and blocked-storage feedback. Interface checks cover real spacing changes, theme-aware body/submenu portals, view defaults, OS motion changes and mobile menu focus, dismissal and breakpoint behavior. The organization header uses a compact summary bar instead of metric cards, with whole-row client links. Organization and Client share the compact `PageHeader` variant and `CompactSummary`; no oversized count cards. `RoleBadge` and `StatusBadge` in `dashboard-badges.tsx` share 24px geometry, a 6px radius and one border/background formula. Roles are neutral; statuses use a consistent dot and dedicated semantic tokens, independent of the navigation accent. `AnimatedSelection` shares a 200ms sliding indicator across device tabs, activity/performance filters, list/grid, interface choices and source links, measuring scroll/wrap/resize positions without layout shift and respecting Motion preferences. Its local bundle uses the existing Next.js compiler and disposable fixtures without credentials or new dependencies.
+
+
+Tabs and segmented choices use transparent selected options, accent text and a single sliding underline; preference choices share natural-width containers and identical heights. Shared field focus lives in `app\globals.css`: `Input` and dashboard text fields suppress native outlines, while `.sg-input-frame` draws focus around composite searches/terminal fields without a second inner ring or border-width changes. The existing root appearance provider tracks pointer/keyboard modality (not a stored preference), so clicks show a subtle border and keyboard focus adds a 2px theme ring, with a forced-colors outline fallback. These presentation rules do not change search or terminal handlers.
 ## Brand assets
 
 The blue ribbon S and outlined SENTINEL / GRID lettering are SVG redraws based on

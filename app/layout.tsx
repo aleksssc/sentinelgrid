@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
-import { ThemeProvider } from "next-themes";
+import { AppearanceProvider } from "@/components/dashboard/appearance-provider";
 import "./globals.css";
 
 const defaultUrl = process.env.VERCEL_URL
@@ -57,14 +57,9 @@ return (
     </head>
 
     <body className={`${geistSans.className} antialiased notranslate`}>
-      <ThemeProvider
-        attribute="class"
-        defaultTheme="system"
-        enableSystem
-        disableTransitionOnChange
-      >
+      <AppearanceProvider>
         {children}
-      </ThemeProvider>
+      </AppearanceProvider>
     </body>
   </html>
 );

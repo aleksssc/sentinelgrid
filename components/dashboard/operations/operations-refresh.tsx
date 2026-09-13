@@ -10,7 +10,7 @@ export default function OperationsRefresh() {
   const [pending, startTransition] = useTransition();
   return (
     <Button variant="outline" disabled={pending} onClick={() => startTransition(() => router.refresh())}
-      className="h-10 rounded-xl border-white/10 bg-[#0d0f12] text-zinc-300 hover:bg-white/5 hover:text-white" aria-live="polite">
+      className="sg-button sg-button-secondary" aria-live="polite">
       <RefreshCw size={15} className={pending ? "animate-spin motion-reduce:animate-none" : ""} />
       {pending ? "Refreshing..." : "Refresh"}
     </Button>

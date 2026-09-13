@@ -21,7 +21,7 @@ import (
 )
 
 const RecoveryServiceName = "SentinelGridUpdater"
-const Protocol = "1"
+const Protocol = "2"
 
 var shuttingDown = windows.NewLazySystemDLL("user32.dll").NewProc("GetSystemMetrics")
 
@@ -218,6 +218,9 @@ func operationalFor(ctx context.Context, diagnostic bool) error {
 				if diagnostic {
 					fmt.Println("Update lock: available (probe released ownership)")
 				}
+			}
+			if state.MSI != nil && state.MSI.RepairRequired {
+				return fmt.Errorf("MSI recovery requires administrator repair")
 			}
 			if state.Error == "ROLLBACK_FAILED" {
 				return fmt.Errorf("recovery exhausted; administrator repair required")

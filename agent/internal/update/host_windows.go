@@ -50,6 +50,10 @@ func systemPowerShell(ctx context.Context, script string, env ...string) ([]byte
 }
 
 func VerifySignature(ctx context.Context, path string) error {
+	return verifySignature(ctx, path, "")
+}
+
+func verifySignature(ctx context.Context, path, expected string) error {
 	pins := strings.Split(strings.ToUpper(signerPins()), ",")
 	for _, pin := range pins {
 		if len(pin) != 64 || strings.IndexFunc(pin, func(r rune) bool { return !strings.ContainsRune("0123456789ABCDEF", r) }) >= 0 {
@@ -69,7 +73,7 @@ try { [Console]::Write(([BitConverter]::ToString($h.ComputeHash($s.SignerCertifi
 		return fmt.Errorf("Authenticode verification failed: %w", err)
 	}
 	for _, pin := range pins {
-		if strings.TrimSpace(string(output)) == pin {
+		if strings.TrimSpace(string(output)) == pin && (expected == "" || strings.EqualFold(expected, pin)) {
 			return nil
 		}
 	}
@@ -119,7 +123,7 @@ foreach ($p in @((Split-Path -Parent $env:SG_UPDATE_ROOT), $env:SG_INSTALL_ROOT)
 }
 $config = Join-Path (Split-Path -Parent $env:SG_UPDATE_ROOT) 'agent.json'
 if (Test-Path -LiteralPath $config) { Assert-Protected $config }
-foreach ($name in @('SentinelGridAgent.exe','SentinelGridUpdater.exe','SentinelGridAgent.update.exe')) {
+foreach ($name in @('SentinelGridAgent.exe','SentinelGridUpdater.exe','SentinelGridRDP.exe','SentinelGridAgent.update.exe')) {
  $p = Join-Path $env:SG_INSTALL_ROOT $name
  if (Test-Path -LiteralPath $p) { Assert-Protected $p }
 }
@@ -280,6 +284,9 @@ func signedVersion(ctx context.Context, path, product string) (string, error) {
 }
 
 func (h *WindowsHost) Verify(ctx context.Context, release Release) error {
+	if release.ArtifactType == "msi" {
+		return h.verifyMSI(ctx, release)
+	}
 	if developmentBuild && release.Channel != "beta" && release.Channel != "dev" {
 		return fmt.Errorf("development updates require beta or dev channel")
 	}
@@ -530,6 +537,9 @@ func (h *WindowsHost) Healthy(ctx context.Context, version string) error {
 			created, err := processIdentity(pid, filepath.Join(h.InstallDir, "SentinelGridAgent.exe"))
 			if err != nil {
 				return err
+			}
+			if state.MSI != nil && pid == state.MSI.PreviousPID && created == state.MSI.PreviousProcessStarted {
+				return fmt.Errorf("health requires a new Agent process")
 			}
 			var health Health
 			err = readMetadata(filepath.Join(h.Root, "health.json"), &health)

@@ -79,7 +79,7 @@ function render(kind, result, params = {}) {
       return React.createElement("a", props, children);
     } },
     "./operations-refresh": { default: () => React.createElement("button", {}, "Refresh") },
-    "next/navigation": { useRouter: () => ({ replace() {} }) },
+    "next/navigation": { useRouter: () => ({ replace() {} }), usePathname: () => `/dashboard/${kind}` },
   }).default;
   return renderToStaticMarkup(React.createElement(View, { kind, organizationName: "Test org", filters: defaults(kind, params), result, now }));
 }

@@ -10,24 +10,7 @@ export function OrganizationSubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="
-        inline-flex
-        min-w-44
-        items-center
-        justify-center
-        gap-2
-        rounded-lg
-        bg-white
-        px-4
-        py-2.5
-        text-sm
-        font-medium
-        text-black
-        transition
-        hover:bg-zinc-200
-        disabled:cursor-not-allowed
-        disabled:opacity-60
-      "
+      className="sg-button sg-button-primary min-w-44 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {pending ? (
         <>

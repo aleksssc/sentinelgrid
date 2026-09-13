@@ -15,12 +15,13 @@ export function validateManifest(manifest, version, channel, signer) {
       manifest.version !== version || manifest.channel !== channel || manifest.platform !== "windows" ||
       manifest.architecture !== "amd64" || manifest.signed !== true || typeof manifest.development_update_build !== "boolean" ||
       manifest.development_repair_package === true ||
+      manifest.installation_artifact !== "msi" || manifest.update_protocol !== 2 ||
       !Array.isArray(manifest.trusted_signer_sha256) || !manifest.trusted_signer_sha256.includes(signer) ||
       (channel === "stable" && manifest.development_update_build)) throw new Error("INVALID_RELEASE_MANIFEST");
   httpsOrigin(manifest.server_url, "MANIFEST_SERVER_URL");
   for (const key of artifactKeys) {
     const entry = manifest[key];
-    if (!entry || entry.filename !== names[key] || !/^[a-f0-9]{64}$/.test(entry.sha256) ||
+    if (!entry || entry.version !== version || entry.filename !== names[key] || !/^[a-f0-9]{64}$/.test(entry.sha256) ||
         !Number.isSafeInteger(entry.size) || entry.size < 1 || entry.size > 268435456) throw new Error("INVALID_ARTIFACT_METADATA");
   }
 }

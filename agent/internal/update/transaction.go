@@ -12,24 +12,25 @@ const Qualified = false
 const maxRecoveryAttempts = 3
 
 type State struct {
-	Status         string    `json:"update_status"`
-	Target         string    `json:"update_target_version,omitempty"`
-	Previous       string    `json:"previous_version,omitempty"`
-	FailedVersion  string    `json:"failed_version,omitempty"`
-	FailedVersions []string  `json:"failed_versions,omitempty"`
-	StartedAt      time.Time `json:"update_started_at,omitempty"`
-	CompletedAt    time.Time `json:"update_completed_at,omitempty"`
-	Error          string    `json:"update_error,omitempty"`
-	NextCheck      time.Time `json:"next_check,omitempty"`
-	TransactionID  string    `json:"transaction_id,omitempty"`
-	CommandID      string    `json:"command_id,omitempty"`
-	Pending        *Pending  `json:"pending,omitempty"`
-	Attempts       int       `json:"recovery_attempts,omitempty"`
-	Reported       bool      `json:"reported,omitempty"`
-	Authorized     bool      `json:"authorized,omitempty"`
+	MSI            *MSIProgress `json:"msi,omitempty"`
+	Status         string       `json:"update_status"`
+	Target         string       `json:"update_target_version,omitempty"`
+	Previous       string       `json:"previous_version,omitempty"`
+	FailedVersion  string       `json:"failed_version,omitempty"`
+	FailedVersions []string     `json:"failed_versions,omitempty"`
+	StartedAt      time.Time    `json:"update_started_at,omitempty"`
+	CompletedAt    time.Time    `json:"update_completed_at,omitempty"`
+	Error          string       `json:"update_error,omitempty"`
+	NextCheck      time.Time    `json:"next_check,omitempty"`
+	TransactionID  string       `json:"transaction_id,omitempty"`
+	CommandID      string       `json:"command_id,omitempty"`
+	Pending        *Pending     `json:"pending,omitempty"`
+	Attempts       int          `json:"recovery_attempts,omitempty"`
+	Reported       bool         `json:"reported,omitempty"`
+	Authorized     bool         `json:"authorized,omitempty"`
 }
 
-// Host implementations must keep a durable backup until Commit succeeds.
+// Legacy EXE transactions keep a durable backup until Commit succeeds.
 // Restore must be idempotent, including after an interrupted Replace.
 type Host interface {
 	Lock() (func() error, error)
@@ -92,6 +93,9 @@ func rollback(ctx context.Context, host Host, state State, cause error) error {
 // RecoverLocked never resumes an unvalidated replacement after a crash. The
 // caller must own the same lock used by staging and hold it until recovery ends.
 func RecoverLocked(ctx context.Context, host Host, state State) error {
+	if state.Pending != nil && state.Pending.Schema == 2 {
+		return fmt.Errorf("MSI journals require Windows Installer recovery, never EXE rollback")
+	}
 	switch state.Status {
 	case "downloading", "staged":
 		rememberFailure(&state)
@@ -124,6 +128,9 @@ func Install(ctx context.Context, host Host, current string, release Release) (r
 }
 
 func installLocked(ctx context.Context, host Host, state State, current string, release Release) error {
+	if release.ArtifactType != "" {
+		return fmt.Errorf("legacy replacement cannot install a product release")
+	}
 	switch state.Status {
 	case "installing", "restarting":
 		return RecoverLocked(ctx, host, state)

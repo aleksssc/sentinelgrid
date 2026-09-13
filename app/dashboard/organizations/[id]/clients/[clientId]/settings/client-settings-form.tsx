@@ -883,24 +883,24 @@ export default function ClientSettingsForm({
           GENERAL
       ========================= */}
 
-      <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+      <section className="sg-surface overflow-hidden">
 
-        <div className="border-b border-zinc-800 px-6 py-5">
+        <div className="border-b border-surface-edge px-6 py-5">
 
           <div className="flex items-center gap-3">
 
             <Building2
               size={18}
-              className="text-zinc-500"
+              className="text-surface-muted"
             />
 
             <div>
 
-              <h2 className="font-semibold">
+              <h2 className="sg-section-title">
                 General
               </h2>
 
-              <p className="mt-1 text-sm text-zinc-500">
+              <p className="mt-1 text-sm text-surface-muted">
                 Basic information about this client.
               </p>
 
@@ -933,7 +933,7 @@ export default function ClientSettingsForm({
                   setMessageType(null);
                 }
               }}
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition hover:border-zinc-700 focus:border-zinc-600"
+              className="sg-control w-full px-4 py-3"
             />
 
           </div>
@@ -961,7 +961,7 @@ export default function ClientSettingsForm({
                 }
               }}
               rows={3}
-              className="w-full resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition hover:border-zinc-700 focus:border-zinc-600"
+              className="sg-control w-full resize-none px-4 py-3"
             />
 
           </div>
@@ -995,25 +995,7 @@ export default function ClientSettingsForm({
                     setMessageType(null);
                   }
                 }}
-                className="
-                  w-full
-                  appearance-none
-                  rounded-xl
-                  border
-                  border-zinc-800
-                  bg-zinc-950
-                  px-4
-                  py-3
-                  pr-11
-                  text-sm
-                  text-white
-                  outline-none
-                  transition
-                  hover:border-zinc-700
-                  focus:border-blue-500/50
-                  focus:ring-2
-                  focus:ring-blue-500/10
-                "
+                className="sg-control w-full appearance-none px-4 py-3 pr-11"
               >
                 <option value="active">
                   Active
@@ -1027,14 +1009,7 @@ export default function ClientSettingsForm({
 
               <ChevronDown
                 size={16}
-                className="
-                  pointer-events-none
-                  absolute
-                  right-4
-                  top-1/2
-                  -translate-y-1/2
-                  text-zinc-500
-                "
+                className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-surface-muted"
               />
 
             </div>
@@ -1047,7 +1022,7 @@ export default function ClientSettingsForm({
             GENERAL FOOTER
         ========================= */}
 
-        <div className="flex min-h-[78px] flex-wrap items-center justify-between gap-4 border-t border-zinc-800 px-6 py-5">
+        <div className="flex min-h-[78px] flex-wrap items-center justify-between gap-4 border-t border-surface-edge px-6 py-5">
 
           {/* MESSAGE */}
 
@@ -1095,7 +1070,7 @@ export default function ClientSettingsForm({
             disabled={
               saving
             }
-            className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+            className="sg-button sg-button-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
 
             <Save
@@ -1116,24 +1091,24 @@ export default function ClientSettingsForm({
           SITES
       ========================= */}
 
-      <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+      <section className="sg-surface overflow-hidden">
 
-        <div className="flex flex-wrap items-center justify-between gap-5 border-b border-zinc-800 px-6 py-5">
+        <div className="flex flex-wrap items-center justify-between gap-5 border-b border-surface-edge px-6 py-5">
 
           <div className="flex items-center gap-3">
 
             <MapPin
               size={18}
-              className="text-zinc-500"
+              className="text-surface-muted"
             />
 
             <div>
 
-              <h2 className="font-semibold">
+              <h2 className="sg-section-title">
                 Sites
               </h2>
 
-              <p className="mt-1 text-sm text-zinc-500">
+              <p className="mt-1 text-sm text-surface-muted">
                 Locations used to organize and filter devices.
               </p>
 
@@ -1146,7 +1121,7 @@ export default function ClientSettingsForm({
             onClick={
               openCreateSite
             }
-            className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+            className="sg-button sg-button-secondary"
           >
             <Plus size={16} />
             Add site
@@ -1158,7 +1133,7 @@ export default function ClientSettingsForm({
 
           <div className="flex items-center gap-4 px-6 py-6">
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-surface-edge bg-surface-inset text-surface-muted">
               <MapPin size={18} />
             </div>
 
@@ -1168,7 +1143,7 @@ export default function ClientSettingsForm({
                 No sites configured
               </p>
 
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-surface-muted">
                 Add a site to group and filter devices.
               </p>
 
@@ -1178,7 +1153,7 @@ export default function ClientSettingsForm({
 
         ) : (
 
-          <div className="divide-y divide-zinc-800">
+          <div className="divide-y divide-surface-edge">
 
             {sites.map(
               (site) => {
@@ -1199,7 +1174,7 @@ export default function ClientSettingsForm({
 
                     <div className="flex min-w-0 items-center gap-4">
 
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-surface-edge bg-surface-inset text-surface-muted">
                         <MapPin
                           size={18}
                         />
@@ -1211,7 +1186,7 @@ export default function ClientSettingsForm({
                           {site.name}
                         </p>
 
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-surface-muted">
 
                           <span>
                             {site.location ||
@@ -1245,7 +1220,7 @@ export default function ClientSettingsForm({
                             site
                           )
                         }
-                        className="inline-flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-400 transition hover:bg-zinc-800 hover:text-white"
+                        className="sg-button sg-button-secondary sg-button-sm"
                       >
                         <Monitor
                           size={14}
@@ -1262,7 +1237,7 @@ export default function ClientSettingsForm({
                           )
                         }
                         title="Edit site"
-                        className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-800 hover:text-white"
+                        className="sg-button sg-button-ghost sg-button-icon w-9 text-surface-muted"
                       >
                         <Pencil
                           size={16}
@@ -1277,7 +1252,7 @@ export default function ClientSettingsForm({
                           )
                         }
                         title="Delete site"
-                        className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-red-950/40 hover:text-red-400"
+                        className="sg-button sg-button-danger sg-button-icon w-9 text-surface-muted"
                       >
                         <Trash2
                           size={16}
@@ -1301,7 +1276,7 @@ export default function ClientSettingsForm({
           DANGER ZONE
       ========================= */}
 
-      <section className="overflow-hidden rounded-2xl border border-red-950 bg-red-950/10">
+      <section className="sg-surface sg-danger overflow-hidden">
 
         <div className="flex flex-wrap items-center justify-between gap-6 p-6">
 
@@ -1315,11 +1290,11 @@ export default function ClientSettingsForm({
 
             <div>
 
-              <h2 className="font-semibold text-red-400">
+              <h2 className="sg-section-title text-red-400">
                 Delete client
               </h2>
 
-              <p className="mt-1 max-w-xl text-sm leading-6 text-zinc-500">
+              <p className="mt-1 max-w-xl text-sm leading-6 text-surface-muted">
                 Permanently delete this client and all associated sites, devices and data.
               </p>
 
@@ -1336,7 +1311,7 @@ export default function ClientSettingsForm({
                 true
               );
             }}
-            className="inline-flex items-center gap-2 rounded-xl border border-red-900 bg-red-950/30 px-4 py-2.5 text-sm font-medium text-red-400 transition hover:bg-red-950/60"
+            className="sg-button sg-button-danger text-red-400"
           >
             <Trash2 size={16} />
             Delete client
@@ -1362,19 +1337,19 @@ export default function ClientSettingsForm({
             className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
           />
 
-          <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-32px)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
+          <div className="sg-dialog fixed left-1/2 top-1/2 z-50 w-[calc(100%-32px)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-surface-edge bg-surface-inset shadow-2xl">
 
-            <div className="flex items-start justify-between gap-5 border-b border-zinc-800 px-6 py-5">
+            <div className="flex items-start justify-between gap-5 border-b border-surface-edge px-6 py-5">
 
               <div>
 
-                <h2 className="text-lg font-semibold">
+                <h2 className="sg-section-title">
                   {editingSite
                     ? "Edit site"
                     : "Add site"}
                 </h2>
 
-                <p className="mt-1 text-sm text-zinc-500">
+                <p className="mt-1 text-sm text-surface-muted">
                   {editingSite
                     ? "Update this site."
                     : "Create a location used to group devices."}
@@ -1387,7 +1362,7 @@ export default function ClientSettingsForm({
                 onClick={
                   closeSiteModal
                 }
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-900 hover:text-white"
+                className="sg-button sg-button-ghost sg-button-icon w-9 text-surface-muted"
               >
                 <X size={18} />
               </button>
@@ -1414,7 +1389,7 @@ export default function ClientSettingsForm({
                   }
                   placeholder="Lisbon Office"
                   autoFocus
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-zinc-600"
+                  className="sg-control w-full px-4 py-3"
                 />
 
               </div>
@@ -1436,7 +1411,7 @@ export default function ClientSettingsForm({
                     )
                   }
                   placeholder="Lisbon, Portugal"
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-zinc-600"
+                  className="sg-control w-full px-4 py-3"
                 />
 
               </div>
@@ -1458,7 +1433,7 @@ export default function ClientSettingsForm({
                   }
                   rows={3}
                   placeholder="Optional notes..."
-                  className="w-full resize-none rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-zinc-600"
+                  className="sg-control w-full resize-none px-4 py-3"
                 />
 
               </div>
@@ -1471,14 +1446,14 @@ export default function ClientSettingsForm({
 
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-zinc-800 px-6 py-5">
+            <div className="flex justify-end gap-3 border-t border-surface-edge px-6 py-5">
 
               <button
                 type="button"
                 onClick={
                   closeSiteModal
                 }
-                className="rounded-xl border border-zinc-800 px-4 py-2.5 text-sm text-zinc-300 transition hover:bg-zinc-900"
+                className="sg-button sg-button-secondary"
               >
                 Cancel
               </button>
@@ -1491,7 +1466,7 @@ export default function ClientSettingsForm({
                 disabled={
                   savingSite
                 }
-                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                className="sg-button sg-button-primary disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Save size={16} />
 
@@ -1527,17 +1502,17 @@ export default function ClientSettingsForm({
             className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
           />
 
-          <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-32px)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
+          <div className="sg-dialog fixed left-1/2 top-1/2 z-50 w-[calc(100%-32px)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-surface-edge bg-surface-inset shadow-2xl">
 
-            <div className="flex items-start justify-between gap-5 border-b border-zinc-800 px-6 py-5">
+            <div className="flex items-start justify-between gap-5 border-b border-surface-edge px-6 py-5">
 
               <div>
 
-                <h2 className="text-lg font-semibold">
+                <h2 className="sg-section-title">
                   Manage devices
                 </h2>
 
-                <p className="mt-1 text-sm text-zinc-500">
+                <p className="mt-1 text-sm text-surface-muted">
                   Assign devices to{" "}
 
                   <span className="text-zinc-300">
@@ -1555,7 +1530,7 @@ export default function ClientSettingsForm({
                     null
                   )
                 }
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-900 hover:text-white"
+                className="sg-button sg-button-ghost sg-button-icon w-9 text-surface-muted"
               >
                 <X size={18} />
               </button>
@@ -1570,14 +1545,14 @@ export default function ClientSettingsForm({
 
                   <Monitor
                     size={23}
-                    className="mx-auto text-zinc-600"
+                    className="mx-auto text-surface-muted"
                   />
 
                   <p className="mt-4 text-sm font-medium">
                     No devices available
                   </p>
 
-                  <p className="mt-2 text-xs text-zinc-500">
+                  <p className="mt-2 text-xs text-surface-muted">
                     Devices must first be registered for this client.
                   </p>
 
@@ -1611,8 +1586,8 @@ export default function ClientSettingsForm({
                           }
                           className={`flex cursor-pointer items-center justify-between gap-4 rounded-xl border px-4 py-3 transition ${
                             checked
-                              ? "border-zinc-600 bg-zinc-900"
-                              : "border-zinc-800 hover:bg-zinc-900/60"
+                              ? "border-surface-accent-edge bg-surface-selected"
+                              : "border-zinc-800 hover:bg-surface-hover"
                           }`}
                         >
 
@@ -1621,7 +1596,7 @@ export default function ClientSettingsForm({
                             <div
                               className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
                                 checked
-                                  ? "border-white bg-white text-black"
+                                  ? "border-surface-accent-edge bg-surface-selected text-surface-accent"
                                   : "border-zinc-700 bg-zinc-950"
                               }`}
                             >
@@ -1675,7 +1650,7 @@ export default function ClientSettingsForm({
                                   device.hostname}
                               </p>
 
-                              <p className="mt-1 truncate text-xs text-zinc-500">
+                              <p className="mt-1 truncate text-xs text-surface-muted">
                                 {device.hostname}
                               </p>
 
@@ -1687,7 +1662,7 @@ export default function ClientSettingsForm({
 
                             {belongsToAnotherSite ? (
                               <>
-                                <p className="text-xs text-zinc-600">
+                                <p className="text-xs text-surface-muted">
                                   Currently
                                 </p>
 
@@ -1701,7 +1676,7 @@ export default function ClientSettingsForm({
                                 Assigned
                               </span>
                             ) : (
-                              <span className="text-xs text-zinc-600">
+                              <span className="text-xs text-surface-muted">
                                 No site
                               </span>
                             )}
@@ -1719,9 +1694,9 @@ export default function ClientSettingsForm({
 
             </div>
 
-            <div className="flex items-center justify-between gap-4 border-t border-zinc-800 px-6 py-5">
+            <div className="flex items-center justify-between gap-4 border-t border-surface-edge px-6 py-5">
 
-              <p className="text-xs text-zinc-600">
+              <p className="text-xs text-surface-muted">
                 {selectedDevices.length}{" "}
                 selected
               </p>
@@ -1735,7 +1710,7 @@ export default function ClientSettingsForm({
                       null
                     )
                   }
-                  className="rounded-xl border border-zinc-800 px-4 py-2.5 text-sm text-zinc-300 transition hover:bg-zinc-900"
+                  className="sg-button sg-button-secondary"
                 >
                   Cancel
                 </button>
@@ -1748,7 +1723,7 @@ export default function ClientSettingsForm({
                   disabled={
                     savingDevices
                   }
-                  className="rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="sg-button sg-button-primary disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {savingDevices
                     ? "Saving..."
@@ -1782,7 +1757,7 @@ export default function ClientSettingsForm({
             className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
           />
 
-          <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
+          <div className="sg-dialog fixed left-1/2 top-1/2 z-50 w-[calc(100%-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-surface-edge bg-surface-inset shadow-2xl">
 
             <div className="p-6">
 
@@ -1792,11 +1767,11 @@ export default function ClientSettingsForm({
                 />
               </div>
 
-              <h2 className="mt-5 text-lg font-semibold">
+              <h2 className="sg-section-title mt-5">
                 Delete site?
               </h2>
 
-              <p className="mt-2 text-sm leading-6 text-zinc-500">
+              <p className="mt-2 text-sm leading-6 text-surface-muted">
                 Delete{" "}
 
                 <span className="font-medium text-zinc-200">
@@ -1808,7 +1783,7 @@ export default function ClientSettingsForm({
 
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-zinc-800 px-6 py-5">
+            <div className="flex justify-end gap-3 border-t border-surface-edge px-6 py-5">
 
               <button
                 type="button"
@@ -1817,7 +1792,7 @@ export default function ClientSettingsForm({
                     null
                   )
                 }
-                className="rounded-xl border border-zinc-800 px-4 py-2.5 text-sm text-zinc-300 transition hover:bg-zinc-900"
+                className="sg-button sg-button-secondary"
               >
                 Cancel
               </button>
@@ -1830,7 +1805,7 @@ export default function ClientSettingsForm({
                 disabled={
                   deletingSite
                 }
-                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-500 disabled:opacity-50"
+                className="sg-button sg-button-danger-solid disabled:opacity-50"
               >
                 <Trash2
                   size={16}
@@ -1866,18 +1841,18 @@ export default function ClientSettingsForm({
             className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
           />
 
-          <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-32px)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-red-950 bg-zinc-950 shadow-2xl">
+          <div className="sg-dialog fixed left-1/2 top-1/2 z-50 w-[calc(100%-32px)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-red-950 bg-surface-inset shadow-2xl">
 
-            <div className="flex items-start justify-between gap-5 border-b border-zinc-800 px-6 py-5">
+            <div className="flex items-start justify-between gap-5 border-b border-surface-edge px-6 py-5">
 
               <div>
 
-                <h2 className="text-lg font-semibold">
+                <h2 className="sg-section-title">
                   Delete{" "}
                   {client.name}?
                 </h2>
 
-                <p className="mt-2 text-sm text-zinc-500">
+                <p className="mt-2 text-sm text-surface-muted">
                   This action cannot be undone.
                 </p>
 
@@ -1890,7 +1865,7 @@ export default function ClientSettingsForm({
                     false
                   )
                 }
-                className="text-zinc-500 transition hover:text-white"
+                className="text-surface-muted transition hover:text-white"
               >
                 <X size={19} />
               </button>
@@ -1938,14 +1913,14 @@ export default function ClientSettingsForm({
                       e.target.value
                     )
                   }
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white outline-none transition focus:border-red-900"
+                  className="sg-control w-full px-4 py-3"
                 />
 
               </div>
 
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-zinc-800 px-6 py-5">
+            <div className="flex justify-end gap-3 border-t border-surface-edge px-6 py-5">
 
               <button
                 type="button"
@@ -1954,7 +1929,7 @@ export default function ClientSettingsForm({
                     false
                   )
                 }
-                className="rounded-xl border border-zinc-800 px-4 py-2.5 text-sm text-zinc-300 transition hover:bg-zinc-900"
+                className="sg-button sg-button-secondary"
               >
                 Cancel
               </button>
@@ -1969,7 +1944,7 @@ export default function ClientSettingsForm({
                   deleteConfirm.trim() !==
                     client.name
                 }
-                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+                className="sg-button sg-button-danger-solid disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Trash2
                   size={16}

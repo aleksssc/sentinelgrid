@@ -17,21 +17,30 @@ var commandPattern = regexp.MustCompile(`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0
 // Pending deliberately has no network credentials, URL, path or execution options.
 // It is embedded in the journal so publishing ownership requires one durable write.
 type Pending struct {
-	Schema   int       `json:"schema"`
-	Version  string    `json:"version"`
-	Channel  string    `json:"channel"`
-	SHA256   string    `json:"sha256"`
-	Size     int64     `json:"size_bytes"`
-	NotAfter time.Time `json:"not_after"`
+	ArtifactType string    `json:"artifact_type,omitempty"`
+	SignerSHA256 string    `json:"signer_sha256,omitempty"`
+	Schema       int       `json:"schema"`
+	Version      string    `json:"version"`
+	Channel      string    `json:"channel"`
+	SHA256       string    `json:"sha256"`
+	Size         int64     `json:"size_bytes"`
+	NotAfter     time.Time `json:"not_after"`
 }
 
 func (p Pending) Release() Release {
-	return Release{Product: "SentinelGridAgent", Platform: "windows", Architecture: "amd64", Version: p.Version, Channel: p.Channel, SHA256: p.SHA256, Size: p.Size}
+	r := Release{Product: "SentinelGridAgent", Platform: "windows", Architecture: "amd64", Version: p.Version, Channel: p.Channel, SHA256: p.SHA256, Size: p.Size}
+	if p.Schema == 2 {
+		r.ArtifactType, r.UpdateProtocol, r.SignerSHA256 = p.ArtifactType, 2, p.SignerSHA256
+	}
+	return r
 }
 
 func (p Pending) Validate() error {
-	if p.Schema != 1 {
+	if p.Schema != 1 && p.Schema != 2 {
 		return fmt.Errorf("unsupported pending schema")
+	}
+	if (p.Schema == 2 && p.ArtifactType != "msi") || (p.Schema == 1 && (p.ArtifactType != "" || p.SignerSHA256 != "")) {
+		return fmt.Errorf("pending artifact protocol mismatch")
 	}
 	if p.NotAfter.IsZero() {
 		return fmt.Errorf("missing dispatch policy expiry")
@@ -66,7 +75,7 @@ func strictJSON(data []byte, target any) error {
 
 func (s State) Validate() error {
 	switch s.Status {
-	case "", "idle", "available", "downloading", "staged", "installing", "restarting", "failed", "succeeded", "rolled_back":
+	case "", "idle", "available", "downloading", "staged", "installing", "restarting", "awaiting_health", "failed", "succeeded", "rolled_back":
 	default:
 		return fmt.Errorf("invalid journal state")
 	}
@@ -94,6 +103,24 @@ func (s State) Validate() error {
 			return fmt.Errorf("pending journal mismatch")
 		}
 	}
+	if s.MSI != nil {
+		if s.Pending == nil || s.Pending.Schema != 2 || s.MSI.Validate() != nil {
+			return fmt.Errorf("invalid MSI recovery journal")
+		}
+	}
+	if s.Pending != nil && s.Pending.Schema == 2 {
+		switch s.Status {
+		case "installing", "awaiting_health", "succeeded":
+			if s.MSI == nil || !s.Authorized {
+				return fmt.Errorf("missing authorized MSI installation identity")
+			}
+		}
+		if s.Status == "awaiting_health" || s.Status == "succeeded" {
+			if s.MSI.ExitCode == nil || (*s.MSI.ExitCode != 0 && *s.MSI.ExitCode != 3010) {
+				return fmt.Errorf("missing successful MSI result")
+			}
+		}
+	}
 	if s.Status == "staged" && s.Pending == nil {
 		return fmt.Errorf("missing verified pending metadata")
 	}
@@ -111,7 +138,7 @@ func (s State) Validate() error {
 
 func Active(s State) bool {
 	switch s.Status {
-	case "downloading", "staged", "installing", "restarting":
+	case "downloading", "staged", "installing", "restarting", "awaiting_health":
 		return true
 	case "failed":
 		return s.CompletedAt.IsZero() || s.Error == "ROLLBACK_FAILED"
@@ -120,7 +147,7 @@ func Active(s State) bool {
 }
 
 func availableForStage(s State) bool {
-	return !Active(s) && (s.TransactionID == "" || s.Reported) && len(s.FailedVersions) < 128
+	return !Active(s) && (s.MSI == nil || !s.MSI.RepairRequired) && (s.TransactionID == "" || s.Reported) && len(s.FailedVersions) < 128
 }
 
 func versionAllowed(current, target string, s State) (bool, error) {

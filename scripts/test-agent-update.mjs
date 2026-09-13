@@ -61,6 +61,15 @@ test('durable update reports preserve transaction and command identity', () => {
   }
   assert.equal(parseUpdateReport({ update_status: 'available', update_target_version: '0.1.6' }).transaction_id, undefined);
 });
+test('MSI result codes are bounded, correlated and cannot contradict success', () => {
+  const transaction_id = '11111111-1111-4111-8111-111111111111';
+  const base = { update_status: 'failed', update_target_version: '0.1.9', transaction_id };
+  assert.equal(parseUpdateReport({ ...base, msi_exit_code: 1603 }).msi_exit_code, 1603);
+  for (const code of [-1, 65536, 1.5, '1603', null]) assert.throws(() => parseUpdateReport({ ...base, msi_exit_code: code }));
+  assert.throws(() => parseUpdateReport({ ...base, transaction_id: undefined, msi_exit_code: 1603 }));
+  assert.throws(() => parseUpdateReport({ ...base, update_status: 'succeeded', msi_exit_code: 1603 }));
+  for (const code of [0, 3010]) assert.equal(parseUpdateReport({ ...base, update_status: 'succeeded', msi_exit_code: code }).msi_exit_code, code);
+});
 test('report metadata rejects credentials, arbitrary instructions, and invalid correlation', () => {
   for (const field of ['url', 'download_url', 'agent_token', 'path', 'command', 'arguments', 'service_name', 'organization_id']) {
     assert.throws(() => parseUpdateReport({ update_status: 'staged', [field]: 'untrusted' }));

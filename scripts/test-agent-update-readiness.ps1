@@ -18,7 +18,8 @@ try {
     if ($ExpectedSignerSHA256 -notmatch '^[a-fA-F0-9]{64}(,[a-fA-F0-9]{64})*$') { throw 'Supply -ExpectedSignerSHA256 from the trusted build manifest/certificate, not from the installed executable.' }
     $expected = $ExpectedSignerSHA256.ToUpperInvariant()
     Write-Host "Expected pinned signer SHA256: $expected"
-    foreach ($product in @('Agent', 'Updater')) {
+    $componentVersions = @()
+    foreach ($product in @('Agent', 'Updater', 'RDP')) {
         $path = Join-Path $install "SentinelGrid$product.exe"
         Write-Host "${product} path: $path"
         try {
@@ -34,6 +35,8 @@ try {
             $version = & $path -version
             if ($LASTEXITCODE -ne 0 -or $version -notmatch "^SentinelGrid $product \d+\.\d+\.\d+$") { throw 'Signed product/version probe failed.' }
             Write-Host $version
+            $componentVersions += ($version -split ' ')[-1]
+            if ($product -eq 'RDP') { continue }
             $trustOutput = & $path -update-build-info
             if ($LASTEXITCODE -ne 0) { throw 'Installed binary lacks build trust diagnostics; install the signed development baseline first.' }
             $trust = $trustOutput | ConvertFrom-Json
@@ -42,6 +45,9 @@ try {
             if ($trust.source_eligible -ne $true) { throw 'Build qualification gate is disabled.' }
         } catch { $failed.Add("${product}: $($_.Exception.Message)") }
     }
+    if (@($componentVersions | Select-Object -Unique).Count -ne 1 -or $componentVersions.Count -ne 3) { $failed.Add('Agent, Updater and RDP versions must agree.') }
+    $protocol = & (Join-Path $install 'SentinelGridUpdater.exe') -protocol
+    if ($LASTEXITCODE -ne 0 -or $protocol -cne '2') { $failed.Add('Full-product MSI protocol 2 is required; bootstrap with a signed MSI.') }
     foreach ($name in @('SentinelGridAgent', 'SentinelGridUpdater')) {
         try {
             $service = Get-Service -Name $name

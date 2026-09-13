@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { test } from "node:test";
 import ts from "typescript";
+import { dashboardLoader } from "./dashboard-test-loader.mjs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -29,9 +30,10 @@ const update = command({ update_transaction_id: "tx-1", result: { from_version: 
 
 // Render the real client component using React SSR; only the Next router is replaced.
 const require = createRequire(import.meta.url);
+const presentation = dashboardLoader();
 const componentModule = { exports: {} };
 new Function("require", "module", "exports", compile("../components/dashboard/devices/device-activity.tsx", ts.ModuleKind.CommonJS))(
-  (name) => name === "@/lib/activity/device-activity" ? activity : name === "next/navigation" ? { useRouter: () => ({ refresh() {} }) } : require(name),
+  (name) => name === "@/lib/activity/device-activity" ? activity : name === "next/navigation" ? { useRouter: () => ({ refresh() {} }) } : name.startsWith("@/components/dashboard/") ? presentation(`${name.slice(2).replaceAll("/", "\\")}.tsx`) : require(name),
   componentModule, componentModule.exports,
 );
 const Timeline = componentModule.exports.default;
@@ -422,6 +424,7 @@ async function loadActivityPage({ transactionError = null, transactionFailure = 
     } };
     if (name === "next/server") return { connection: async () => {} };
     if (name === "next/navigation") return { notFound() { throw new Error("Unexpected notFound"); } };
+    if (name.startsWith("@/components/dashboard/")) return presentation(`${name.slice(2).replaceAll("/", "\\")}.tsx`);
     if (name === "./device-dashboard") return Dashboard;
     if (name === "next/link") return () => null;
     return require(name);

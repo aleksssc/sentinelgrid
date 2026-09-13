@@ -38,6 +38,8 @@ func TestWindowsSignedReleaseFailSafe(t *testing.T) {
 		Agent       artifact `json:"agent"`
 		Updater     artifact `json:"updater"`
 		MSI         artifact `json:"msi"`
+		RDP         artifact `json:"rdp_client"`
+		Protocol    int      `json:"update_protocol"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
@@ -46,6 +48,9 @@ func TestWindowsSignedReleaseFailSafe(t *testing.T) {
 		t.Fatal("a signed beta/dev pipeline release is required")
 	}
 	old := DevelopmentSignerSHA256
+	if manifest.Protocol != 2 {
+		t.Fatal("a signed full-product MSI protocol-2 release is required")
+	}
 	DevelopmentSignerSHA256 = pin
 	defer func() { DevelopmentSignerSHA256 = old }()
 	for _, item := range []struct {
@@ -54,6 +59,7 @@ func TestWindowsSignedReleaseFailSafe(t *testing.T) {
 	}{
 		{"SentinelGridAgent.exe", manifest.Agent},
 		{"SentinelGridUpdater.exe", manifest.Updater},
+		{"SentinelGridRDP.exe", manifest.RDP},
 		{"SentinelGridAgent.msi", manifest.MSI},
 	} {
 		t.Run(item.name, func(t *testing.T) {
@@ -67,6 +73,17 @@ func TestWindowsSignedReleaseFailSafe(t *testing.T) {
 				Platform: "windows", Architecture: "amd64", SHA256: item.file.SHA256, Size: item.file.Size}
 			if err := VerifyArtifact(ctx, path, release, VerifySignature); err != nil {
 				t.Fatalf("valid signed pipeline artifact rejected: %v", err)
+			}
+			if item.name == "SentinelGridAgent.msi" {
+				host := &WindowsHost{Root: t.TempDir()}
+				if err := copyExclusive(path, filepath.Join(host.Root, "candidate.msi")); err != nil {
+					t.Fatal(err)
+				}
+				defer host.ClosePins()
+				release.ArtifactType, release.UpdateProtocol, release.SignerSHA256 = "msi", 2, pin
+				if err := host.verifyMSI(ctx, release); err != nil {
+					t.Fatal(err)
+				}
 			}
 			bad := release
 			bad.SHA256 = strings.Repeat("0", 64)

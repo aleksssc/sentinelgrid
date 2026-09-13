@@ -85,14 +85,14 @@ export default function NewClientPage() {
   }
 
   return (
-    <main className="p-8">
-      <div className="mx-auto max-w-3xl">
+    <div className="sg-page-shell">
+      <div className="sg-page">
 
         {/* BACK */}
 
         <Link
           href={`/dashboard/organizations/${organizationId}`}
-          className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-500 transition hover:text-white"
+          className="mb-6 inline-flex items-center gap-2 text-sm text-surface-muted transition hover:text-white"
         >
           <ArrowLeft size={16} />
           Back to organization
@@ -102,12 +102,12 @@ export default function NewClientPage() {
 
         <div className="mb-8 flex items-start gap-4">
 
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-surface-edge bg-surface text-zinc-400">
             <Building2 size={22} />
           </div>
 
           <div>
-            <h1 className="text-3xl font-bold">
+            <h1 className="sg-page-title">
               Create client
             </h1>
 
@@ -122,16 +122,16 @@ export default function NewClientPage() {
 
         <form
           onSubmit={handleSubmit}
-          className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900"
+          className="sg-surface overflow-hidden"
         >
 
-          <div className="border-b border-zinc-800 px-6 py-5">
+          <div className="border-b border-surface-edge px-6 py-5">
 
-            <h2 className="font-semibold">
+            <h2 className="sg-section-title">
               Client information
             </h2>
 
-            <p className="mt-1 text-sm text-zinc-500">
+            <p className="mt-1 text-sm text-surface-muted">
               Basic information used to identify this client.
             </p>
 
@@ -158,10 +158,10 @@ export default function NewClientPage() {
                   setName(e.target.value)
                 }
                 autoFocus
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-zinc-600"
+                className="sg-control w-full px-4 py-3"
               />
 
-              <p className="mt-2 text-xs text-zinc-600">
+              <p className="mt-2 text-xs text-surface-muted">
                 This name will appear throughout SentinelGrid.
               </p>
             </div>
@@ -184,10 +184,10 @@ export default function NewClientPage() {
                   setDescription(e.target.value)
                 }
                 rows={5}
-                className="w-full resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-zinc-600"
+                className="sg-control w-full resize-none px-4 py-3"
               />
 
-              <p className="mt-2 text-xs text-zinc-600">
+              <p className="mt-2 text-xs text-surface-muted">
                 You can use this field for notes or context about the client.
               </p>
             </div>
@@ -204,11 +204,11 @@ export default function NewClientPage() {
 
           {/* ACTIONS */}
 
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-800 px-6 py-5">
+          <div className="flex items-center justify-end gap-3 border-t border-surface-edge px-6 py-5">
 
             <Link
               href={`/dashboard/organizations/${organizationId}`}
-              className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+              className="sg-button sg-button-secondary"
             >
               Cancel
             </Link>
@@ -216,7 +216,7 @@ export default function NewClientPage() {
             <button
               type="submit"
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="sg-button sg-button-primary disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus size={16} />
 
@@ -230,6 +230,6 @@ export default function NewClientPage() {
         </form>
 
       </div>
-    </main>
+    </div>
   );
 }

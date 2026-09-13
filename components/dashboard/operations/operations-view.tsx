@@ -1,3 +1,5 @@
+import { StatusBadge } from "@/components/dashboard/dashboard-badges";
+import { AnimatedSelection } from "@/components/dashboard/animated-selection";
 import Link from "next/link";
 import {
   Activity, ArrowDownRight, ArrowUpRight, Bell, Building2, ChevronDown, ChevronLeft, ChevronRight,
@@ -37,28 +39,28 @@ export default function OperationsView({ kind, organizationName, filters, result
     filters.source === "audit" ? "Search action, target or actor..." : personal ? "Search monitor name..." : "Search device name or hostname...";
 
   return (
-    <div className="min-h-full p-6 sm:p-8">
-      <div className="mx-auto max-w-7xl">
+    <div className="sg-page-shell">
+      <div className="sg-page">
         <header className="mb-7 flex flex-wrap items-start justify-between gap-5">
           <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/[0.08] bg-[#0d0f12] text-zinc-400"><Icon size={22} /></div>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-surface-edge bg-surface text-zinc-400"><Icon size={22} /></div>
             <div>
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-400">Operations</p>
-              <h1 className="text-3xl font-semibold tracking-tight text-white">{title}</h1>
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-surface-accent">Operations</p>
+              <h1 className="sg-page-title">{title}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">{incidents ?
                 "Investigate recorded failures across your organization, with the original evidence close at hand." :
                 "Spot connectivity warnings and unsuccessful checks before they need a deeper investigation."}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button asChild variant="outline" className="h-10 rounded-xl border-white/10 bg-[#0d0f12] text-zinc-300 hover:bg-white/5 hover:text-white">
+            <Button asChild variant="outline" className="sg-button sg-button-secondary">
               <Link prefetch={false} href={incidents ? "/dashboard/alerts" : "/dashboard/incidents"}>{incidents ? "View alerts" : "View incidents"}<ArrowUpRight size={14} /></Link>
             </Button>
             <OperationsRefresh />
           </div>
         </header>
 
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 text-xs text-surface-muted">
           <span className="inline-flex items-center gap-2"><Building2 size={14} />{personal ? "Personal monitor scope" : organizationName}<span className="text-zinc-700">/</span>Read-only evidence</span>
           <span className="inline-flex items-center gap-1.5"><Clock3 size={13} />Snapshot {formatOperationsTime(new Date(now).toISOString())} UTC</span>
         </div>
@@ -69,16 +71,18 @@ export default function OperationsView({ kind, organizationName, filters, result
           <Metric label={incidents ? "Informational outcomes" : "Warnings / not checked"} value={unavailable ? "--" : String(warnings)} description="In the displayed results" icon={<Info size={16} />} tone="text-amber-400" />
         </section>
 
-        <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d0f12]">
-          <nav aria-label={`${title} sources`} className="flex gap-1 overflow-x-auto border-b border-white/[0.07] px-4 pt-3 sm:px-6">
+        <section className="sg-surface overflow-hidden">
+          <nav aria-label={`${title} sources`} className="px-4 pt-3 sm:px-6">
+            <AnimatedSelection value={filters.source} className="sg-tabs">
             {tabs.map((tab) => <Link key={tab.id} prefetch={false} aria-current={filters.source === tab.id ? "page" : undefined}
               href={operationsHref(kind, filters, { source: tab.id, page: 1, status: "all", query: "" })}
-              className={`whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${filters.source === tab.id ? "border-emerald-400 text-emerald-400" : "border-transparent text-zinc-500 hover:border-zinc-700 hover:text-zinc-200"}`}>{tab.name}</Link>)}
+              className="sg-tab">{tab.name}</Link>)}
+            </AnimatedSelection>
           </nav>
 
           <OperationsFilterBar key={`${kind}:${filters.source}`} kind={kind} filters={filters} statuses={statuses} placeholder={placeholder} />
 
-          <div className="flex items-start gap-2 border-b border-white/[0.06] bg-white/[0.015] px-5 py-3 text-xs leading-5 text-zinc-500 sm:px-6">
+          <div className="flex items-start gap-2 border-b border-surface-edge bg-white/[0.015] px-5 py-3 text-xs leading-5 text-surface-muted sm:px-6">
             <Info size={14} className="mt-0.5 shrink-0" />
             <p>{filters.source === "commands" ? "One record per command. Confirmed no-newer-version outcomes are excluded; legacy no-eligible-release results remain informational. These are historical outcomes, not open incident tickets." :
               filters.source === "audit" ? "Failed audit events without command or update-transaction correlation. Command lifecycle events are shown in Command failures instead of duplicated here." :
@@ -87,24 +91,24 @@ export default function OperationsView({ kind, organizationName, filters, result
           </div>
 
           {result.error && <div role="alert" className="m-5 flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-4 text-sm text-amber-300"><TriangleAlert size={17} className="mt-0.5 shrink-0" /><p>{result.error}</p></div>}
-          {result.rows.length ? <div className="divide-y divide-white/[0.06]">{result.rows.map((row) => <EvidenceRow key={row.id} row={row} />)}</div> : !unavailable ? (
+          {result.rows.length ? <div className="divide-y divide-surface-edge">{result.rows.map((row) => <EvidenceRow key={row.id} row={row} />)}</div> : !unavailable ? (
             <div className="px-6 py-16 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-[#090a0c] text-zinc-500">{filtered ? <Search size={22} /> : <ShieldCheck size={22} />}</div>
-              <h2 className="mt-4 font-semibold text-white">{filters.page > 1 ? "No more records on this page" : filters.query || filters.status !== "all" ? "No matching records" : incidents ? "No recorded failures in this view" : "No attention signals in this view"}</h2>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">{filtered ? "Try a different search, clear the filters or return to the first page." : incidents ? "Only failures recorded by the existing backend appear here. This does not certify that every operation was successful." : "No matching records are visible to your account. This is not a guarantee that all infrastructure is healthy."}</p>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-surface-edge bg-surface-inset text-surface-muted">{filtered ? <Search size={22} /> : <ShieldCheck size={22} />}</div>
+              <h2 className="sg-section-title mt-4 text-white">{filters.page > 1 ? "No more records on this page" : filters.query || filters.status !== "all" ? "No matching records" : incidents ? "No recorded failures in this view" : "No attention signals in this view"}</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-surface-muted">{filtered ? "Try a different search, clear the filters or return to the first page." : incidents ? "Only failures recorded by the existing backend appear here. This does not certify that every operation was successful." : "No matching records are visible to your account. This is not a guarantee that all infrastructure is healthy."}</p>
               {filtered ? <Link prefetch={false} href={operationsHref(kind, filters, { query: "", status: "all", page: 1 })} className="mt-5 inline-flex items-center gap-2 text-sm text-zinc-300 hover:text-white">Reset view<ArrowUpRight size={14} /></Link> : !incidents && <Link prefetch={false} href={personal ? "/dashboard/monitors" : "/dashboard/organizations"} className="mt-5 inline-flex items-center gap-2 text-sm text-zinc-300 hover:text-white">{personal ? "Open monitors" : "Open infrastructure"}<ArrowUpRight size={14} /></Link>}
             </div>
           ) : null}
 
-          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] px-5 py-4 sm:px-6">
-            <p className="text-xs text-zinc-500">Page {filters.page}{result.rows.length > 0 ? ` / Showing ${(filters.page - 1) * PAGE_SIZE + 1}-${(filters.page - 1) * PAGE_SIZE + result.rows.length}` : ""}{filters.page === MAX_PAGE ? " / Narrow your filters to see more history" : ""}</p>
+          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-surface-edge px-5 py-4 sm:px-6">
+            <p className="text-xs text-surface-muted">Page {filters.page}{result.rows.length > 0 ? ` / Showing ${(filters.page - 1) * PAGE_SIZE + 1}-${(filters.page - 1) * PAGE_SIZE + result.rows.length}` : ""}{filters.page === MAX_PAGE ? " / Narrow your filters to see more history" : ""}</p>
             <nav aria-label="Pagination" className="flex items-center gap-2">
               <PageLink href={filters.page > 1 ? operationsHref(kind, filters, { page: filters.page - 1 }) : undefined} label="Previous"><ChevronLeft size={14} /></PageLink>
               <PageLink href={result.hasNext ? operationsHref(kind, filters, { page: filters.page + 1 }) : undefined} label="Next"><ChevronRight size={14} /></PageLink>
             </nav>
           </footer>
         </section>
-        <div className="mt-5 flex items-start gap-2 px-1 text-xs leading-5 text-zinc-600"><ArrowDownRight size={14} className="mt-0.5 shrink-0" /><p>{incidents ? "Evidence is read-only. Assignment, acknowledgment and resolution are not available because there is no persisted incident workflow." : "These are derived signals from existing records, not delivered notifications. Alert rules, silencing and notification channels are not configured in the current backend."} Existing device actions remain in Clients.</p></div>
+        <div className="mt-5 flex items-start gap-2 px-1 text-xs leading-5 text-surface-muted"><ArrowDownRight size={14} className="mt-0.5 shrink-0" /><p>{incidents ? "Evidence is read-only. Assignment, acknowledgment and resolution are not available because there is no persisted incident workflow." : "These are derived signals from existing records, not delivered notifications. Alert rules, silencing and notification channels are not configured in the current backend."} Existing device actions remain in Clients.</p></div>
       </div>
     </div>
   );
@@ -113,31 +117,31 @@ export default function OperationsView({ kind, organizationName, filters, result
 function Metric({ label, value, description, icon, tone = "text-zinc-400" }: {
   label: string; value: string; description: string; icon: React.ReactNode; tone?: string;
 }) {
-  return <div className="rounded-2xl border border-white/[0.08] bg-[#0d0f12] p-5"><div className={`mb-4 flex items-center justify-between gap-3 ${tone}`}><p className="text-xs font-medium text-zinc-500">{label}</p>{icon}</div><p className="text-3xl font-semibold tracking-tight text-white">{value}</p><p className="mt-2 text-xs leading-5 text-zinc-600">{description}</p></div>;
+  return <div className="sg-surface p-5"><div className={`mb-4 flex items-center justify-between gap-3 ${tone}`}><p className="text-xs font-medium text-surface-muted">{label}</p>{icon}</div><p className="text-3xl font-semibold tracking-tight text-white">{value}</p><p className="mt-2 text-xs leading-5 text-surface-muted">{description}</p></div>;
 }
 
 function EvidenceRow({ row }: { row: OperationRow }) {
   const Icon = row.tone === "info" ? Info : TriangleAlert;
   return <details className="group transition open:bg-white/[0.015]">
-    <summary className="flex cursor-pointer list-none items-start gap-3 px-5 py-5 outline-none transition hover:bg-white/[0.025] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 sm:px-6 [&::-webkit-details-marker]:hidden">
+    <summary className="flex cursor-pointer list-none items-start gap-3 px-5 py-5 outline-none transition hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-surface-focus sm:px-6 [&::-webkit-details-marker]:hidden">
       <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${toneClasses[row.tone]}`}><Icon size={16} /></span>
       <div className="grid min-w-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_auto]">
-        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="text-sm font-medium text-zinc-100">{row.title}</h2><span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${toneClasses[row.tone]}`}>{row.status}</span></div><p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-zinc-500">{row.description}</p></div>
-        <div className="min-w-0"><p className="truncate text-sm text-zinc-300">{row.target}</p><p className="mt-1 truncate text-xs text-zinc-500">{row.context}</p></div>
-        <div className="text-xs text-zinc-500"><p>{row.timeLabel}</p><p className="mt-1 text-zinc-400">{formatOperationsTime(row.timestamp)}{row.timestamp ? " UTC" : ""}</p></div>
+        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="sg-section-title font-medium text-zinc-100">{row.title}</h2><StatusBadge status={row.status} tone={row.tone === "error" ? "danger" : row.tone} /></div><p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-surface-muted">{row.description}</p></div>
+        <div className="min-w-0"><p className="truncate text-sm text-zinc-300">{row.target}</p><p className="mt-1 truncate text-xs text-surface-muted">{row.context}</p></div>
+        <div className="text-xs text-surface-muted"><p>{row.timeLabel}</p><p className="mt-1 text-zinc-400">{formatOperationsTime(row.timestamp)}{row.timestamp ? " UTC" : ""}</p></div>
       </div>
-      <ChevronDown size={15} aria-label="Expand evidence" className="mt-1 shrink-0 text-zinc-600 transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none" />
+      <ChevronDown size={15} aria-label="Expand evidence" className="mt-1 shrink-0 text-surface-muted transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none" />
     </summary>
-    <div className="border-t border-white/[0.05] px-5 py-5 sm:px-6 sm:pl-[72px]">
+    <div className="border-t border-surface-edge px-5 py-5 sm:px-6 sm:pl-[72px]">
       <p className="mb-5 max-w-3xl whitespace-pre-wrap break-words text-sm leading-6 text-zinc-400">{row.description}</p>
-      <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">{row.details.map((detail) => <div key={detail.label} className="min-w-0"><dt className="text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-600">{detail.label}</dt><dd className="mt-1 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-zinc-400 [overflow-wrap:anywhere]">{detail.value}</dd></div>)}</dl>
-      {row.href && <Link prefetch={false} href={row.href} className="mt-5 inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-zinc-300 transition hover:bg-white/5 hover:text-white">{row.linkLabel}<ArrowUpRight size={14} /></Link>}
+      <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">{row.details.map((detail) => <div key={detail.label} className="min-w-0"><dt className="text-[10px] font-medium uppercase tracking-[0.12em] text-surface-muted">{detail.label}</dt><dd className="mt-1 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-zinc-400 [overflow-wrap:anywhere]">{detail.value}</dd></div>)}</dl>
+      {row.href && <Link prefetch={false} href={row.href} className="sg-button sg-button-secondary sg-button-sm mt-5">{row.linkLabel}<ArrowUpRight size={14} /></Link>}
     </div>
   </details>;
 }
 
 function PageLink({ href, label, children }: { href?: string; label: string; children: React.ReactNode }) {
   const classes = "inline-flex h-8 items-center gap-1 rounded-lg border border-white/10 px-2.5 text-xs";
-  return href ? <Link prefetch={false} href={href} className={`${classes} text-zinc-300 transition hover:bg-white/5 hover:text-white`}>{label}{children}</Link> :
+  return href ? <Link prefetch={false} href={href} className={`${classes} text-zinc-300 transition hover:bg-surface-hover hover:text-white`}>{label}{children}</Link> :
     <span aria-disabled="true" className={`${classes} text-zinc-700`}>{label}{children}</span>;
 }

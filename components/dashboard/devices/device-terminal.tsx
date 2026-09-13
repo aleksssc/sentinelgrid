@@ -1273,7 +1273,7 @@ export default function DeviceTerminal({
 
         <div className="shrink-0 border-t border-zinc-800 bg-[#0d0f12] p-4">
 
-          <div className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-[#050607] px-3">
+          <div className="sg-input-frame flex items-center gap-3 rounded-xl border border-surface-edge bg-[#050607] px-3">
 
             <span
               className={`shrink-0 font-mono text-sm ${
@@ -1292,6 +1292,7 @@ export default function DeviceTerminal({
             <input
               ref={inputRef}
               data-terminal-input
+              aria-label="Terminal command"
               autoFocus
               type="text"
               spellCheck={false}

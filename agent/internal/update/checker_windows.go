@@ -76,7 +76,7 @@ func scheduledCheck(ctx context.Context, version string) (delay time.Duration, r
 	if err := atomicJSON(path, schedule); err != nil {
 		return delay, err
 	}
-	return delay, host.checkAndStage(ctx, version, "", ready)
+	return delay, host.InstallRelease(ctx, version, "", ready)
 }
 
 func RequestUpdate(ctx context.Context, commandID string) (resultErr error) {
@@ -95,10 +95,12 @@ func RequestUpdate(ctx context.Context, commandID string) (resultErr error) {
 		return err
 	}
 	defer func() { resultErr = errors.Join(resultErr, host.ClosePins(), unlock()) }()
-	return host.checkAndStage(ctx, buildinfo.Version(), commandID, true)
+	return host.InstallRelease(ctx, buildinfo.Version(), commandID, true)
 }
 
-func (h *WindowsHost) checkAndStage(ctx context.Context, version, commandID string, ready bool) (resultErr error) {
+// InstallRelease is the single policy/download/handoff path for both triggers; caller owns Lock.
+func (h *WindowsHost) InstallRelease(ctx context.Context, version, commandID string, ready bool) (resultErr error) {
+	log.Print("UPDATE_CHECK")
 	if err := h.CanDispatch(ctx); err != nil {
 		return err
 	}
@@ -137,6 +139,10 @@ func (h *WindowsHost) checkAndStage(ctx context.Context, version, commandID stri
 		}
 		return updateRequest(ctx, cfg, "/api/agent/update/report", map[string]string{"update_status": "available", "update_target_version": release.Version, "update_error": "UPDATER_NOT_OPERATIONAL"}, nil)
 	}
+	log.Print("UPDATE_AVAILABLE")
+	if release.ArtifactType != "msi" || release.UpdateProtocol != 2 {
+		return fmt.Errorf("full-product MSI release required")
+	}
 	if err := release.Validate(); err != nil {
 		return err
 	}
@@ -148,6 +154,8 @@ func (h *WindowsHost) checkAndStage(ctx context.Context, version, commandID stri
 		return err
 	}
 	state = State{Status: "downloading", Target: release.Version, Previous: version, TransactionID: id, CommandID: commandID,
+		Pending: &Pending{Schema: 2, ArtifactType: "msi", SignerSHA256: release.SignerSHA256, Version: release.Version,
+			Channel: release.Channel, SHA256: release.SHA256, Size: release.Size, NotAfter: release.ExpiresAt},
 		FailedVersion: state.FailedVersion, FailedVersions: state.FailedVersions, StartedAt: time.Now().UTC()}
 	if err := h.Save(state); err != nil {
 		return err
@@ -174,12 +182,14 @@ func (h *WindowsHost) checkAndStage(ctx context.Context, version, commandID stri
 	if err := reportState(ctx, cfg, state); err != nil {
 		return err
 	}
-	if err := Download(ctx, release, filepath.Join(h.Root, "candidate.exe"), VerifySignature); err != nil {
+	log.Print("MSI_DOWNLOAD_STARTED")
+	if err := Download(ctx, release, filepath.Join(h.Root, "candidate.msi"), VerifySignature); err != nil {
 		return err
 	}
 	if err := h.Verify(ctx, release); err != nil {
 		return err
 	}
+	log.Print("MSI_DOWNLOAD_VERIFIED")
 	// The existing check API permits one policy lookup per minute. Revalidate
 	// after download without adding a rate-limit bypass or persisting the URL.
 	if remaining := time.Until(checkedAt.Add(61 * time.Second)); remaining > 0 {
@@ -199,6 +209,9 @@ func (h *WindowsHost) checkAndStage(ctx context.Context, version, commandID stri
 		fresh.Version != release.Version || fresh.Channel != release.Channel || fresh.SHA256 != release.SHA256 || fresh.Size != release.Size {
 		return fmt.Errorf("trusted release policy changed before dispatch")
 	}
+	if fresh.ArtifactType != release.ArtifactType || fresh.UpdateProtocol != release.UpdateProtocol || fresh.SignerSHA256 != release.SignerSHA256 {
+		return fmt.Errorf("installation trust changed before dispatch")
+	}
 	if err := h.CanDispatch(ctx); err != nil {
 		return err
 	}
@@ -211,6 +224,7 @@ func (h *WindowsHost) checkAndStage(ctx context.Context, version, commandID stri
 		return err
 	}
 	published = true
+	log.Print("MSI_HANDOFF_STARTED")
 	return ErrDeferred
 }
 
@@ -248,7 +262,14 @@ func recordHeartbeat(ctx context.Context, version string) error {
 }
 
 func reportState(ctx context.Context, cfg *config.Config, state State) error {
-	body := map[string]string{"update_status": state.Status, "update_target_version": state.Target}
+	body := map[string]any{"update_status": state.Status, "update_target_version": state.Target}
+	if state.MSI != nil && state.MSI.ExitCode != nil {
+		body["msi_exit_code"] = *state.MSI.ExitCode
+	}
+	// Preserve the existing SQL transaction protocol; detailed MSI phase/code stays in the durable journal.
+	if state.Status == "awaiting_health" {
+		body["update_status"] = "restarting"
+	}
 	if state.Error != "" {
 		body["update_error"] = state.Error
 	}

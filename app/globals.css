@@ -118,3 +118,44 @@
     background: #09090b;
   }
 }
+
+/* Fields own their focus treatment; composite fields draw it on their outer frame. */
+.sg-input,
+:is(.sg-dashboard, .sg-themed-portal) :is(input:not(:where([type="radio"], [type="checkbox"], [type="hidden"], [type="range"], [type="color"], [type="button"], [type="submit"], [type="reset"], [type="image"])), textarea),
+.sg-input-frame {
+  --sg-field-focus: var(--sg-accent-edge, hsl(var(--ring)));
+  --sg-field-ring: color-mix(in srgb, var(--sg-accent, hsl(var(--ring))) 65%, transparent);
+  outline: none;
+  transition: border-color 200ms, box-shadow 200ms;
+}
+.sg-input:focus,
+:is(.sg-dashboard, .sg-themed-portal) :is(input:not(:where([type="radio"], [type="checkbox"], [type="hidden"], [type="range"], [type="color"], [type="button"], [type="submit"], [type="reset"], [type="image"])), textarea):focus,
+.sg-input-frame:focus-within {
+  outline: none;
+  border-color: var(--sg-field-focus);
+  box-shadow: none;
+}
+:where(html:not([data-sg-input-modality="pointer"])) .sg-input:focus-visible,
+:where(html:not([data-sg-input-modality="pointer"])) :is(.sg-dashboard, .sg-themed-portal) :is(input:not(:where([type="radio"], [type="checkbox"], [type="hidden"], [type="range"], [type="color"], [type="button"], [type="submit"], [type="reset"], [type="image"])), textarea):focus-visible,
+:where(html:not([data-sg-input-modality="pointer"])) .sg-input-frame:has(:is(input, textarea):focus-visible) {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--sg-field-ring);
+}
+.sg-input-frame:hover { border-color: var(--sg-field-focus); }
+.sg-input-frame :is(input, textarea):is(:focus, :focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+@media (forced-colors: active) {
+  .sg-input:focus-visible,
+  :is(.sg-dashboard, .sg-themed-portal) :is(input, textarea):focus-visible,
+  .sg-input-frame:has(:is(input, textarea):focus-visible) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .sg-input-frame :is(input, textarea):is(:focus, :focus-visible) { outline: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-sg-motion="full"]) :is(.sg-input, .sg-input-frame) { transition-duration: 0.01ms; }
+}
+html[data-sg-motion="reduced"] :is(.sg-input, .sg-input-frame) { transition-duration: 0.01ms; }

@@ -87,7 +87,7 @@ export default function InviteMemberForm({
             pending
           }
           placeholder="member@company.com"
-          className="w-full rounded-lg border border-white/10 bg-black/20 px-3.5 py-2.5 text-sm text-white outline-none transition placeholder:text-zinc-700 focus:border-blue-500/60 disabled:cursor-not-allowed disabled:opacity-50"
+          className="sg-control w-full px-3.5 py-2.5 disabled:cursor-not-allowed disabled:opacity-50"
         />
 
       </div>
@@ -110,7 +110,7 @@ export default function InviteMemberForm({
             disabled ||
             pending
           }
-          className="w-full rounded-lg border border-white/10 bg-[#0a0c10] px-3.5 py-2.5 text-sm text-white outline-none transition focus:border-blue-500/60 disabled:cursor-not-allowed disabled:opacity-50"
+          className="sg-control w-full px-3.5 py-2.5 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="member">
             Member
@@ -151,7 +151,7 @@ export default function InviteMemberForm({
           disabled ||
           pending
         }
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+        className="sg-button sg-button-primary w-full"
       >
 
         {pending ? (

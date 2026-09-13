@@ -8,7 +8,8 @@ function fixture(failure) {
  const events = [];
  const manifest = { schema_version: 1, server_url: "https://isolated.example", product: "SentinelGridAgent", version: "0.1.6", channel: "beta", platform: "windows", architecture: "amd64", signed: true, development_update_build: true, trusted_signer_sha256: [signer] };
  const bytes = Buffer.from("isolated test artifact, not an executable");
- for (const [key, filename] of Object.entries({ agent: "SentinelGridAgent.exe", updater: "SentinelGridUpdater.exe", rdp_client: "SentinelGridRDP.exe", msi: "SentinelGridAgent.msi" })) manifest[key] = { filename, sha256: hash(bytes), size: bytes.length };
+ manifest.installation_artifact = "msi"; manifest.update_protocol = 2;
+ for (const [key, filename] of Object.entries({ agent: "SentinelGridAgent.exe", updater: "SentinelGridUpdater.exe", rdp_client: "SentinelGridRDP.exe", msi: "SentinelGridAgent.msi" })) manifest[key] = { filename, version: manifest.version, sha256: hash(bytes), size: bytes.length };
  const manifestBytes = Buffer.from(JSON.stringify(manifest));
  const step = (name) => { events.push(name); if (failure === name) throw new Error(name); };
  return { events, options: { manifest, manifestBytes, version: "0.1.6", channel: "beta", signer,

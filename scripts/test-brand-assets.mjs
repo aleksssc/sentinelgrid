@@ -64,7 +64,7 @@ test("navigation uses the compact lockup rather than shrinking the stacked artwo
     "components/dashboard/dashboard-sidebar.tsx",
   ]) {
     const source = (await read(path)).toString();
-    assert.match(source, /<BrandLogo variant="lockup"\s*\/>/, path);
+    assert.match(source, /<BrandLogo variant="lockup"(?:\s+className="[^"]*")?\s*\/>/, path);
     assert.doesNotMatch(source, /variant="wordmark"/, path);
   }
 });

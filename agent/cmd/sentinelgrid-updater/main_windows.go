@@ -61,13 +61,14 @@ func main() {
 	configure := flag.Bool("configure-recovery", false, "Configure fixed recovery service restart policy")
 	maintenanceBegin := flag.Bool("maintenance-begin", false, "Quiesce only SentinelGrid update recovery for MSI")
 	maintenanceEnd := flag.Bool("maintenance-end", false, "Finish only SentinelGrid MSI maintenance")
+	maintenanceRollback := flag.Bool("maintenance-rollback", false, "Record Windows Installer rollback")
 	showTrust := flag.Bool("update-build-info", false, "Show embedded update trust (no update)")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		log.Fatal("Updater accepts no positional arguments")
 	}
 	modes := 0
-	for _, enabled := range []bool{*channel, *version, *protocol, *commandProtocol, *configure, *maintenanceBegin, *maintenanceEnd, *showTrust} {
+	for _, enabled := range []bool{*channel, *version, *protocol, *commandProtocol, *configure, *maintenanceBegin, *maintenanceEnd, *maintenanceRollback, *showTrust} {
 		if enabled {
 			modes++
 		}
@@ -101,10 +102,10 @@ func main() {
 		}
 		return
 	}
-	if *maintenanceBegin || *maintenanceEnd {
+	if *maintenanceBegin || *maintenanceEnd || *maintenanceRollback {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
-		if err := update.Maintenance(ctx, *maintenanceBegin); err != nil {
+		if err := update.MSIMaintenance(ctx, *maintenanceBegin, *maintenanceRollback); err != nil {
 			log.Fatal(err)
 		}
 		return

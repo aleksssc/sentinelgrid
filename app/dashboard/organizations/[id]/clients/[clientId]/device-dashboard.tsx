@@ -18,6 +18,7 @@ import DeviceTerminal, {
   type TerminalShell,
 } from "@/components/dashboard/devices/device-terminal";
 import DeviceRDP from "@/components/dashboard/devices/device-rdp";
+import { StatusBadge } from "@/components/dashboard/dashboard-badges";
 import DeviceActivityTimeline from "@/components/dashboard/devices/device-activity";
 import DevicePerformance from "@/components/dashboard/devices/device-performance";
 import ActionsMenu from "@/components/dashboard/devices/device-actions-menu";
@@ -46,6 +47,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import { SectionHeader, EmptyState } from "@/components/dashboard/dashboard-primitives";
 import DeviceTabs from "@/components/dashboard/devices/device-tabs";
 
 /* =========================
@@ -899,19 +901,20 @@ export default function DeviceDashboard({
           TOOLBAR
       ========================= */}
 
-      <div className="mb-5 flex flex-wrap items-center gap-3">
+      <div className="sg-toolbar">
 
         {/* SEARCH */}
 
-        <div className="relative min-w-64 flex-1">
+        <div className="relative min-w-0 basis-64 flex-1">
 
           <Search
             size={17}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600"
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-surface-muted"
           />
 
           <input
             type="text"
+            aria-label="Search devices"
             placeholder="Search devices..."
             value={search}
             onChange={(e) =>
@@ -919,7 +922,7 @@ export default function DeviceDashboard({
                 e.target.value
               )
             }
-            className="w-full rounded-xl border border-zinc-800 bg-zinc-950 py-2.5 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 hover:border-zinc-700 focus:border-zinc-600"
+            className="sg-control w-full py-2.5 pl-10 pr-4"
           />
 
         </div>
@@ -942,10 +945,12 @@ export default function DeviceDashboard({
                 false
               );
             }}
-            className={`flex min-w-[160px] items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-sm outline-none transition focus:outline-none ${
+            aria-expanded={siteFilterOpen}
+            aria-label="Filter by site"
+            className={`sg-control flex min-w-[160px] items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-sm outline-none transition focus:outline-none ${
               siteFilterOpen
-                ? "border-zinc-600 bg-[#101114]"
-                : "border-zinc-800 bg-zinc-950 hover:border-zinc-700"
+                ? "border-surface-accent-edge bg-surface-selected"
+                : "border-zinc-800 bg-surface-inset hover:border-surface-accent-edge"
             }`}
           >
 
@@ -953,7 +958,7 @@ export default function DeviceDashboard({
 
               <MapPin
                 size={15}
-                className="shrink-0 text-zinc-600"
+                className="shrink-0 text-surface-muted"
               />
 
               <span className="max-w-[150px] truncate text-zinc-300">
@@ -972,7 +977,7 @@ export default function DeviceDashboard({
 
             <ChevronDown
               size={14}
-              className={`shrink-0 text-zinc-600 transition-transform duration-200 ${
+              className={`shrink-0 text-surface-muted transition-transform duration-200 ${
                 siteFilterOpen
                   ? "rotate-180"
                   : ""
@@ -982,7 +987,7 @@ export default function DeviceDashboard({
           </button>
 
           {siteFilterOpen && (
-            <div className="absolute right-0 top-full z-30 mt-2 min-w-full overflow-hidden rounded-xl border border-zinc-800 bg-[#111214] shadow-2xl">
+            <div className="absolute right-0 top-full z-30 mt-2 min-w-full overflow-hidden rounded-xl border border-surface-edge bg-surface-raised shadow-2xl">
 
               <button
                 type="button"
@@ -995,11 +1000,11 @@ export default function DeviceDashboard({
                     false
                   );
                 }}
-                className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm outline-none transition focus:outline-none ${
+                className={`sg-filter-option flex w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm outline-none transition focus:outline-none ${
                   siteFilter ===
                   "all"
-                    ? "bg-zinc-800 text-white"
-                    : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                    ? "bg-surface-selected text-surface-accent"
+                    : "text-zinc-400 hover:bg-surface-hover hover:text-white"
                 }`}
               >
 
@@ -1007,7 +1012,7 @@ export default function DeviceDashboard({
 
                   <MapPin
                     size={15}
-                    className="text-zinc-600"
+                    className="text-surface-muted"
                   />
 
                   <span>
@@ -1041,11 +1046,11 @@ export default function DeviceDashboard({
                         false
                       );
                     }}
-                    className={`flex w-full items-center justify-between gap-4 border-t border-zinc-800 px-4 py-3 text-left text-sm outline-none transition focus:outline-none ${
+                    className={`sg-filter-option flex w-full items-center justify-between gap-4 border-t border-surface-edge px-4 py-3 text-left text-sm outline-none transition focus:outline-none ${
                       siteFilter ===
                       site.id
-                        ? "bg-zinc-800 text-white"
-                        : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                        ? "bg-surface-selected text-surface-accent"
+                        : "text-zinc-400 hover:bg-surface-hover hover:text-white"
                     }`}
                   >
 
@@ -1053,7 +1058,7 @@ export default function DeviceDashboard({
 
                       <MapPin
                         size={15}
-                        className="text-zinc-600"
+                        className="text-surface-muted"
                       />
 
                       <span className="whitespace-nowrap">
@@ -1098,10 +1103,12 @@ export default function DeviceDashboard({
                 false
               );
             }}
-            className={`flex min-w-[150px] items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-sm outline-none transition focus:outline-none ${
+            aria-expanded={statusFilterOpen}
+            aria-label="Filter by status"
+            className={`sg-control flex min-w-[150px] items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-sm outline-none transition focus:outline-none ${
               statusFilterOpen
-                ? "border-zinc-600 bg-[#101114]"
-                : "border-zinc-800 bg-zinc-950 hover:border-zinc-700"
+                ? "border-surface-accent-edge bg-surface-selected"
+                : "border-zinc-800 bg-surface-inset hover:border-surface-accent-edge"
             }`}
           >
 
@@ -1149,7 +1156,7 @@ export default function DeviceDashboard({
           </button>
 
           {statusFilterOpen && (
-            <div className="absolute right-0 top-full z-30 mt-2 min-w-[180px] overflow-hidden rounded-xl border border-zinc-800 bg-[#111214] shadow-2xl">
+            <div className="absolute right-0 top-full z-30 mt-2 min-w-[180px] overflow-hidden rounded-xl border border-surface-edge bg-surface-raised shadow-2xl">
 
               <StatusFilterOption
                 label="All status"
@@ -1236,7 +1243,7 @@ export default function DeviceDashboard({
 
       <div className="mb-4 flex items-center justify-between">
 
-        <p className="text-xs text-zinc-600">
+        <p className="text-xs text-surface-muted">
           Showing{" "}
           {
             filteredDevices.length
@@ -1274,7 +1281,7 @@ export default function DeviceDashboard({
                 false
               );
             }}
-            className="text-xs text-zinc-500 outline-none transition hover:text-white focus:outline-none"
+            className="text-xs text-surface-muted outline-none transition hover:text-white focus:outline-none"
           >
             Clear filters
           </button>
@@ -1288,9 +1295,9 @@ export default function DeviceDashboard({
 
       {deviceList.length ===
       0 ? (
-        <div className="flex flex-col items-center rounded-2xl border border-dashed border-zinc-800 px-6 py-16 text-center">
+        <div className="sg-surface flex flex-col items-center border-dashed px-6 py-16 text-center">
 
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-surface-edge bg-surface-inset text-surface-muted">
             <Monitor
               size={21}
             />
@@ -1300,25 +1307,25 @@ export default function DeviceDashboard({
             No devices registered
           </h3>
 
-          <p className="mt-2 max-w-lg text-sm leading-6 text-zinc-500">
+          <p className="mt-2 max-w-lg text-sm leading-6 text-surface-muted">
             Devices will appear here once a SentinelGrid agent is deployed and linked to this client.
           </p>
 
         </div>
       ) : filteredDevices.length ===
         0 ? (
-        <div className="rounded-2xl border border-dashed border-zinc-800 px-6 py-12 text-center">
+        <div className="sg-surface border-dashed px-6 py-12 text-center">
 
           <Search
             size={22}
-            className="mx-auto text-zinc-600"
+            className="mx-auto text-surface-muted"
           />
 
           <h3 className="mt-4 font-medium">
             No devices found
           </h3>
 
-          <p className="mt-2 text-sm text-zinc-500">
+          <p className="mt-2 text-sm text-surface-muted">
             Try changing your search or filters.
           </p>
 
@@ -1328,9 +1335,9 @@ export default function DeviceDashboard({
             DEVICE TABLE
         ========================= */
 
-        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
+        <div className="sg-surface overflow-hidden">
 
-          <div className="hidden grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(150px,1fr)_120px] gap-6 border-b border-zinc-800 bg-[#111214] px-5 py-3 text-xs uppercase tracking-wide text-zinc-600 lg:grid">
+          <div className="sg-table-heading hidden grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(150px,1fr)_120px] gap-6 border-b border-surface-edge bg-surface-raised px-5 py-3 text-xs uppercase tracking-wide text-surface-muted lg:grid">
 
             <span>
               Device
@@ -1350,7 +1357,7 @@ export default function DeviceDashboard({
 
           </div>
 
-          <div className="divide-y divide-zinc-800">
+          <div className="divide-y divide-surface-edge">
 
             {filteredDevices.map(
               (device) => {
@@ -1376,14 +1383,14 @@ export default function DeviceDashboard({
                         device
                       )
                     }
-                    className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-6 bg-[#0d0f12] px-5 py-4 text-left outline-none transition hover:bg-[#15171a] focus:outline-none focus-visible:outline-none lg:grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(150px,1fr)_120px]"
+                    className="sg-row group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-6 bg-surface px-5 py-4 text-left outline-none transition hover:bg-surface-hover focus:outline-none focus-visible:outline-none lg:grid-cols-[minmax(0,2fr)_minmax(140px,1fr)_minmax(150px,1fr)_120px]"
                   >
 
                     {/* DEVICE */}
 
                     <div className="flex min-w-0 items-center gap-4">
 
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-[#08090b] text-zinc-400">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-surface-edge bg-surface-inset text-zinc-400">
 
                         <DeviceTypeIcon
                           type={
@@ -1401,7 +1408,7 @@ export default function DeviceDashboard({
                             device.hostname}
                         </p>
 
-                        <p className="mt-1 truncate text-xs text-zinc-500">
+                        <p className="mt-1 truncate text-xs text-surface-muted">
                           {
                             device.hostname
                           }
@@ -1436,27 +1443,9 @@ export default function DeviceDashboard({
 
                     <div className="flex flex-col items-end lg:items-start">
 
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          effectiveStatus ===
-                          "online"
-                            ? "bg-emerald-500/10 text-emerald-400"
-                            : effectiveStatus ===
-                              "warning"
-                            ? "bg-amber-500/10 text-amber-400"
-                            : "bg-zinc-800 text-zinc-500"
-                        }`}
-                      >
-                        {effectiveStatus ===
-                        "online"
-                          ? "Online"
-                          : effectiveStatus ===
-                            "warning"
-                          ? "Warning"
-                          : "Offline"}
-                      </span>
+                      <StatusBadge status={effectiveStatus} />
 
-                      <span className="mt-1.5 text-[11px] text-zinc-600">
+                      <span className="mt-1.5 text-[11px] text-surface-muted">
                         {device.last_seen
                           ? `Last seen ${getRelativeLastSeen(
                               device.last_seen,
@@ -1492,7 +1481,7 @@ export default function DeviceDashboard({
             onClick={
               closeDevice
             }
-            className={`fixed bottom-0 left-0 right-0 top-16 z-30 bg-black/45 backdrop-blur-[2px] outline-none transition-opacity duration-300 focus:outline-none ${
+            className={`sg-drawer-overlay fixed bottom-0 left-0 right-0 top-16 z-30 bg-black/45 backdrop-blur-[2px] outline-none transition-opacity duration-300 focus:outline-none ${
               drawerOpen
                 ? "opacity-100"
                 : "opacity-0"
@@ -1502,7 +1491,7 @@ export default function DeviceDashboard({
           {/* DRAWER */}
 
           <aside
-            className={`fixed bottom-0 right-0 top-16 z-40 w-full overflow-y-auto border-l border-zinc-800 bg-[#070809] shadow-2xl transition-transform duration-300 ease-out sm:w-[calc(100vw-64px)] lg:w-[760px] xl:w-[820px] ${
+            className={`sg-drawer fixed bottom-0 right-0 top-16 z-40 w-full overflow-y-auto border-l border-surface-edge bg-[#070809] shadow-2xl transition-transform duration-300 ease-out sm:w-[calc(100vw-64px)] lg:w-[760px] xl:w-[820px] ${
               drawerOpen
                 ? "translate-x-0"
                 : "translate-x-full"
@@ -1513,13 +1502,13 @@ export default function DeviceDashboard({
                 HEADER
             ========================= */}
 
-            <div className="sticky top-0 z-20 border-b border-zinc-800 bg-[#070809]/95 px-5 py-4 backdrop-blur">
+            <div className="sg-drawer-header sticky top-0 z-20 border-b border-surface-edge bg-[#070809]/95 px-5 py-4 backdrop-blur">
 
               <div className="flex items-center justify-between gap-5">
 
                 <div className="flex min-w-0 items-center gap-4">
 
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-surface-edge bg-surface text-zinc-400">
 
                     <DeviceTypeIcon
                       type={
@@ -1532,12 +1521,12 @@ export default function DeviceDashboard({
 
                   <div className="min-w-0">
 
-                    <h2 className="truncate text-lg font-semibold text-white">
+                    <h2 className="sg-section-title truncate text-white">
                       {selectedDevice.display_name ||
                         selectedDevice.hostname}
                     </h2>
 
-                    <p className="mt-0.5 truncate text-sm text-zinc-600">
+                    <p className="mt-0.5 truncate text-sm text-surface-muted">
                       {
                         selectedDevice.hostname
                       }
@@ -1552,7 +1541,8 @@ export default function DeviceDashboard({
                   onClick={
                     closeDevice
                   }
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 outline-none transition hover:bg-zinc-900 hover:text-white focus:outline-none focus-visible:outline-none"
+                  aria-label="Close device details"
+                  className="sg-button sg-button-ghost sg-button-icon w-9 shrink-0 text-surface-muted outline-none focus:outline-none focus-visible:outline-none"
                 >
                   <X
                     size={18}
@@ -1561,7 +1551,7 @@ export default function DeviceDashboard({
 
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
+              <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-surface-muted">
                 <span className="text-zinc-300">{formatOSName(selectedDevice.os)}</span>
                 <span className="text-zinc-700">/</span>
                 <span>{clientName}</span>
@@ -1585,7 +1575,7 @@ export default function DeviceDashboard({
                         ? "Open remote terminal"
                         : "The device is offline or terminal access is unavailable."
                   }
-                  className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="sg-button sg-button-primary disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Terminal size={16} />
                   Terminal
@@ -1616,32 +1606,9 @@ export default function DeviceDashboard({
             <div className="p-5">
 
               <div className="flex flex-wrap items-center gap-3 text-xs">
-                <span
-                  className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 ${
-                    selectedDeviceStatus === "online"
-                      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                      : selectedDeviceStatus === "warning"
-                        ? "border-amber-500/20 bg-amber-500/10 text-amber-400"
-                        : "border-zinc-800 bg-zinc-900 text-zinc-500"
-                  }`}
-                >
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      selectedDeviceStatus === "online"
-                        ? "bg-emerald-400"
-                        : selectedDeviceStatus === "warning"
-                          ? "bg-amber-400"
-                          : "bg-zinc-600"
-                    }`}
-                  />
-                  {selectedDeviceStatus === "online"
-                    ? "Online"
-                    : selectedDeviceStatus === "warning"
-                      ? "Warning"
-                      : "Offline"}
-                </span>
+                <StatusBadge status={selectedDeviceStatus ?? "unknown"} />
 
-                <span className="text-zinc-600">
+                <span className="text-surface-muted">
                   {selectedDevice.last_seen
                     ? `Last seen ${getRelativeLastSeen(selectedDevice.last_seen, now)}`
                     : "Never seen"}
@@ -1842,7 +1809,7 @@ export default function DeviceDashboard({
               ========================= */}
 
               {canManage && (
-                <div className="mt-6 flex items-center justify-between border-t border-zinc-800 pt-5">
+                <div className="mt-6 flex items-center justify-between border-t border-surface-edge pt-5">
 
                   <div>
 
@@ -1850,7 +1817,7 @@ export default function DeviceDashboard({
                       Remove device
                     </p>
 
-                    <p className="mt-0.5 text-xs text-zinc-600">
+                    <p className="mt-0.5 text-xs text-surface-muted">
                       Permanently remove this endpoint.
                     </p>
 
@@ -1861,7 +1828,7 @@ export default function DeviceDashboard({
                     onClick={
                       openDeleteDevice
                     }
-                    className="inline-flex items-center gap-2 rounded-lg border border-red-950 bg-[#120b0d] px-3.5 py-2 text-sm font-medium text-red-400 outline-none transition hover:border-red-900 hover:bg-red-950/30 hover:text-red-300 focus:outline-none focus-visible:outline-none"
+                    className="sg-button sg-button-danger text-red-400 outline-none focus:outline-none focus-visible:outline-none"
                   >
 
                     <Trash2
@@ -1921,9 +1888,9 @@ export default function DeviceDashboard({
             className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm"
           />
 
-          <div className="fixed left-1/2 top-1/2 z-[70] w-[calc(100%-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12] shadow-2xl">
+          <div className="sg-dialog fixed left-1/2 top-1/2 z-[70] w-[calc(100%-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-surface-edge bg-surface shadow-2xl">
 
-            <div className="flex items-start justify-between gap-5 border-b border-zinc-800 px-6 py-5">
+            <div className="flex items-start justify-between gap-5 border-b border-surface-edge px-6 py-5">
 
               <div className="flex items-start gap-4">
 
@@ -1937,11 +1904,11 @@ export default function DeviceDashboard({
 
                 <div>
 
-                  <h2 className="font-semibold">
+                  <h2 className="sg-section-title">
                     Delete device?
                   </h2>
 
-                  <p className="mt-1 text-sm text-zinc-500">
+                  <p className="mt-1 text-sm text-surface-muted">
                     This action cannot be undone.
                   </p>
 
@@ -1957,7 +1924,7 @@ export default function DeviceDashboard({
                 disabled={
                   deletingDevice
                 }
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 outline-none transition hover:bg-zinc-900 hover:text-white focus:outline-none disabled:opacity-50"
+                className="sg-button sg-button-ghost sg-button-icon w-9 text-surface-muted outline-none focus:outline-none disabled:opacity-50"
               >
                 <X
                   size={18}
@@ -2006,7 +1973,7 @@ export default function DeviceDashboard({
 
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-zinc-800 px-6 py-5">
+            <div className="flex justify-end gap-3 border-t border-surface-edge px-6 py-5">
 
               <button
                 type="button"
@@ -2016,7 +1983,7 @@ export default function DeviceDashboard({
                 disabled={
                   deletingDevice
                 }
-                className="rounded-xl border border-zinc-800 px-4 py-2.5 text-sm text-zinc-300 outline-none transition hover:bg-zinc-900 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                className="sg-button sg-button-secondary outline-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -2029,7 +1996,7 @@ export default function DeviceDashboard({
                 disabled={
                   deletingDevice
                 }
-                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white outline-none transition hover:bg-red-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                className="sg-button sg-button-danger-solid outline-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               >
 
                 <Trash2
@@ -2137,13 +2104,13 @@ function DeviceTabPanel({
 
 function InventoryGroup({ title, rows }: { title: string; rows: Array<[string, string]> }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
-      <h3 className="border-b border-zinc-800 px-4 py-3 text-sm font-semibold text-white">{title}</h3>
-      <div className="divide-y divide-zinc-800">
+    <section className="sg-surface overflow-hidden">
+      <SectionHeader title={title} level={3} />
+      <div className="divide-y divide-surface-edge">
         {rows.map(([label, value]) => (
           <div key={label} className="flex items-center justify-between gap-4 px-4 py-3 text-xs">
-            <span className="text-zinc-600">{label}</span>
-            <span className="max-w-[65%] text-right text-zinc-300">{value}</span>
+            <span className="text-surface-muted">{label}</span>
+            <span className="min-w-0 max-w-[65%] break-words text-right text-zinc-300">{value}</span>
           </div>
         ))}
       </div>
@@ -2152,13 +2119,7 @@ function InventoryGroup({ title, rows }: { title: string; rows: Array<[string, s
 }
 
 function DeviceTabEmpty({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="mt-6 rounded-2xl border border-dashed border-zinc-800 bg-[#0d0f12] px-5 py-14 text-center">
-      <Wrench size={22} className="mx-auto text-zinc-600" />
-      <h3 className="mt-4 text-sm font-semibold text-white">{title}</h3>
-      <p className="mx-auto mt-2 max-w-sm text-xs leading-5 text-zinc-600">{description}</p>
-    </div>
-  );
+  return <EmptyState className="sg-surface mt-6" title={title} description={description} icon={<Wrench size={22} />} />;
 }
 
 function OverviewCard({
@@ -2173,23 +2134,10 @@ function OverviewCard({
   children: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
-      <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3.5">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-zinc-500">
-          {icon}
-        </div>
+    <section className="sg-surface overflow-hidden">
+      <SectionHeader title={title} description={subtitle} icon={icon} level={3} />
 
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-white">{title}</h3>
-          {subtitle && (
-            <p className="mt-0.5 truncate text-xs text-zinc-600">
-              {subtitle}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="divide-y divide-zinc-800">
+      <div className="divide-y divide-surface-edge">
         {children}
       </div>
     </section>
@@ -2205,7 +2153,7 @@ function OverviewInfoRow({
 }) {
   return (
     <div className="flex items-start justify-between gap-5 px-4 py-3 text-sm">
-      <span className="shrink-0 text-zinc-600">{label}</span>
+      <span className="shrink-0 text-surface-muted">{label}</span>
       <span
         title={value}
         className="min-w-0 max-w-[68%] break-words text-right text-zinc-300"
@@ -2280,9 +2228,9 @@ function MetricCard({
         );
 
   return (
-    <div className="min-w-0 rounded-xl border border-zinc-800 bg-[#111317] px-3 py-2.5">
+    <div className="sg-drawer-metric min-w-0">
 
-      <div className="flex items-center gap-2 text-zinc-500">
+      <div className="flex items-center gap-2 text-surface-muted">
 
         {icon}
 
@@ -2301,7 +2249,7 @@ function MetricCard({
           title={
             detail
           }
-          className="mt-0.5 truncate text-[10px] text-zinc-500"
+          className="mt-0.5 truncate text-[10px] text-surface-muted"
         >
           {detail}
         </p>
@@ -2349,10 +2297,10 @@ function StatusFilterOption({
       onClick={
         onClick
       }
-      className={`flex w-full items-center justify-between gap-5 border-b border-zinc-800 px-4 py-3 text-left text-sm outline-none transition last:border-b-0 focus:outline-none ${
+      className={`sg-filter-option flex w-full items-center justify-between gap-5 border-b border-surface-edge px-4 py-3 text-left text-sm outline-none transition last:border-b-0 focus:outline-none ${
         active
-          ? "bg-zinc-800 text-white"
-          : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+          ? "bg-surface-selected text-surface-accent"
+          : "text-zinc-400 hover:bg-surface-hover hover:text-white"
       }`}
     >
 

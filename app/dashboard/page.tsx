@@ -1,3 +1,5 @@
+import { StatusBadge } from "@/components/dashboard/dashboard-badges";
+import { PageHeader } from "@/components/dashboard/dashboard-primitives";
 import Link from "next/link";
 
 import { connection } from "next/server";
@@ -9,9 +11,7 @@ import {
   Building2,
   CircleCheck,
   Clock3,
-  Cpu,
   Globe2,
-  HardDrive,
   MapPin,
   MonitorCog,
   Plus,
@@ -569,59 +569,33 @@ export default async function DashboardPage() {
       : "/dashboard/organizations";
 
   return (
-    <main className="relative min-h-full">
-      <div className="mx-auto max-w-[1500px] px-7 py-7 lg:px-9 lg:py-8">
+    <div className="sg-page-shell">
+      <div className="sg-page">
 
         {/* ======================================================
             HEADER
         ====================================================== */}
 
-        <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+        <PageHeader
+          title="Dashboard"
+          eyebrow="Infrastructure overview"
+          description="Monitor your clients, devices and infrastructure from one place."
+          actions={<Link href={enrollDeviceHref} className="sg-button sg-button-primary"><Plus size={16} />Enroll device</Link>}
+        />
 
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-
-              <span className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
-                Infrastructure overview
-              </span>
-            </div>
-
-            <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-[28px]">
-              Dashboard
-            </h1>
-
-            <p className="mt-1.5 text-sm text-zinc-400">
-              Monitor your clients, devices and infrastructure from one place.
-            </p>
-          </div>
-
-        </div>
-
-        {/* ======================================================
-            INFRASTRUCTURE HEALTH
-        ====================================================== */}
-
-        <section
-          className="
-            mb-5 overflow-hidden
-            rounded-2xl
-            border border-white/[0.07]
-            bg-[#111113]/75
-            shadow-[0_12px_40px_rgba(0,0,0,0.18)]
-            backdrop-blur-xl
-          "
+                <section
+          className="sg-surface mb-5 overflow-hidden"
         >
           <div className="grid lg:grid-cols-[1.3fr_0.7fr]">
 
             {/* HEALTH */}
 
-            <div className="border-b border-white/[0.06] p-6 lg:border-b-0 lg:border-r">
+            <div className="border-b border-surface-edge p-6 lg:border-b-0 lg:border-r">
 
               <div className="flex items-start justify-between gap-5">
 
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-[0.13em] text-zinc-500">
+                  <p className="text-xs font-medium uppercase tracking-[0.13em] text-surface-muted">
                     Device health
                   </p>
 
@@ -633,7 +607,7 @@ export default async function DashboardPage() {
                         : "--"}
                     </span>
 
-                    <span className="mb-1.5 text-sm text-zinc-500">
+                    <span className="mb-1.5 text-sm text-surface-muted">
                       operational
                     </span>
 
@@ -671,11 +645,7 @@ export default async function DashboardPage() {
                 <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
 
                   <div
-                    className="
-                      h-full rounded-full
-                      bg-emerald-400
-                      transition-all duration-700
-                    "
+                    className="h-full rounded-full bg-emerald-400 transition-all duration-700"
                     style={{
                       width: `${health}%`,
                     }}
@@ -685,7 +655,7 @@ export default async function DashboardPage() {
 
                 <div className="mt-3 flex items-center justify-between gap-4">
 
-                  <span className="text-xs text-zinc-500">
+                  <span className="text-xs text-surface-muted">
                     {totalDevices > 0
                       ? `${onlineDevices} of ${totalDevices} devices online`
                       : "No devices enrolled"}
@@ -722,7 +692,7 @@ export default async function DashboardPage() {
 
             {/* STATUS */}
 
-            <div className="grid grid-cols-3 divide-x divide-white/[0.06]">
+            <div className="grid grid-cols-3 divide-x divide-surface-edge">
 
               <div className="flex flex-col justify-center px-5 py-6">
                 <span className="mb-3 h-2 w-2 rounded-full bg-emerald-400" />
@@ -731,7 +701,7 @@ export default async function DashboardPage() {
                   {onlineDevices}
                 </span>
 
-                <span className="mt-1 text-xs text-zinc-500">
+                <span className="mt-1 text-xs text-surface-muted">
                   Online
                 </span>
               </div>
@@ -743,7 +713,7 @@ export default async function DashboardPage() {
                   {warningDevices}
                 </span>
 
-                <span className="mt-1 text-xs text-zinc-500">
+                <span className="mt-1 text-xs text-surface-muted">
                   Warning
                 </span>
               </div>
@@ -755,7 +725,7 @@ export default async function DashboardPage() {
                   {offlineDevices}
                 </span>
 
-                <span className="mt-1 text-xs text-zinc-500">
+                <span className="mt-1 text-xs text-surface-muted">
                   Offline
                 </span>
               </div>
@@ -775,28 +745,13 @@ export default async function DashboardPage() {
 
           <Link
             href="/dashboard/organizations"
-            className="
-              group rounded-2xl
-              border border-white/[0.07]
-              bg-[#111113]/70
-              p-5
-              backdrop-blur-xl
-              transition-all duration-200
-              hover:-translate-y-0.5
-              hover:border-white/[0.12]
-              hover:bg-[#151517]/80
-            "
+            className="sg-surface group p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-surface-accent-edge hover:bg-surface-hover sg-interactive"
           >
 
             <div className="flex items-center justify-between">
 
               <div
-                className="
-                  flex h-9 w-9 items-center justify-center
-                  rounded-xl
-                  border border-white/[0.07]
-                  bg-white/[0.035]
-                "
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-surface-edge bg-white/[0.035]"
               >
                 <Building2
                   size={17}
@@ -815,7 +770,7 @@ export default async function DashboardPage() {
               {totalOrganizations}
             </p>
 
-            <p className="mt-1 text-xs text-zinc-500">
+            <p className="mt-1 text-xs text-surface-muted">
               Organizations
             </p>
 
@@ -825,28 +780,13 @@ export default async function DashboardPage() {
 
           <Link
             href="/dashboard/organizations"
-            className="
-              group rounded-2xl
-              border border-white/[0.07]
-              bg-[#111113]/70
-              p-5
-              backdrop-blur-xl
-              transition-all duration-200
-              hover:-translate-y-0.5
-              hover:border-white/[0.12]
-              hover:bg-[#151517]/80
-            "
+            className="sg-surface group p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-surface-accent-edge hover:bg-surface-hover sg-interactive"
           >
 
             <div className="flex items-center justify-between">
 
               <div
-                className="
-                  flex h-9 w-9 items-center justify-center
-                  rounded-xl
-                  border border-white/[0.07]
-                  bg-white/[0.035]
-                "
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-surface-edge bg-white/[0.035]"
               >
                 <UsersRound
                   size={17}
@@ -865,7 +805,7 @@ export default async function DashboardPage() {
               {totalClients}
             </p>
 
-            <p className="mt-1 text-xs text-zinc-500">
+            <p className="mt-1 text-xs text-surface-muted">
               Clients managed
             </p>
 
@@ -874,28 +814,13 @@ export default async function DashboardPage() {
           {/* SITES */}
 
           <div
-            className="
-              group rounded-2xl
-              border border-white/[0.07]
-              bg-[#111113]/70
-              p-5
-              backdrop-blur-xl
-              transition-all duration-200
-              hover:-translate-y-0.5
-              hover:border-white/[0.12]
-              hover:bg-[#151517]/80
-            "
+            className="sg-surface group p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-surface-accent-edge hover:bg-surface-hover"
           >
 
             <div className="flex items-center justify-between">
 
               <div
-                className="
-                  flex h-9 w-9 items-center justify-center
-                  rounded-xl
-                  border border-white/[0.07]
-                  bg-white/[0.035]
-                "
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-surface-edge bg-white/[0.035]"
               >
                 <MapPin
                   size={17}
@@ -913,7 +838,7 @@ export default async function DashboardPage() {
               {totalSites}
             </p>
 
-            <p className="mt-1 text-xs text-zinc-500">
+            <p className="mt-1 text-xs text-surface-muted">
               Sites
             </p>
 
@@ -922,28 +847,13 @@ export default async function DashboardPage() {
           {/* DEVICES */}
 
           <div
-            className="
-              group rounded-2xl
-              border border-white/[0.07]
-              bg-[#111113]/70
-              p-5
-              backdrop-blur-xl
-              transition-all duration-200
-              hover:-translate-y-0.5
-              hover:border-white/[0.12]
-              hover:bg-[#151517]/80
-            "
+            className="sg-surface group p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-surface-accent-edge hover:bg-surface-hover"
           >
 
             <div className="flex items-center justify-between">
 
               <div
-                className="
-                  flex h-9 w-9 items-center justify-center
-                  rounded-xl
-                  border border-white/[0.07]
-                  bg-white/[0.035]
-                "
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-surface-edge bg-white/[0.035]"
               >
                 <MonitorCog
                   size={17}
@@ -955,7 +865,7 @@ export default async function DashboardPage() {
 
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
 
-                <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-zinc-600">
+                <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-surface-muted">
                   {onlineDevices} active
                 </span>
 
@@ -967,7 +877,7 @@ export default async function DashboardPage() {
               {totalDevices}
             </p>
 
-            <p className="mt-1 text-xs text-zinc-500">
+            <p className="mt-1 text-xs text-surface-muted">
               Managed devices
             </p>
 
@@ -986,34 +896,24 @@ export default async function DashboardPage() {
           ==================================================== */}
 
           <div
-            className="
-              overflow-hidden rounded-2xl
-              border border-white/[0.07]
-              bg-[#111113]/70
-              backdrop-blur-xl
-            "
+            className="sg-surface overflow-hidden"
           >
 
-            <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">
+            <div className="flex items-center justify-between border-b border-surface-edge px-5 py-4">
 
               <div>
-                <h2 className="text-sm font-medium text-zinc-200">
+                <h2 className="sg-section-title font-medium text-zinc-200">
                   Recent devices
                 </h2>
 
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="mt-1 text-xs text-surface-muted">
                   Latest devices reporting to SentinelGrid.
                 </p>
               </div>
 
               <Link
                 href="/dashboard/organizations"
-                className="
-                  flex items-center gap-1.5
-                  text-xs font-medium text-zinc-500
-                  transition-colors duration-200
-                  hover:text-white
-                "
+                className="flex items-center gap-1.5 text-xs font-medium text-surface-muted transition-colors duration-200 hover:text-white"
               >
                 View infrastructure
 
@@ -1027,16 +927,11 @@ export default async function DashboardPage() {
               <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
 
                 <div
-                  className="
-                    flex h-11 w-11 items-center justify-center
-                    rounded-xl
-                    border border-white/[0.07]
-                    bg-white/[0.035]
-                  "
+                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-surface-edge bg-white/[0.035]"
                 >
                   <MonitorCog
                     size={19}
-                    className="text-zinc-500"
+                    className="text-surface-muted"
                   />
                 </div>
 
@@ -1044,24 +939,14 @@ export default async function DashboardPage() {
                   No devices enrolled
                 </p>
 
-                <p className="mt-1 max-w-sm text-xs leading-5 text-zinc-500">
+                <p className="mt-1 max-w-sm text-xs leading-5 text-surface-muted">
                   Install the SentinelGrid Agent on a device to start receiving
                   inventory, status and health information.
                 </p>
 
                 <Link
                   href={enrollDeviceHref}
-                  className="
-                    mt-5 inline-flex h-8 items-center gap-1.5
-                    rounded-lg
-                    border border-white/[0.08]
-                    bg-white/[0.04]
-                    px-3
-                    text-xs font-medium text-zinc-300
-                    transition-all duration-200
-                    hover:bg-white/[0.08]
-                    hover:text-white
-                  "
+                  className="sg-button sg-button-secondary sg-button-sm mt-5 duration-200"
                 >
                   <Plus size={13} />
 
@@ -1115,7 +1000,7 @@ export default async function DashboardPage() {
                           group flex items-center gap-4
                           px-5 py-4
                           transition-colors duration-150
-                          hover:bg-white/[0.025]
+                          hover:bg-surface-hover
                           ${
                             index !==
                             recentDevices.length - 1
@@ -1162,14 +1047,14 @@ export default async function DashboardPage() {
                             </p>
 
                             {model && (
-                              <span className="hidden truncate text-[10px] text-zinc-600 md:inline">
+                              <span className="hidden truncate text-[10px] text-surface-muted md:inline">
                                 {model}
                               </span>
                             )}
 
                           </div>
 
-                          <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-zinc-500">
+                          <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-surface-muted">
 
                             <span className="truncate">
                               {client?.name ||
@@ -1199,7 +1084,7 @@ export default async function DashboardPage() {
                             )}
                           </p>
 
-                          <p className="mt-0.5 text-[10px] uppercase tracking-wider text-zinc-600">
+                          <p className="mt-0.5 text-[10px] uppercase tracking-wider text-surface-muted">
                             Operating system
                           </p>
 
@@ -1213,7 +1098,7 @@ export default async function DashboardPage() {
                             )}
                           </p>
 
-                          <p className="mt-0.5 text-[10px] uppercase tracking-wider text-zinc-600">
+                          <p className="mt-0.5 text-[10px] uppercase tracking-wider text-surface-muted">
                             Last seen
                           </p>
 
@@ -1221,34 +1106,7 @@ export default async function DashboardPage() {
 
                         <div className="flex min-w-[80px] justify-end">
 
-                          <span
-                            className={`
-                              inline-flex items-center gap-1.5
-                              rounded-full
-                              px-2.5 py-1
-                              text-[11px] font-medium
-                              ${classes.badge}
-                            `}
-                          >
-                            <span
-                              className={`
-                                h-1.5 w-1.5 rounded-full
-                                ${classes.dot}
-                              `}
-                            />
-
-                            {status ===
-                            "online"
-                              ? "Online"
-                              : status ===
-                                  "offline"
-                                ? "Offline"
-                                : status ===
-                                    "warning"
-                                  ? "Warning"
-                                  : "Unknown"}
-
-                          </span>
+                          <StatusBadge status={status} />
 
                         </div>
 
@@ -1268,39 +1126,26 @@ export default async function DashboardPage() {
           ==================================================== */}
 
           <div
-            className="
-              overflow-hidden rounded-2xl
-              border border-white/[0.07]
-              bg-[#111113]/70
-              backdrop-blur-xl
-            "
+            className="sg-surface overflow-hidden"
           >
 
-            <div className="border-b border-white/[0.06] px-5 py-4">
+            <div className="border-b border-surface-edge px-5 py-4">
 
               <div className="flex items-center justify-between gap-4">
 
                 <div>
-                  <h2 className="text-sm font-medium text-zinc-200">
+                  <h2 className="sg-section-title font-medium text-zinc-200">
                     Needs attention
                   </h2>
 
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-surface-muted">
                     Devices currently reporting issues.
                   </p>
                 </div>
 
                 {issues > 0 && (
                   <div
-                    className="
-                      flex h-8 min-w-8 items-center justify-center
-                      rounded-lg
-                      border border-amber-500/15
-                      bg-amber-500/[0.07]
-                      px-2
-                      text-xs font-medium
-                      text-amber-400
-                    "
+                    className="flex h-8 min-w-8 items-center justify-center rounded-lg border border-amber-500/15 bg-amber-500/[0.07] px-2 text-xs font-medium text-amber-400"
                   >
                     {issues}
                   </div>
@@ -1316,12 +1161,7 @@ export default async function DashboardPage() {
               <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
 
                 <div
-                  className="
-                    flex h-10 w-10 items-center justify-center
-                    rounded-xl
-                    border border-emerald-500/15
-                    bg-emerald-500/[0.07]
-                  "
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-500/15 bg-emerald-500/[0.07]"
                 >
                   <CircleCheck
                     size={17}
@@ -1333,7 +1173,7 @@ export default async function DashboardPage() {
                   Everything looks good
                 </p>
 
-                <p className="mt-1 text-xs leading-5 text-zinc-500">
+                <p className="mt-1 text-xs leading-5 text-surface-muted">
                   No devices currently require attention.
                 </p>
 
@@ -1371,7 +1211,7 @@ export default async function DashboardPage() {
                           group flex items-center gap-3
                           px-5 py-4
                           transition-colors
-                          hover:bg-white/[0.025]
+                          hover:bg-surface-hover
                           ${
                             index !==
                             attentionDevices.length -
@@ -1417,7 +1257,7 @@ export default async function DashboardPage() {
                             )}
                           </p>
 
-                          <p className="mt-0.5 truncate text-[11px] text-zinc-600">
+                          <p className="mt-0.5 truncate text-[11px] text-surface-muted">
                             {client?.name ||
                               "Unknown client"}
                           </p>
@@ -1443,7 +1283,7 @@ export default async function DashboardPage() {
                               : "Warning"}
                           </p>
 
-                          <p className="mt-0.5 text-[10px] text-zinc-600">
+                          <p className="mt-0.5 text-[10px] text-surface-muted">
                             {formatLastSeen(
                               device.last_seen
                             )}
@@ -1475,30 +1315,24 @@ export default async function DashboardPage() {
           ==================================================== */}
 
           <div
-            className="
-              rounded-2xl
-              border border-white/[0.07]
-              bg-[#111113]/70
-              p-5
-              backdrop-blur-xl
-            "
+            className="sg-surface p-5"
           >
 
             <div className="flex items-center justify-between">
 
               <div>
-                <h2 className="text-sm font-medium text-zinc-200">
+                <h2 className="sg-section-title font-medium text-zinc-200">
                   Client infrastructure
                 </h2>
 
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="mt-1 text-xs text-surface-muted">
                   Device distribution across your clients.
                 </p>
               </div>
 
               <Server
                 size={17}
-                className="text-zinc-600"
+                className="text-surface-muted"
               />
 
             </div>
@@ -1515,7 +1349,7 @@ export default async function DashboardPage() {
                     className="mx-auto text-zinc-700"
                   />
 
-                  <p className="mt-3 text-xs text-zinc-500">
+                  <p className="mt-3 text-xs text-surface-muted">
                     No clients available yet.
                   </p>
 
@@ -1561,7 +1395,7 @@ export default async function DashboardPage() {
 
                           <div className="flex shrink-0 items-center gap-3">
 
-                            <span className="text-[11px] text-zinc-600">
+                            <span className="text-[11px] text-surface-muted">
                               {online}/
                               {deviceCount} online
                             </span>
@@ -1577,11 +1411,7 @@ export default async function DashboardPage() {
                         <div className="h-1 overflow-hidden rounded-full bg-white/[0.05]">
 
                           <div
-                            className="
-                              h-full rounded-full
-                              bg-emerald-400/80
-                              transition-all duration-500
-                            "
+                            className="h-full rounded-full bg-emerald-400/80 transition-all duration-500"
                             style={{
                               width: `${percentage}%`,
                             }}
@@ -1605,21 +1435,15 @@ export default async function DashboardPage() {
           ==================================================== */}
 
           <div
-            className="
-              rounded-2xl
-              border border-white/[0.07]
-              bg-[#111113]/70
-              p-5
-              backdrop-blur-xl
-            "
+            className="sg-surface p-5"
           >
 
             <div>
-              <h2 className="text-sm font-medium text-zinc-200">
+              <h2 className="sg-section-title font-medium text-zinc-200">
                 Quick actions
               </h2>
 
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-surface-muted">
                 Common SentinelGrid management tasks.
               </p>
             </div>
@@ -1630,28 +1454,15 @@ export default async function DashboardPage() {
 
               <Link
                 href="/dashboard/organizations"
-                className="
-                  group flex items-center gap-3
-                  rounded-xl
-                  border border-transparent
-                  p-3
-                  transition-all duration-200
-                  hover:border-white/[0.06]
-                  hover:bg-white/[0.035]
-                "
+                className="sg-button sg-button-secondary group duration-200"
               >
 
                 <div
-                  className="
-                    flex h-9 w-9 shrink-0 items-center justify-center
-                    rounded-lg
-                    border border-white/[0.07]
-                    bg-white/[0.035]
-                  "
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-surface-edge bg-white/[0.035]"
                 >
                   <Building2
                     size={15}
-                    className="text-zinc-500 transition-colors group-hover:text-white"
+                    className="text-surface-muted transition-colors group-hover:text-white"
                   />
                 </div>
 
@@ -1661,7 +1472,7 @@ export default async function DashboardPage() {
                     Organizations
                   </p>
 
-                  <p className="mt-0.5 text-[11px] text-zinc-600">
+                  <p className="mt-0.5 text-[11px] text-surface-muted">
                     Manage infrastructure
                   </p>
 
@@ -1678,28 +1489,15 @@ export default async function DashboardPage() {
 
               <Link
                 href={addClientHref}
-                className="
-                  group flex items-center gap-3
-                  rounded-xl
-                  border border-transparent
-                  p-3
-                  transition-all duration-200
-                  hover:border-white/[0.06]
-                  hover:bg-white/[0.035]
-                "
+                className="sg-button sg-button-secondary group duration-200"
               >
 
                 <div
-                  className="
-                    flex h-9 w-9 shrink-0 items-center justify-center
-                    rounded-lg
-                    border border-white/[0.07]
-                    bg-white/[0.035]
-                  "
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-surface-edge bg-white/[0.035]"
                 >
                   <UsersRound
                     size={15}
-                    className="text-zinc-500 transition-colors group-hover:text-white"
+                    className="text-surface-muted transition-colors group-hover:text-white"
                   />
                 </div>
 
@@ -1709,7 +1507,7 @@ export default async function DashboardPage() {
                     Add client
                   </p>
 
-                  <p className="mt-0.5 text-[11px] text-zinc-600">
+                  <p className="mt-0.5 text-[11px] text-surface-muted">
                     Create managed client
                   </p>
 
@@ -1726,28 +1524,15 @@ export default async function DashboardPage() {
 
               <Link
                 href={enrollDeviceHref}
-                className="
-                  group flex items-center gap-3
-                  rounded-xl
-                  border border-transparent
-                  p-3
-                  transition-all duration-200
-                  hover:border-white/[0.06]
-                  hover:bg-white/[0.035]
-                "
+                className="sg-button sg-button-secondary group duration-200"
               >
 
                 <div
-                  className="
-                    flex h-9 w-9 shrink-0 items-center justify-center
-                    rounded-lg
-                    border border-white/[0.07]
-                    bg-white/[0.035]
-                  "
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-surface-edge bg-white/[0.035]"
                 >
                   <MonitorCog
                     size={15}
-                    className="text-zinc-500 transition-colors group-hover:text-white"
+                    className="text-surface-muted transition-colors group-hover:text-white"
                   />
                 </div>
 
@@ -1757,7 +1542,7 @@ export default async function DashboardPage() {
                     Enroll device
                   </p>
 
-                  <p className="mt-0.5 text-[11px] text-zinc-600">
+                  <p className="mt-0.5 text-[11px] text-surface-muted">
                     Install SentinelGrid Agent
                   </p>
 
@@ -1774,28 +1559,15 @@ export default async function DashboardPage() {
 
               <Link
                 href="/dashboard/monitors"
-                className="
-                  group flex items-center gap-3
-                  rounded-xl
-                  border border-transparent
-                  p-3
-                  transition-all duration-200
-                  hover:border-white/[0.06]
-                  hover:bg-white/[0.035]
-                "
+                className="sg-button sg-button-secondary group duration-200"
               >
 
                 <div
-                  className="
-                    flex h-9 w-9 shrink-0 items-center justify-center
-                    rounded-lg
-                    border border-white/[0.07]
-                    bg-white/[0.035]
-                  "
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-surface-edge bg-white/[0.035]"
                 >
                   <Globe2
                     size={15}
-                    className="text-zinc-500 transition-colors group-hover:text-white"
+                    className="text-surface-muted transition-colors group-hover:text-white"
                   />
                 </div>
 
@@ -1805,7 +1577,7 @@ export default async function DashboardPage() {
                     Service monitors
                   </p>
 
-                  <p className="mt-0.5 text-[11px] text-zinc-600">
+                  <p className="mt-0.5 text-[11px] text-surface-muted">
                     Website monitoring
                   </p>
 
@@ -1830,7 +1602,7 @@ export default async function DashboardPage() {
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 px-2">
 
-          <div className="flex items-center gap-2 text-[11px] text-zinc-600">
+          <div className="flex items-center gap-2 text-[11px] text-surface-muted">
 
             <Clock3 size={12} />
 
@@ -1838,7 +1610,7 @@ export default async function DashboardPage() {
 
           </div>
 
-          <div className="flex items-center gap-4 text-[11px] text-zinc-600">
+          <div className="flex items-center gap-4 text-[11px] text-surface-muted">
 
             {unknownDevices > 0 && (
               <span>
@@ -1858,6 +1630,6 @@ export default async function DashboardPage() {
         </div>
 
       </div>
-    </main>
+    </div>
   );
 }

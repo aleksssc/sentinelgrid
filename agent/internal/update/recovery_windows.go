@@ -47,15 +47,18 @@ func recoveryPass(ctx context.Context, first bool) (scanned bool, resultErr erro
 		return false, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, host.ClosePins(), unlock()) }()
-	if err := host.CanDispatch(ctx); err != nil {
-		return true, err
-	}
 	state, err := host.Load()
 	if err != nil {
 		return true, err
 	}
 	if state.Error == "ROLLBACK_FAILED" {
 		return true, nil
+	}
+	if state.Pending != nil && state.Pending.Schema == 2 {
+		return true, recoverMSILocked(ctx, host, state)
+	}
+	if err := host.CanDispatch(ctx); err != nil {
+		return true, err
 	}
 	if first || state.Status == "installing" || state.Status == "restarting" || (state.Status == "failed" && state.CompletedAt.IsZero()) || state.Status == "downloading" {
 		return true, RecoverLocked(ctx, host, state)

@@ -177,9 +177,9 @@ export default async function ClientSettingsPage({
   ========================================================== */
 
   return (
-    <main className="p-8">
+    <div className="sg-page-shell">
 
-      <div className="mx-auto max-w-4xl">
+      <div className="sg-page">
 
         {/* =====================================================
                             BACK
@@ -187,16 +187,7 @@ export default async function ClientSettingsPage({
 
         <Link
           href={`/dashboard/organizations/${organization.id}/clients/${client.id}`}
-          className="
-            mb-6
-            inline-flex
-            items-center
-            gap-2
-            text-sm
-            text-zinc-500
-            transition
-            hover:text-white
-          "
+          className="mb-6 inline-flex items-center gap-2 text-sm text-surface-muted transition hover:text-white"
         >
           <ArrowLeft size={16} />
 
@@ -210,24 +201,12 @@ export default async function ClientSettingsPage({
         <div className="mb-8">
 
           <div
-            className="
-              mb-5
-              flex
-              h-12
-              w-12
-              items-center
-              justify-center
-              rounded-xl
-              border
-              border-zinc-800
-              bg-zinc-900
-              text-zinc-400
-            "
+            className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-surface-edge bg-surface text-zinc-400"
           >
             <Settings size={22} />
           </div>
 
-          <h1 className="text-3xl font-bold">
+          <h1 className="sg-page-title">
             Client settings
           </h1>
 
@@ -263,6 +242,6 @@ export default async function ClientSettingsPage({
 
       </div>
 
-    </main>
+    </div>
   );
 }

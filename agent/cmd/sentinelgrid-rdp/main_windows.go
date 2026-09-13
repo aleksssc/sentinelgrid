@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+	buildinfo "sentinelgrid/agent"
 	"sentinelgrid/agent/internal/rdp"
 )
 
@@ -92,8 +93,21 @@ func run(path string) error {
 }
 
 func main() {
+	version := flag.Bool("version", false, "Show RDP product version")
+	channel := flag.Bool("release-channel", false, "Show embedded release channel")
 	path := flag.String("connection", "", "One-time .sgrdp file downloaded from Device View (consumed and removed)")
 	flag.Parse()
+	if *version || *channel {
+		if *path != "" || flag.NArg() != 0 || (*version && *channel) {
+			log.Fatal("Conflicting RDP diagnostic modes")
+		}
+		if *version {
+			fmt.Printf("SentinelGrid RDP %s\n", buildinfo.Version())
+		} else {
+			fmt.Println(buildinfo.Channel)
+		}
+		return
+	}
 	if flag.NArg() != 0 || *path == "" {
 		log.Fatal("Usage: SentinelGridRDP.exe -connection <download.sgrdp>")
 	}

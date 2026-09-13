@@ -147,17 +147,17 @@ export default function DeviceEnrollment({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
+    <div className="sg-surface overflow-hidden">
 
       {/* =========================
           HEADER
       ========================= */}
 
-      <div className="border-b border-zinc-800 px-6 py-5">
+      <div className="border-b border-surface-edge px-6 py-5">
 
         <div className="flex items-start gap-4">
 
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-[#08090b] text-zinc-500">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-surface-edge bg-surface-inset text-surface-muted">
 
             <Laptop
               size={19}
@@ -167,11 +167,11 @@ export default function DeviceEnrollment({
 
           <div>
 
-            <h2 className="text-base font-semibold text-white">
+            <h2 className="sg-section-title text-white">
               Deploy SentinelGrid Agent
             </h2>
 
-            <p className="mt-1 text-sm text-zinc-500">
+            <p className="mt-1 text-sm text-surface-muted">
               Generate and download
               the SentinelGrid Agent
               installer for this
@@ -204,7 +204,7 @@ export default function DeviceEnrollment({
                 Operating system
               </label>
 
-              <p className="mt-1 text-xs text-zinc-600">
+              <p className="mt-1 text-xs text-surface-muted">
                 Select the operating
                 system of the target
                 device.
@@ -224,8 +224,8 @@ export default function DeviceEnrollment({
                   className={`flex min-h-[76px] flex-col justify-center rounded-xl border px-4 py-3 text-left transition ${
                     operatingSystem ===
                     "windows"
-                      ? "border-zinc-600 bg-[#1b1c1f] text-white"
-                      : "border-zinc-800 bg-[#090a0c] text-zinc-500 hover:border-zinc-700 hover:bg-[#101114] hover:text-zinc-300"
+                      ? "border-surface-accent-edge bg-surface-selected text-surface-accent"
+                      : "border-zinc-800 bg-surface-inset text-surface-muted hover:border-surface-accent-edge hover:bg-surface-hover hover:text-zinc-300"
                   }`}
                 >
 
@@ -233,7 +233,7 @@ export default function DeviceEnrollment({
                     Windows
                   </span>
 
-                  <span className="mt-1 text-xs text-zinc-600">
+                  <span className="mt-1 text-xs text-surface-muted">
                     MSI · x64
                   </span>
 
@@ -244,14 +244,14 @@ export default function DeviceEnrollment({
                 <button
                   type="button"
                   disabled
-                  className="flex min-h-[76px] cursor-not-allowed flex-col justify-center rounded-xl border border-zinc-800 bg-[#090a0c] px-4 py-3 text-left opacity-45"
+                  className="sg-button sg-button-secondary min-h-[76px] cursor-not-allowed flex-col text-left opacity-45"
                 >
 
                   <span className="text-sm font-medium text-zinc-400">
                     macOS
                   </span>
 
-                  <span className="mt-1 text-xs text-zinc-600">
+                  <span className="mt-1 text-xs text-surface-muted">
                     Coming soon
                   </span>
 
@@ -262,14 +262,14 @@ export default function DeviceEnrollment({
                 <button
                   type="button"
                   disabled
-                  className="flex min-h-[76px] cursor-not-allowed flex-col justify-center rounded-xl border border-zinc-800 bg-[#090a0c] px-4 py-3 text-left opacity-45"
+                  className="sg-button sg-button-secondary min-h-[76px] cursor-not-allowed flex-col text-left opacity-45"
                 >
 
                   <span className="text-sm font-medium text-zinc-400">
                     Linux
                   </span>
 
-                  <span className="mt-1 text-xs text-zinc-600">
+                  <span className="mt-1 text-xs text-surface-muted">
                     Coming soon
                   </span>
 
@@ -289,7 +289,7 @@ export default function DeviceEnrollment({
                 Site
               </label>
 
-              <p className="mt-1 text-xs text-zinc-600">
+              <p className="mt-1 text-xs text-surface-muted">
                 Assign the device to a
                 site during enrollment.
               </p>
@@ -306,8 +306,8 @@ export default function DeviceEnrollment({
                   }
                   className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition ${
                     siteOpen
-                      ? "border-zinc-600 bg-[#101114]"
-                      : "border-zinc-800 bg-[#090a0c] hover:border-zinc-700"
+                      ? "border-surface-accent-edge bg-surface-selected"
+                      : "border-zinc-800 bg-surface-inset hover:border-surface-accent-edge"
                   }`}
                 >
 
@@ -342,7 +342,7 @@ export default function DeviceEnrollment({
 
                 {siteOpen && (
 
-                  <div className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-xl border border-zinc-800 bg-[#111214] shadow-2xl">
+                  <div className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-xl border border-surface-edge bg-surface-raised shadow-2xl">
 
                     <button
                       type="button"
@@ -352,8 +352,8 @@ export default function DeviceEnrollment({
                       }}
                       className={`flex w-full items-center px-4 py-3 text-left text-sm transition ${
                         siteId === ""
-                          ? "bg-zinc-800 text-white"
-                          : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                          ? "bg-surface-selected text-surface-accent"
+                          : "text-zinc-400 hover:bg-surface-hover hover:text-white"
                       }`}
                     >
                       No site
@@ -379,8 +379,8 @@ export default function DeviceEnrollment({
                           className={`flex w-full items-center px-4 py-3 text-left text-sm transition ${
                             siteId ===
                             site.id
-                              ? "bg-zinc-800 text-white"
-                              : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                              ? "bg-surface-selected text-surface-accent"
+                              : "text-zinc-400 hover:bg-surface-hover hover:text-white"
                           }`}
                         >
                           {
@@ -415,9 +415,9 @@ export default function DeviceEnrollment({
                 FOOTER
             ========================= */}
 
-            <div className="flex flex-wrap items-center justify-between gap-4 border-t border-zinc-800 pt-5">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-t border-surface-edge pt-5">
 
-              <p className="text-xs text-zinc-600">
+              <p className="text-xs text-surface-muted">
                 The installer will be
                 linked to this client
                 and site.
@@ -433,7 +433,7 @@ export default function DeviceEnrollment({
                   operatingSystem !==
                     "windows"
                 }
-                className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+                className="sg-button sg-button-primary disabled:cursor-not-allowed disabled:opacity-40"
               >
 
                 {loading ? (
@@ -484,7 +484,7 @@ export default function DeviceEnrollment({
                     Installer ready
                   </p>
 
-                  <p className="mt-1 text-xs leading-5 text-zinc-500">
+                  <p className="mt-1 text-xs leading-5 text-surface-muted">
                     This installer is
                     valid for 30
                     minutes and can
@@ -493,7 +493,7 @@ export default function DeviceEnrollment({
 
                   {expiresAt && (
 
-                    <p className="mt-1 text-xs text-zinc-600">
+                    <p className="mt-1 text-xs text-surface-muted">
                       Expires{" "}
                       {new Date(
                         expiresAt
@@ -512,13 +512,13 @@ export default function DeviceEnrollment({
                 WINDOWS INSTALLER
             ========================= */}
 
-            <div className="mt-5 rounded-xl border border-zinc-800 bg-[#090a0c] p-4">
+            <div className="mt-5 rounded-xl border border-surface-edge bg-surface-inset p-4">
 
               <div className="flex flex-wrap items-center justify-between gap-4">
 
                 <div className="flex items-center gap-4">
 
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-800 bg-[#08090b] text-zinc-500">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-surface-edge bg-surface-inset text-surface-muted">
 
                     <MonitorDown
                       size={18}
@@ -532,7 +532,7 @@ export default function DeviceEnrollment({
                       Windows Installer
                     </p>
 
-                    <p className="mt-1 text-xs text-zinc-600">
+                    <p className="mt-1 text-xs text-surface-muted">
                       SentinelGrid Agent
                       · x64 · MSI
                     </p>
@@ -545,7 +545,7 @@ export default function DeviceEnrollment({
                   href={`/api/agent/download?token=${encodeURIComponent(
                     token
                   )}`}
-                  className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
+                  className="sg-button sg-button-primary"
                 >
 
                   <Download
@@ -564,14 +564,14 @@ export default function DeviceEnrollment({
                 RESET
             ========================= */}
 
-            <div className="mt-5 flex justify-end border-t border-zinc-800 pt-5">
+            <div className="mt-5 flex justify-end border-t border-surface-edge pt-5">
 
               <button
                 type="button"
                 onClick={
                   resetPackage
                 }
-                className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-[#111214] px-4 py-2.5 text-sm font-medium text-zinc-400 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+                className="sg-button sg-button-secondary"
               >
 
                 <RefreshCw

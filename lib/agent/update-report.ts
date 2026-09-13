@@ -5,6 +5,7 @@ const ERRORS = new Set(["CHECK_FAILED", "DOWNLOAD_FAILED", "VERIFICATION_FAILED"
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 export type UpdateReport = {
+  msi_exit_code?: number;
   update_status: string;
   update_target_version?: string;
   update_error?: string;
@@ -15,16 +16,20 @@ export type UpdateReport = {
 export function parseUpdateReport(value: unknown): UpdateReport {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_UPDATE_REPORT");
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some((key) => !["update_status", "update_target_version", "update_error", "transaction_id", "command_id"].includes(key)) ||
+  if (Object.keys(input).some((key) => !["update_status", "update_target_version", "update_error", "transaction_id", "command_id", "msi_exit_code"].includes(key)) ||
     typeof input.update_status !== "string" || !STATES.has(input.update_status)) throw new Error("INVALID_UPDATE_REPORT");
   if (input.update_target_version !== undefined) parseVersion(input.update_target_version);
+  if (input.msi_exit_code !== undefined && (typeof input.msi_exit_code !== "number" || !Number.isInteger(input.msi_exit_code) ||
+      input.msi_exit_code < 0 || input.msi_exit_code > 65535 || input.transaction_id === undefined)) throw new Error("INVALID_MSI_EXIT_CODE");
   if (input.update_error !== undefined && (typeof input.update_error !== "string" || !ERRORS.has(input.update_error))) throw new Error("INVALID_UPDATE_ERROR");
+  if (input.update_status === "succeeded" && input.msi_exit_code !== undefined && input.msi_exit_code !== 0 && input.msi_exit_code !== 3010) throw new Error("INVALID_MSI_SUCCESS");
   for (const field of ["transaction_id", "command_id"]) {
     if (input[field] !== undefined && (typeof input[field] !== "string" || !UUID.test(input[field]))) throw new Error("INVALID_UPDATE_CORRELATION");
   }
   if ((input.command_id !== undefined && input.transaction_id === undefined) ||
     (input.transaction_id !== undefined && input.update_target_version === undefined)) throw new Error("INVALID_UPDATE_CORRELATION");
   return {
+    msi_exit_code: typeof input.msi_exit_code === "number" ? input.msi_exit_code : undefined,
     update_status: input.update_status,
     update_target_version: typeof input.update_target_version === "string" ? input.update_target_version : undefined,
     update_error: typeof input.update_error === "string" ? input.update_error : undefined,

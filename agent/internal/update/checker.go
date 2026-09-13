@@ -44,6 +44,7 @@ func updateRequest(ctx context.Context, cfg *config.Config, path string, body an
 	}
 	request.Header.Set("Authorization", "Bearer "+cfg.AgentToken)
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-SentinelGrid-Update-Protocol", "2")
 	response, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("update API network failure")

@@ -135,7 +135,7 @@ export function SettingsNotice({
         items-center
         gap-2
         border-b
-        border-zinc-800
+        border-surface-edge
         bg-emerald-500/[0.025]
         px-6
         py-3

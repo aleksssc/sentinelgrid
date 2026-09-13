@@ -1,3 +1,5 @@
+import { RoleBadge } from "@/components/dashboard/dashboard-badges";
+import { PageHeader, CompactSummary, SectionHeader } from "@/components/dashboard/dashboard-primitives";
 import Link from "next/link";
 
 import { connection } from "next/server";
@@ -8,13 +10,11 @@ import { createClient } from "@/lib/supabase/server";
 import OrganizationClients from "./organization-clients";
 
 import {
-  ArrowLeft,
   Building2,
   Plus,
   Settings,
   Server,
   MapPin,
-  ShieldCheck,
 } from "lucide-react";
 
 export default async function OrganizationDetailsPage({
@@ -228,210 +228,44 @@ export default async function OrganizationDetailsPage({
   }
 
   return (
-    <main className="p-8">
+    <div className="sg-page-shell">
 
-      <div className="mx-auto max-w-7xl">
+      <div className="sg-page">
 
         {/* =========================
             HEADER
         ========================= */}
 
-        <div className="mb-8 flex flex-wrap items-start justify-between gap-6">
+        <PageHeader compact
+          title={organization.name}
+          icon={<Building2 size={19} />}
+          badge={(isOwner || isAdmin || isMember) && <RoleBadge role={isOwner ? "owner" : isAdmin ? "admin" : "member"} />}
+          description={organization.description || "Manage your clients, sites and devices."}
+          actions={<>
+            {canManageOrganization && <Link href={`/dashboard/organizations/${organization.id}/settings`} className="sg-button sg-button-secondary sg-button-sm"><Settings size={15} />Settings</Link>}
+            {canManageInfrastructure && <Link href={`/dashboard/organizations/${organization.id}/clients/new`} className="sg-button sg-button-primary sg-button-sm"><Plus size={15} />Add client</Link>}
+          </>}
+        />
+        <CompactSummary label="Organization infrastructure summary" items={[
+          { label: "Clients", value: clientsCount, icon: <Building2 size={14} /> },
+          { label: "Sites", value: sitesCount, icon: <MapPin size={14} /> },
+          { label: "Devices", value: devicesCount, icon: <Server size={14} /> },
+        ]} />
 
-          {/* LEFT */}
-
-          <div className="flex items-start gap-5">
-
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-[#0d0f12] text-zinc-400">
-              <Building2 size={24} />
-            </div>
-
-            <div>
-
-              <div className="flex flex-wrap items-center gap-3">
-
-                <h1 className="text-3xl font-bold">
-                  {organization.name}
-                </h1>
-
-                {/* =========================
-                    ROLE BADGE
-                ========================= */}
-
-                {isOwner ? (
-
-                  <div className="flex items-center gap-1.5 rounded-full border border-red-500/25 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-400">
-                    <ShieldCheck size={12} />
-                    Owner
-                  </div>
-
-                ) : isAdmin ? (
-
-                  <div className="flex items-center gap-1.5 rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1 text-xs font-medium text-violet-400">
-                    <ShieldCheck size={12} />
-                    Admin
-                  </div>
-
-                ) : isMember ? (
-
-                  <div className="flex items-center gap-1.5 rounded-full border border-blue-500/25 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-400">
-                    <ShieldCheck size={12} />
-                    Member
-                  </div>
-
-                ) : null}
-
-              </div>
-
-              <p className="mt-2 max-w-2xl text-zinc-400">
-                {organization.description ||
-                  "No description provided."}
-              </p>
-
-            </div>
-
-          </div>
-
-          {/* RIGHT */}
-
-          <div className="flex flex-wrap items-center justify-end gap-4">
-
-            {/* =========================
-                STATS
-            ========================= */}
-
-            <div className="flex flex-wrap items-center gap-4 rounded-xl border border-zinc-800 bg-[#0d0f12] px-4 py-2.5">
-
-              {/* CLIENTS */}
-
-              <div className="flex items-center gap-2">
-
-                <Building2
-                  size={15}
-                  className="text-zinc-600"
-                />
-
-                <span className="text-sm text-zinc-500">
-                  Clients
-                </span>
-
-                <span className="text-sm font-semibold text-white">
-                  {clientsCount}
-                </span>
-
-              </div>
-
-              <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
-
-              {/* SITES */}
-
-              <div className="flex items-center gap-2">
-
-                <MapPin
-                  size={15}
-                  className="text-zinc-600"
-                />
-
-                <span className="text-sm text-zinc-500">
-                  Sites
-                </span>
-
-                <span className="text-sm font-semibold text-white">
-                  {sitesCount}
-                </span>
-
-              </div>
-
-              <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
-
-              {/* DEVICES */}
-
-              <div className="flex items-center gap-2">
-
-                <Server
-                  size={15}
-                  className="text-zinc-600"
-                />
-
-                <span className="text-sm text-zinc-500">
-                  Devices
-                </span>
-
-                <span className="text-sm font-semibold text-white">
-                  {devicesCount}
-                </span>
-
-              </div>
-
-            </div>
-
-            {/* =========================
-                ACTIONS
-            ========================= */}
-
-            <div className="flex items-center gap-3">
-
-              {/* OWNER ONLY */}
-
-              {canManageOrganization && (
-                <Link
-                  href={`/dashboard/organizations/${organization.id}/settings`}
-                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-[#0d0f12] px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
-                >
-                  <Settings size={17} />
-
-                  Settings
-                </Link>
-              )}
-
-              {/* OWNER + ADMIN */}
-
-              {canManageInfrastructure && (
-                <Link
-                  href={`/dashboard/organizations/${organization.id}/clients/new`}
-                  className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
-                >
-                  <Plus size={17} />
-
-                  Add client
-                </Link>
-              )}
-
-            </div>
-
-          </div>
-
-        </div>
-
-        {/* =========================
-            CLIENTS
-        ========================= */}
-
-        <section className="rounded-2xl border border-zinc-800 bg-[#0d0f12] p-6">
+        <section className="sg-surface sg-clients-panel">
 
           {/* HEADER */}
 
-          <div className="mb-6">
-
-            <h2 className="text-lg font-semibold">
-              Clients
-            </h2>
-
-            <p className="mt-1 text-sm text-zinc-500">
-              {canManageInfrastructure
-                ? "Manage and access the clients connected to this organization."
-                : "View and access the clients connected to this organization."}
-            </p>
-
-          </div>
+          <SectionHeader title="Clients" description="Your managed workspaces" />
+          <div className="sg-panel-body">
 
           {/* EMPTY */}
 
           {clientList.length === 0 ? (
 
-            <div className="flex flex-col items-center rounded-2xl border border-dashed border-zinc-800 bg-[#090a0c] px-6 py-14 text-center">
+            <div className="sg-empty flex flex-col items-center text-center">
 
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-[#070809] text-zinc-500">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-surface-edge bg-surface-inset text-surface-muted">
                 <Building2 size={21} />
               </div>
 
@@ -439,7 +273,7 @@ export default async function OrganizationDetailsPage({
                 No clients configured
               </h3>
 
-              <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">
+              <p className="mt-2 max-w-md text-sm leading-6 text-surface-muted">
                 {canManageInfrastructure
                   ? "Create your first client to start managing sites, devices and security monitoring."
                   : "This organization does not have any clients configured yet."}
@@ -448,7 +282,7 @@ export default async function OrganizationDetailsPage({
               {canManageInfrastructure && (
                 <Link
                   href={`/dashboard/organizations/${organization.id}/clients/new`}
-                  className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
+                  className="sg-button sg-button-primary mt-6"
                 >
                   <Plus size={16} />
 
@@ -471,10 +305,11 @@ export default async function OrganizationDetailsPage({
 
           )}
 
+          </div>
         </section>
 
       </div>
 
-    </main>
+    </div>
   );
 }

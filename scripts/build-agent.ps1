@@ -143,7 +143,7 @@ try {
     & (Join-Path $PSScriptRoot 'prepare-agent-resources.ps1') -Version $Version
     $updaterExe = Join-Path $output 'SentinelGridUpdater.exe'
     $rdpExe = Join-Path $output 'SentinelGridRDP.exe'
-    Invoke-Checked $go @('build', '-trimpath', '-ldflags', '-s -w', '-o', $rdpExe, '.\cmd\sentinelgrid-rdp') 'RDP client build'
+    Invoke-Checked $go @('build', '-trimpath', '-ldflags', $ldflags, '-o', $rdpExe, '.\cmd\sentinelgrid-rdp') 'RDP client build'
     Invoke-Checked $go (@('build') + $buildTags + @('-trimpath', '-ldflags', $ldflags, '-o', $agentExe, '.\cmd\sentinelgrid-agent')) 'Agent build'
     Invoke-Checked $go (@('build') + $buildTags + @('-trimpath', '-ldflags', $ldflags, '-o', $updaterExe, '.\cmd\sentinelgrid-updater')) 'Updater build'
     $reportedVersion = & $agentExe -version
@@ -151,6 +151,8 @@ try {
     $reportedVersion = & $updaterExe -version
     if ($LASTEXITCODE -ne 0 -or $reportedVersion -ne "SentinelGrid Updater $Version") { throw 'Built updater reported the wrong version.' }
     Sign-Artifact $agentExe 'Agent signing'
+    $reportedVersion = & $rdpExe -version
+    if ($LASTEXITCODE -ne 0 -or $reportedVersion -ne "SentinelGrid RDP $Version") { throw 'Built RDP reported the wrong version.' }
     foreach ($executable in @($agentExe, $updaterExe, $rdpExe)) {
         $info = (Get-Item -LiteralPath $executable).VersionInfo
         if ($info.FileVersion -ne $Version -or $info.ProductVersion -ne $Version) { throw 'PE version resources do not match the package version.' }
@@ -167,7 +169,9 @@ try {
     }
     $msi = Join-Path $output 'SentinelGridAgent.msi'
     if (-not $SkipMSI) {
-        $msiArguments = @('build', (Join-Path $root 'installer\windows\Package.wxs'), '-arch', 'x64', '-d', "AgentVersion=$Version", '-d', "AgentChannel=$Channel", '-d', "AgentServer=$ServerURL", '-d', "AgentSource=$agentExe", '-d', "UpdaterSource=$updaterExe", '-o', $msi)
+        # MSI database creation can materialize only the 8.3 alias on some hosts.
+        $wixOutput = Join-Path $output 'package.msi'
+        $msiArguments = @('build', (Join-Path $root 'installer\windows\Package.wxs'), '-arch', 'x64', '-d', "AgentVersion=$Version", '-d', "AgentChannel=$Channel", '-d', "AgentServer=$ServerURL", '-d', "AgentSource=$agentExe", '-d', "UpdaterSource=$updaterExe", '-d', "RDPSource=$rdpExe", '-d', "UpdateDevelopment=$($DevSign.IsPresent.ToString().ToLowerInvariant())", '-d', "UpdateSigners=$(if ($TrustedSignerSHA256) { $TrustedSignerSHA256 } else { 'UNQUALIFIED' })", '-o', $wixOutput)
         if ($DevRepairProductCode -ne [guid]::Empty) {
             $installer = New-Object -ComObject WindowsInstaller.Installer
             try {
@@ -179,6 +183,7 @@ try {
             } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) }
         }
         Invoke-Checked $wix $msiArguments 'MSI build'
+        Move-Item -LiteralPath $wixOutput -Destination $msi -ErrorAction Stop
         Sign-Artifact $msi 'MSI signing'
     } else {
         $report['MSI build'] = 'SKIPPED (explicit -SkipMSI)'
@@ -186,6 +191,7 @@ try {
     }
     $manifest = [ordered]@{
         schema_version = 1; server_url = $ServerURL; product = 'SentinelGridAgent'; version = $Version; channel = $Channel
+        installation_artifact = 'msi'; update_protocol = 2
         platform = 'windows'; architecture = 'amd64'; built_at = [DateTime]::UtcNow.ToString('o')
         signed = $signEnabled; updater_qualified = $false; trusted_signer_sha256 = $pins
         development_update_build = $DevSign.IsPresent; qualification_requires_installed_windows_checks = $true
@@ -197,7 +203,7 @@ try {
     foreach ($entry in $artifacts.GetEnumerator()) {
         $file = Get-Item -LiteralPath $entry.Value
         $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-        $manifest[$entry.Key] = [ordered]@{ filename = $file.Name; sha256 = $hash; size = $file.Length }
+        $manifest[$entry.Key] = [ordered]@{ filename = $file.Name; version = $Version; sha256 = $hash; size = $file.Length }
         $checksums.Add("$hash  $($file.Name)")
     }
     $utf8 = [Text.UTF8Encoding]::new($false)

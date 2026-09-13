@@ -42,6 +42,10 @@ export async function POST(request: Request) {
       : await admin.rpc("report_agent_update", args);
     if (error) throw new UpdateAPIError("UPDATE_REPORT_FAILED", 503);
     if (!accepted) throw new UpdateAPIError("RATE_LIMITED", 429);
+    if (input.msi_exit_code !== undefined) {
+      console.info("[MSI_INSTALL_EXIT_CODE]", { device_id: device.id, transaction_id: input.transaction_id,
+        command_id: input.command_id, code: input.msi_exit_code, status: input.update_status });
+    }
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return updateErrorResponse(error);

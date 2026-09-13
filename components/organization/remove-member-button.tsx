@@ -35,23 +35,7 @@ export function RemoveMemberButton({
         onClick={() =>
           setConfirming(true)
         }
-        className="
-          flex
-          h-8
-          items-center
-          gap-1.5
-          rounded-lg
-          border
-          border-red-500/20
-          bg-red-500/[0.05]
-          px-3
-          text-xs
-          font-medium
-          text-red-400
-          transition
-          hover:bg-red-500/10
-          hover:border-red-500/30
-        "
+        className="sg-button sg-button-danger-solid sg-button-sm text-red-400"
       >
         <UserMinus size={13} />
 
@@ -61,9 +45,9 @@ export function RemoveMemberButton({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
 
-      <span className="text-xs text-zinc-500">
+      <span className="text-xs text-surface-muted">
         Remove {memberName}?
       </span>
 
@@ -73,17 +57,7 @@ export function RemoveMemberButton({
         onClick={() =>
           setConfirming(false)
         }
-        className="
-          rounded-lg
-          px-2.5
-          py-1.5
-          text-xs
-          text-zinc-500
-          transition
-          hover:bg-zinc-800
-          hover:text-white
-          disabled:opacity-50
-        "
+        className="sg-button sg-button-ghost sg-button-sm text-surface-muted disabled:opacity-50"
       >
         Cancel
       </button>
@@ -109,22 +83,7 @@ export function RemoveMemberButton({
         <button
           type="submit"
           disabled={loading}
-          className="
-            flex
-            items-center
-            gap-1.5
-            rounded-lg
-            bg-red-500
-            px-3
-            py-1.5
-            text-xs
-            font-medium
-            text-white
-            transition
-            hover:bg-red-600
-            disabled:cursor-not-allowed
-            disabled:opacity-50
-          "
+          className="sg-button sg-button-danger-solid sg-button-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? (
             <>

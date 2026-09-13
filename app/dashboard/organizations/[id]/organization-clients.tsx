@@ -1,392 +1,64 @@
 "use client";
 
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import { Building2, ChevronRight, List, LayoutGrid, Search } from "lucide-react";
+import { useAppearance } from "@/components/dashboard/appearance-provider";
+import { StatusBadge } from "@/components/dashboard/dashboard-badges";
+import { AnimatedSelection } from "@/components/dashboard/animated-selection";
+import { EmptyState } from "@/components/dashboard/dashboard-primitives";
 
-import {
-  Building2,
-  ChevronRight,
-  List,
-  LayoutGrid,
-  Search,
-} from "lucide-react";
-
-type Client = {
-  id: string;
-  name: string;
-  description: string | null;
-  status: "active" | "inactive";
-};
-
-type Props = {
-  organizationId: string;
-  clients: Client[];
-};
-
+type Client = { id: string; name: string; description: string | null; status: "active" | "inactive" };
+type Props = { organizationId: string; clients: Client[] };
 type ViewMode = "grid" | "list";
 
-const STORAGE_KEY =
-  "sentinelgrid-organization-clients-view";
-
-export default function OrganizationClients({
-  organizationId,
-  clients,
-}: Props) {
+export default function OrganizationClients({ organizationId, clients }: Props) {
+  const { preferences, ready } = useAppearance();
   const [search, setSearch] = useState("");
-
-  const [viewMode, setViewMode] =
-    useState<ViewMode>("list");
-
-  const [mounted, setMounted] =
-    useState(false);
-
-  /* =========================
-     LOAD SAVED VIEW
-  ========================= */
-
-  useEffect(() => {
-    const savedView =
-      localStorage.getItem(STORAGE_KEY);
-
-    if (
-      savedView === "grid" ||
-      savedView === "list"
-    ) {
-      setViewMode(savedView);
-    }
-
-    setMounted(true);
-  }, []);
-
-  /* =========================
-     CHANGE VIEW
-  ========================= */
-
-  function changeView(
-    view: ViewMode
-  ) {
-    setViewMode(view);
-
-    localStorage.setItem(
-      STORAGE_KEY,
-      view
-    );
-  }
-
-  /* =========================
-     SEARCH
-  ========================= */
-
-  const filteredClients =
-    useMemo(() => {
-      const value = search
-        .trim()
-        .toLowerCase();
-
-      if (!value) {
-        return clients;
-      }
-
-      return clients.filter(
-        (client) => {
-          const nameMatch =
-            client.name
-              .toLowerCase()
-              .includes(value);
-
-          const descriptionMatch =
-            client.description
-              ?.toLowerCase()
-              .includes(value);
-
-          return (
-            nameMatch ||
-            descriptionMatch
-          );
-        }
-      );
-    }, [clients, search]);
-
-  /* =========================
-     LOADING
-  ========================= */
-
-  if (!mounted) {
-    return (
-      <div className="h-40 animate-pulse rounded-2xl border border-zinc-800 bg-[#0d0f12]" />
-    );
-  }
+  const [viewOverride, setViewOverride] = useState<{ mode: ViewMode; defaultView: ViewMode; organizationId: string } | null>(null);
+  if (viewOverride && (viewOverride.defaultView !== preferences.defaultView || viewOverride.organizationId !== organizationId)) setViewOverride(null);
+  const viewMode = viewOverride?.defaultView === preferences.defaultView && viewOverride.organizationId === organizationId ? viewOverride.mode : preferences.defaultView;
+  const filteredClients = useMemo(() => {
+    const value = search.trim().toLowerCase();
+    return clients.filter((client) => !value || client.name.toLowerCase().includes(value) || client.description?.toLowerCase().includes(value));
+  }, [clients, search]);
 
   return (
-    <div>
-
-      {/* =========================
-          TOOLBAR
-      ========================= */}
-
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-
-        {/* SEARCH */}
-
-        <div className="relative w-full max-w-md">
-
-          <Search
-            size={17}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600"
-          />
-
-          <input
-            type="text"
-            placeholder="Search clients..."
-            value={search}
-            onChange={(e) =>
-              setSearch(
-                e.target.value
-              )
-            }
-            className="w-full rounded-xl border border-zinc-800 bg-[#090a0c] py-2.5 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 hover:border-zinc-700 focus:border-zinc-600"
-          />
-
+    <div className="sg-client-directory" aria-busy={!ready}>
+      <div className="sg-toolbar sg-client-toolbar">
+        <div className="relative min-w-0 flex-1 sm:max-w-sm">
+          <Search size={16} aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-muted" />
+          <input type="search" aria-label="Search clients" placeholder="Search clients..." value={search} onChange={(event) => setSearch(event.target.value)} className="sg-control w-full pl-9 pr-3" />
         </div>
-
-        {/* RIGHT ACTIONS */}
-
-        <div className="flex items-center gap-3">
-
-          {/* VIEW TOGGLE */}
-
-          <div className="flex items-center rounded-xl border border-zinc-800 bg-[#090a0c] p-1">
-
-            <button
-              type="button"
-              onClick={() =>
-                changeView("list")
-              }
-              title="List view"
-              className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${
-                viewMode === "list"
-                  ? "bg-zinc-800 text-white"
-                  : "text-zinc-600 hover:bg-zinc-900 hover:text-zinc-300"
-              }`}
-            >
-              <List size={16} />
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                changeView("grid")
-              }
-              title="Grid view"
-              className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${
-                viewMode === "grid"
-                  ? "bg-zinc-800 text-white"
-                  : "text-zinc-600 hover:bg-zinc-900 hover:text-zinc-300"
-              }`}
-            >
-              <LayoutGrid size={16} />
-            </button>
-
-          </div>
-
-        </div>
-
+        <span className="sg-meta hidden sm:block" role="status">{filteredClients.length} {filteredClients.length === 1 ? "client" : "clients"}{search ? ` of ${clients.length}` : ""}</span>
+        <AnimatedSelection value={viewMode} className="sg-segments" role="group" aria-label="Client view">
+          {([{ mode: "list", icon: List }, { mode: "grid", icon: LayoutGrid }] as const).map(({ mode, icon: Icon }) => (
+            <button key={mode} type="button" disabled={!ready} onClick={() => setViewOverride({ mode, defaultView: preferences.defaultView, organizationId })}
+              title={mode === "list" ? "List view" : "Grid view"} aria-label={mode === "list" ? "List view" : "Grid view"}
+              aria-pressed={viewMode === mode} className="sg-segment flex items-center justify-center"><Icon size={16} /></button>
+          ))}
+        </AnimatedSelection>
       </div>
-
-      {/* =========================
-          EMPTY SEARCH
-      ========================= */}
-
-      {filteredClients.length ===
-      0 ? (
-
-        <div className="rounded-2xl border border-dashed border-zinc-800 bg-[#090a0c] px-6 py-12 text-center">
-
-          <Building2
-            size={24}
-            className="mx-auto text-zinc-600"
-          />
-
-          <h3 className="mt-4 font-medium">
-            No clients found
-          </h3>
-
-          <p className="mt-2 text-sm text-zinc-500">
-            Try searching for another client.
-          </p>
-
-        </div>
-
-      ) : viewMode ===
-        "grid" ? (
-
-        /* =========================
-            GRID VIEW
-        ========================= */
-
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-
-          {filteredClients.map(
-            (client) => (
-
-              <Link
-                key={client.id}
-                href={`/dashboard/organizations/${organizationId}/clients/${client.id}`}
-                className="group flex min-h-56 flex-col rounded-2xl border border-zinc-800 bg-[#0d0f12] p-5 transition hover:border-zinc-700 hover:bg-[#14161a]"
-              >
-
-                {/* TOP */}
-
-                <div className="flex items-start justify-between gap-4">
-
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-[#090a0c] text-zinc-400">
-                    <Building2
-                      size={19}
-                    />
-                  </div>
-
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                      client.status ===
-                      "active"
-                        ? "bg-emerald-500/10 text-emerald-400"
-                        : "bg-zinc-800 text-zinc-500"
-                    }`}
-                  >
-                    {client.status ===
-                    "active"
-                      ? "Active"
-                      : "Inactive"}
-                  </span>
-
-                </div>
-
-                {/* CONTENT */}
-
-                <div className="mt-6 flex-1">
-
-                  <h3 className="truncate text-base font-semibold">
-                    {
-                      client.name
-                    }
-                  </h3>
-
-                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-zinc-500">
-                    {client.description ||
-                      "No description provided."}
-                  </p>
-
-                </div>
-
-                {/* FOOTER */}
-
-                <div className="mt-6 flex items-center justify-between border-t border-zinc-800 pt-4">
-
-                  <span className="text-xs text-zinc-600 transition group-hover:text-zinc-400">
-                    Open client
-                  </span>
-
-                  <ChevronRight
-                    size={17}
-                    className="text-zinc-600 transition group-hover:translate-x-1 group-hover:text-white"
-                  />
-
-                </div>
-
-              </Link>
-
-            )
-          )}
-
-        </div>
-
+      <span role="status" className="sr-only sm:hidden">{filteredClients.length} clients found</span>
+      {!ready ? <div role="status" className="sg-client-skeleton animate-pulse"><span className="sr-only">Loading client view...</span>{[0, 1, 2].map((key) => <div key={key} />)}</div> : filteredClients.length === 0 ? (
+        <EmptyState title="No clients found" description="Try another name or clear your search." icon={<Building2 size={22} />}
+          action={<button type="button" className="sg-button sg-button-secondary sg-button-sm" onClick={() => setSearch("")}>Clear search</button>} />
       ) : (
-
-        /* =========================
-            LIST VIEW
-        ========================= */
-
-        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0f12]">
-
-          <div className="divide-y divide-zinc-800">
-
-            {filteredClients.map(
-              (client) => (
-
-                <Link
-                  key={client.id}
-                  href={`/dashboard/organizations/${organizationId}/clients/${client.id}`}
-                  className="group flex items-center justify-between gap-6 bg-[#0d0f12] px-5 py-4 transition hover:bg-[#14161a]"
-                >
-
-                  {/* LEFT */}
-
-                  <div className="flex min-w-0 items-center gap-4">
-
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-[#090a0c] text-zinc-400">
-                      <Building2
-                        size={18}
-                      />
-                    </div>
-
-                    <div className="min-w-0">
-
-                      <p className="truncate text-sm font-medium text-zinc-100">
-                        {
-                          client.name
-                        }
-                      </p>
-
-                      <p className="mt-1 truncate text-xs text-zinc-500">
-                        {client.description ||
-                          "No description provided."}
-                      </p>
-
-                    </div>
-
-                  </div>
-
-                  {/* RIGHT */}
-
-                  <div className="flex shrink-0 items-center gap-5">
-
-                    <span
-                      className={`hidden rounded-full px-2.5 py-1 text-xs font-medium sm:inline-flex ${
-                        client.status ===
-                        "active"
-                          ? "bg-emerald-500/10 text-emerald-400"
-                          : "bg-zinc-800 text-zinc-500"
-                      }`}
-                    >
-                      {client.status ===
-                      "active"
-                        ? "Active"
-                        : "Inactive"}
-                    </span>
-
-                    <ChevronRight
-                      size={17}
-                      className="text-zinc-700 transition group-hover:translate-x-1 group-hover:text-zinc-400"
-                    />
-
-                  </div>
-
-                </Link>
-
-              )
-            )}
-
-          </div>
-
+        <div className={viewMode === "grid" ? "sg-client-grid" : "sg-client-list"}>
+          {filteredClients.map((client) => (
+            <Link key={client.id} href={`/dashboard/organizations/${organizationId}/clients/${client.id}`}
+              className={`sg-client-item group ${viewMode === "grid" ? "sg-surface sg-interactive sg-client-card" : "sg-row sg-client-row"}`}>
+              <span className="sg-client-icon" aria-hidden="true"><Building2 size={17} /></span>
+              <div className="sg-client-copy">
+                <h3 className="truncate text-sm font-medium text-zinc-100">{client.name}</h3>
+                <p className="sg-meta">{client.description || "No description provided."}</p>
+              </div>
+              <StatusBadge status={client.status} />
+              <ChevronRight size={16} className="sg-client-chevron" aria-hidden="true" />
+            </Link>
+          ))}
         </div>
-
       )}
-
     </div>
   );
 }

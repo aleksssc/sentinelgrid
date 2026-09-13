@@ -1,454 +1,136 @@
 "use client";
 
-import {
-  useEffect,
-  useState,
-} from "react";
-
-import {
-  Mail,
-  ShieldCheck,
-  UserPlus,
-  X,
-} from "lucide-react";
-
+import { useEffect, useId, useRef, useState } from "react";
+import { ChevronDown, Mail, ShieldCheck, UserPlus, X } from "lucide-react";
+import { FormSubmitButton } from "@/components/dashboard/form-submit-button";
 
 type InviteMemberButtonProps = {
   organizationId: string;
-
-  action: (
-    formData: FormData
-  ) => void | Promise<void>;
+  action: (formData: FormData) => void | Promise<void>;
 };
 
-
-export function InviteMemberButton({
-  organizationId,
-  action,
-}: InviteMemberButtonProps) {
-  const [open, setOpen] =
-    useState(false);
-
-
-  /* =========================
-     ESC CLOSE
-  ========================= */
+export function InviteMemberButton({ organizationId, action }: InviteMemberButtonProps) {
+  const [open, setOpen] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const id = useId();
 
   useEffect(() => {
-    function handleEscape(
-      event: KeyboardEvent
-    ) {
-      if (
-        event.key === "Escape"
-      ) {
-        setOpen(false);
-      }
-    }
-
-    if (open) {
-      document.addEventListener(
-        "keydown",
-        handleEscape
-      );
-    }
-
-    return () => {
-      document.removeEventListener(
-        "keydown",
-        handleEscape
-      );
-    };
+    if (open && !dialog.current?.open) dialog.current?.showModal();
+    else if (!open && dialog.current?.open) dialog.current.close();
   }, [open]);
-
 
   return (
     <>
-
-      {/* =========================
-          OPEN BUTTON
-      ========================= */}
-
       <button
+        ref={trigger}
         type="button"
-        onClick={() =>
-          setOpen(true)
-        }
-        className="
-          inline-flex
-          items-center
-          gap-2
-          rounded-xl
-          bg-white
-          px-4
-          py-2.5
-          text-sm
-          font-medium
-          text-black
-          transition
-          hover:bg-zinc-200
-        "
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-controls={`${id}-dialog`}
+        className="sg-button sg-button-primary"
       >
-        <UserPlus size={16} />
-
+        <UserPlus size={16} aria-hidden="true" />
         Invite member
       </button>
 
-
-      {/* =========================
-          MODAL
-      ========================= */}
-
-      {open && (
-        <div
-          className="
-            fixed
-            inset-0
-            z-[100]
-            flex
-            items-center
-            justify-center
-            bg-black/70
-            px-4
-            backdrop-blur-sm
-          "
-          onMouseDown={() =>
-            setOpen(false)
-          }
-        >
-
-          <div
-            className="
-              w-full
-              max-w-md
-              overflow-hidden
-              rounded-2xl
-              border
-              border-zinc-800
-              bg-[#111317]
-              shadow-2xl
-              shadow-black/60
-            "
-            onMouseDown={(
-              event
-            ) =>
-              event.stopPropagation()
-            }
-          >
-
-            {/* =====================
-                HEADER
-            ====================== */}
-
-            <div
-              className="
-                flex
-                items-start
-                justify-between
-                gap-4
-                border-b
-                border-zinc-800
-                px-6
-                py-5
-              "
-            >
-
-              <div className="flex items-start gap-3">
-
-                <div
-                  className="
-                    flex
-                    h-10
-                    w-10
-                    shrink-0
-                    items-center
-                    justify-center
-                    rounded-xl
-                    border
-                    border-violet-500/20
-                    bg-violet-500/10
-                  "
-                >
-                  <UserPlus
-                    size={18}
-                    className="text-violet-400"
-                  />
-                </div>
-
-
-                <div>
-
-                  <h2 className="font-semibold text-white">
-                    Invite member
-                  </h2>
-
-                  <p className="mt-1 text-sm leading-5 text-zinc-500">
+      <dialog
+        ref={dialog}
+        id={`${id}-dialog`}
+        aria-labelledby={`${id}-title`}
+        aria-describedby={`${id}-description`}
+        onCancel={() => setOpen(false)}
+        onClose={() => { setOpen(false); trigger.current?.focus(); }}
+        onClick={(event) => {
+          if (event.target !== event.currentTarget) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) setOpen(false);
+        }}
+        className="sg-surface sg-dialog fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md p-0 text-inherit outline-none backdrop:bg-black/60 backdrop:backdrop-blur-sm open:animate-in open:fade-in-0 open:slide-in-from-bottom-2 open:duration-200"
+      >
+        {open && (
+          <>
+            <div className="sg-panel-header !flex-nowrap !items-start">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="sg-section-icon" aria-hidden="true">
+                  <UserPlus size={17} className="text-[var(--sg-accent-text)]" />
+                </span>
+                <div className="min-w-0">
+                  <h2 id={`${id}-title`} className="sg-section-title">Invite member</h2>
+                  <p id={`${id}-description`} className="sg-section-description">
                     Add someone to this organization and choose their access level.
                   </p>
-
                 </div>
-
               </div>
-
-
               <button
                 type="button"
-                onClick={() =>
-                  setOpen(false)
-                }
-                className="
-                  flex
-                  h-8
-                  w-8
-                  shrink-0
-                  items-center
-                  justify-center
-                  rounded-lg
-                  text-zinc-600
-                  transition
-                  hover:bg-zinc-800
-                  hover:text-white
-                "
+                onClick={() => setOpen(false)}
+                aria-label="Close invite dialog"
+                className="sg-button sg-button-ghost sg-button-icon shrink-0"
               >
-                <X size={17} />
+                <X size={17} aria-hidden="true" />
               </button>
-
             </div>
 
-
-            {/* =====================
-                FORM
-            ====================== */}
-
-            <form
-              action={action}
-            >
-
-              <input
-                type="hidden"
-                name="organization_id"
-                value={
-                  organizationId
-                }
-              />
-
-
-              <div className="space-y-5 p-6">
-
-                {/* =================
-                    EMAIL
-                ================== */}
-
+            <form action={action}>
+              <input type="hidden" name="organization_id" value={organizationId} />
+              <div className="sg-panel-body space-y-4">
                 <div>
-
-                  <label
-                    htmlFor="invite-email"
-                    className="
-                      mb-2
-                      block
-                      text-sm
-                      font-medium
-                      text-zinc-300
-                    "
-                  >
+                  <label htmlFor={`${id}-email`} className="mb-2 block text-xs font-medium text-[var(--sg-text)]">
                     Email address
                   </label>
-
-
                   <div className="relative">
-
-                    <Mail
-                      size={16}
-                      className="
-                        absolute
-                        left-3.5
-                        top-1/2
-                        -translate-y-1/2
-                        text-zinc-600
-                      "
-                    />
-
+                    <Mail size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-surface-muted" />
                     <input
-                      id="invite-email"
+                      id={`${id}-email`}
                       name="email"
                       type="email"
                       required
                       autoFocus
+                      autoComplete="email"
                       placeholder="user@example.com"
-                      className="
-                        w-full
-                        rounded-xl
-                        border
-                        border-zinc-800
-                        bg-zinc-950
-                        py-3
-                        pl-10
-                        pr-4
-                        text-sm
-                        text-white
-                        outline-none
-                        transition
-                        placeholder:text-zinc-700
-                        focus:border-violet-500/50
-                        focus:ring-2
-                        focus:ring-violet-500/10
-                      "
+                      className="sg-control w-full pl-10 pr-3"
                     />
-
                   </div>
-
                 </div>
-
-
-                {/* =================
-                    ROLE
-                ================== */}
 
                 <div>
-
-                  <label
-                    htmlFor="invite-role"
-                    className="
-                      mb-2
-                      block
-                      text-sm
-                      font-medium
-                      text-zinc-300
-                    "
-                  >
+                  <label htmlFor={`${id}-role`} className="mb-2 block text-xs font-medium text-[var(--sg-text)]">
                     Role
                   </label>
-
-
                   <div className="relative">
-
-                    <ShieldCheck
-                      size={16}
-                      className="
-                        pointer-events-none
-                        absolute
-                        left-3.5
-                        top-1/2
-                        -translate-y-1/2
-                        text-zinc-600
-                      "
-                    />
-
-                  <select
-                    id="invite-role"
-                    name="role"
-                    defaultValue="member"
-                    className="
-                      w-full
-                      appearance-none
-                      rounded-xl
-                      border
-                      border-zinc-800
-                      bg-zinc-950
-                      py-3
-                      pl-10
-                      pr-10
-                      text-sm
-                      text-white
-                      outline-none
-                      transition
-                      focus:border-violet-500/50
-                      focus:ring-2
-                      focus:ring-violet-500/10
-                    "
-                  >
-                    <option value="member">
-                      Member
-                    </option>
-
-                    <option value="admin">
-                      Admin
-                    </option>
-                  </select>
-
+                    <ShieldCheck size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-surface-muted" />
+                    <select
+                      id={`${id}-role`}
+                      name="role"
+                      defaultValue="member"
+                      aria-describedby={`${id}-role-description`}
+                      className="sg-control w-full appearance-none pl-10 pr-10"
+                    >
+                      <option value="member">Member</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <ChevronDown size={14} aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-surface-muted" />
                   </div>
-
-
-                  <p className="mt-2 text-xs leading-5 text-zinc-600">
+                  <p id={`${id}-role-description`} className="sg-meta mt-2">
                     Members get standard access. Admins have elevated management permissions.
                   </p>
-
                 </div>
-
               </div>
 
-
-              {/* =====================
-                  FOOTER
-              ====================== */}
-
-              <div
-                className="
-                  flex
-                  items-center
-                  justify-end
-                  gap-3
-                  border-t
-                  border-zinc-800
-                  bg-zinc-950/30
-                  px-6
-                  py-4
-                "
-              >
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setOpen(false)
-                  }
-                  className="
-                    rounded-lg
-                    px-4
-                    py-2.5
-                    text-sm
-                    font-medium
-                    text-zinc-500
-                    transition
-                    hover:bg-zinc-800
-                    hover:text-white
-                  "
-                >
+              <div className="sg-panel-body flex flex-wrap items-center justify-end gap-2 border-t border-surface-edge">
+                <button type="button" onClick={() => setOpen(false)} className="sg-button sg-button-secondary">
                   Cancel
                 </button>
-
-
-                <button
-                  type="submit"
-                  className="
-                    inline-flex
-                    items-center
-                    gap-2
-                    rounded-lg
-                    bg-white
-                    px-4
-                    py-2.5
-                    text-sm
-                    font-medium
-                    text-black
-                    transition
-                    hover:bg-zinc-200
-                  "
-                >
-                  <UserPlus
-                    size={15}
-                  />
-
+                <FormSubmitButton pendingLabel="Sending...">
+                  <UserPlus size={15} aria-hidden="true" />
                   Send invite
-                </button>
-
+                </FormSubmitButton>
               </div>
-
             </form>
-
-          </div>
-
-        </div>
-      )}
-
+          </>
+        )}
+      </dialog>
     </>
   );
 }

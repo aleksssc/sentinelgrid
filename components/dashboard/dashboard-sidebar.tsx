@@ -1,507 +1,125 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef, useState, type ElementType } from "react";
+import { usePathname } from "next/navigation";
 import { BrandLogo } from "@/components/brand-logo";
-
-import {
-  useEffect,
-  useState,
-} from "react";
-
-import {
-  usePathname,
-} from "next/navigation";
-
-import {
-  createClient,
-} from "@/lib/supabase/client";
-
-import {
-  LayoutDashboard,
-  Activity,
-  Building2,
-  Globe2,
-  TriangleAlert,
-  Bell,
-  Bot,
-  Wrench,
-  ChevronRight,
-} from "lucide-react";
-
-// ============================================================
-// STATIC NAVIGATION
-// ============================================================
+import { createClient } from "@/lib/supabase/client";
+import { useAppearance } from "@/components/dashboard/appearance-provider";
+import { LayoutDashboard, Activity, Building2, Globe2, TriangleAlert, Bell, Bot, Wrench, ChevronRight, Menu, X, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 const operations = [
-  {
-    name: "Incidents",
-    href: "/dashboard/incidents",
-    icon: TriangleAlert,
-  },
-  {
-    name: "Alerts",
-    href: "/dashboard/alerts",
-    icon: Bell,
-  },
-  {
-    name: "Agents",
-    href: "/dashboard/agents",
-    icon: Bot,
-  },
+  { name: "Incidents", href: "/dashboard/incidents", icon: TriangleAlert },
+  { name: "Alerts", href: "/dashboard/alerts", icon: Bell },
+  { name: "Agents", href: "/dashboard/agents", icon: Bot },
 ];
-
-const utilities = [
-  {
-    name: "Tools",
-    href: "/dashboard/tools",
-    icon: Wrench,
-  },
-];
-
-// ============================================================
-// SIDEBAR
-// ============================================================
+const utilities = [{ name: "Tools", href: "/dashboard/tools", icon: Wrench }];
 
 export default function DashboardSidebar() {
   const pathname = usePathname();
-
-  const [
-    organizationId,
-    setOrganizationId,
-  ] = useState<string | null>(
-    null
-  );
-
-  const [
-    loadingOrganization,
-    setLoadingOrganization,
-  ] = useState(true);
-
-  // ============================================================
-  // LOAD CURRENT ORGANIZATION
-  // ============================================================
+  const { preferences, toggleSidebar, ready } = useAppearance();
+  const expanded = preferences.sidebar === "remember" ? preferences.sidebarExpanded : preferences.sidebar === "expanded";
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [loadingOrganization, setLoadingOrganization] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let mounted = true;
-
     async function loadOrganization() {
       try {
-        const supabase =
-          createClient();
-
-        // RLS deve devolver apenas
-        // organizations acessíveis ao user.
-        const {
-          data,
-          error,
-        } = await supabase
-          .from("organizations")
-          .select("id")
-          .limit(1)
-          .maybeSingle();
-
+        const supabase = createClient();
+        const { data, error } = await supabase.from("organizations").select("id").limit(1).maybeSingle();
         if (error) {
-          console.error(
-            "Sidebar organization error:",
-            error
-          );
-
+          console.error("Sidebar organization error:", error);
           return;
         }
-
-        if (
-          mounted &&
-          data?.id
-        ) {
-          setOrganizationId(
-            data.id
-          );
-        }
+        if (mounted && data?.id) setOrganizationId(data.id);
       } catch (error) {
-        console.error(
-          "Sidebar organization load error:",
-          error
-        );
+        console.error("Sidebar organization load error:", error);
       } finally {
-        if (mounted) {
-          setLoadingOrganization(
-            false
-          );
-        }
+        if (mounted) setLoadingOrganization(false);
       }
     }
-
     loadOrganization();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
-  // ============================================================
-  // NAVIGATION
-  // ============================================================
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1024px)");
+    function closeOnDesktop() { if (media.matches) setMobileOpen(false); }
+    media.addEventListener("change", closeOnDesktop);
+    return () => media.removeEventListener("change", closeOnDesktop);
+  }, []);
+
+  useEffect(() => {
+    if (mobileOpen && !dialog.current?.open) dialog.current?.showModal();
+    else if (!mobileOpen && dialog.current?.open) dialog.current.close();
+  }, [mobileOpen]);
 
   const navigation = [
-    {
-      name: "Overview",
-      href: "/dashboard",
-      icon: LayoutDashboard,
-      exact: true,
-      disabled: false,
-    },
-
-    {
-      name: "Clients",
-
-      // IMPORTANTE:
-      // já não passa por
-      // /dashboard/organizations
-
-      href: organizationId
-        ? `/dashboard/organizations/${organizationId}`
-        : "/dashboard",
-
-      icon: Building2,
-      disabled:
-        loadingOrganization ||
-        !organizationId,
-    },
-
-    {
-      name: "Monitors",
-      href: "/dashboard/monitors",
-      icon: Activity,
-      disabled: false,
-    },
-
-    {
-      name: "Domains & DNS",
-      href: "/dashboard/domains",
-      icon: Globe2,
-      disabled: false,
-    },
+    { name: "Overview", href: "/dashboard", icon: LayoutDashboard, exact: true, disabled: false },
+    { name: "Clients", href: organizationId ? `/dashboard/organizations/${organizationId}` : "/dashboard", icon: Building2, disabled: loadingOrganization || !organizationId },
+    { name: "Monitors", href: "/dashboard/monitors", icon: Activity, disabled: false },
+    { name: "Domains & DNS", href: "/dashboard/domains", icon: Globe2, disabled: false },
   ];
 
-  // ============================================================
-  // ACTIVE STATE
-  // ============================================================
-
-  const isActive = (
-    href: string,
-    exact?: boolean,
-    name?: string
-  ) => {
-    // =========================
-    // CLIENTS
-    // =========================
-
-    if (
-      name === "Clients"
-    ) {
-      return pathname.startsWith(
-        "/dashboard/organizations/"
-      );
-    }
-
-    // =========================
-    // EXACT
-    // =========================
-
-    if (exact) {
-      return pathname === href;
-    }
-
-    // =========================
-    // NORMAL
-    // =========================
-
+  function renderLink({ name, href, icon: Icon, exact, disabled = false }: {
+    name: string; href: string; icon: ElementType; exact?: boolean; disabled?: boolean;
+  }) {
+    const active = !disabled && (name === "Clients" ? pathname.startsWith("/dashboard/organizations/") : exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`));
     return (
-      pathname === href ||
-      pathname.startsWith(
-        `${href}/`
-      )
-    );
-  };
-
-  // ============================================================
-  // RENDER LINK
-  // ============================================================
-
-  const renderLink = ({
-    name,
-    href,
-    icon: Icon,
-    exact,
-    disabled = false,
-  }: {
-    name: string;
-    href: string;
-    icon: React.ElementType;
-    exact?: boolean;
-    disabled?: boolean;
-  }) => {
-    const active =
-      !disabled &&
-      isActive(
-        href,
-        exact,
-        name
-      );
-
-    return (
-      <Link
-        key={name}
-        href={
-          disabled
-            ? pathname
-            : href
-        }
-        aria-disabled={
-          disabled
-        }
-        tabIndex={
-          disabled
-            ? -1
-            : undefined
-        }
-        className={`
-          group relative
-          flex items-center gap-3
-
-          rounded-xl
-
-          px-3 py-2.5
-
-          text-sm font-medium
-
-          transition-all duration-200
-
-          ${
-            disabled
-              ? "pointer-events-none text-zinc-600"
-              : active
-                ? "bg-white/[0.09] text-white"
-                : "text-zinc-400 hover:bg-white/[0.05] hover:text-white"
-          }
-        `}
-      >
-
-        {/* =========================
-            ACTIVE INDICATOR
-        ========================= */}
-
-        {active && (
-          <span
-            className="
-              absolute -left-4
-              h-5 w-[2px]
-              rounded-r-full
-              bg-zinc-200
-            "
-          />
-        )}
-
-        {/* =========================
-            ICON
-        ========================= */}
-
-        <Icon
-          size={18}
-          strokeWidth={
-            active
-              ? 2
-              : 1.75
-          }
-          className={
-            disabled
-              ? "text-zinc-700"
-              : active
-                ? "text-white"
-                : "text-zinc-500 transition-colors duration-200 group-hover:text-zinc-200"
-          }
-        />
-
-        {/* =========================
-            NAME
-        ========================= */}
-
-        <span className="flex-1">
-          {name}
-        </span>
-
-        {/* =========================
-            ARROW
-        ========================= */}
-
-        {!disabled && (
-          <ChevronRight
-            size={14}
-            className={`
-              transition-all duration-200
-
-              ${
-                active
-                  ? "translate-x-0 text-zinc-500 opacity-100"
-                  : "-translate-x-1 text-zinc-600 opacity-0 group-hover:translate-x-0 group-hover:opacity-100"
-              }
-            `}
-          />
-        )}
-
+      <div key={name} className="sg-sidebar-item" data-active={active || undefined}>
+      <Link href={disabled ? pathname : href} aria-label={name} title={name}
+        aria-current={active ? "page" : undefined} aria-disabled={disabled} tabIndex={disabled ? -1 : undefined}
+        onClick={() => setMobileOpen(false)} className="sg-sidebar-link group">
+        <Icon size={18} strokeWidth={active ? 2 : 1.75} aria-hidden="true" />
+        <span className="sg-sidebar-label flex-1">{name}</span>
+        <ChevronRight size={14} className="sg-sidebar-chevron" aria-hidden="true" />
       </Link>
+      </div>
     );
-  };
+  }
 
-  // ============================================================
-  // RENDER
-  // ============================================================
-
-  return (
-    <aside
-      className="
-        relative z-30
-        flex h-screen w-[250px]
-        shrink-0 flex-col
-
-        border-r border-white/[0.07]
-        bg-[#101012]
-      "
-    >
-
-      {/* ======================================================
-          LOGO
-      ====================================================== */}
-
-      <div
-        className="
-          flex h-[72px]
-          shrink-0 items-center
-
-          border-b border-white/[0.06]
-
-          px-5
-        "
-      >
-
-        <Link
-          href="/dashboard"
-          className="
-            inline-flex rounded-md outline-none
-            focus-visible:ring-2 focus-visible:ring-sky-400
-            focus-visible:ring-offset-4 focus-visible:ring-offset-[#101012]
-          "
-        >
-          <BrandLogo variant="lockup" />
+  function content(mobile: boolean) {
+    return <>
+      <div className="sg-sidebar-brand">
+        <Link href="/dashboard" aria-label="SentinelGrid overview" onClick={() => setMobileOpen(false)}>
+          <BrandLogo variant="mark" className="sg-sidebar-mark" />
+          <BrandLogo variant="lockup" className="sg-sidebar-lockup" />
         </Link>
-
+        {mobile && <button type="button" className="sg-button sg-button-ghost sg-button-icon" aria-label="Close navigation" onClick={() => setMobileOpen(false)}><X size={18} /></button>}
       </div>
-
-      {/* ======================================================
-          NAVIGATION
-      ====================================================== */}
-
-      <div
-        className="
-          flex-1
-          overflow-y-auto
-
-          px-4 py-5
-        "
-      >
-
-        {/* =========================
-            WORKSPACE
-        ========================= */}
-
-        <div>
-
-          <p
-            className="
-              mb-2 px-3
-
-              text-[10px]
-              font-semibold
-              uppercase
-
-              tracking-[0.18em]
-
-              text-zinc-600
-            "
-          >
-            Workspace
-          </p>
-
-          <nav className="space-y-1">
-            {navigation.map(
-              renderLink
-            )}
-          </nav>
-
-        </div>
-
-        {/* =========================
-            OPERATIONS
-        ========================= */}
-
-        <div className="mt-7">
-
-          <p
-            className="
-              mb-2 px-3
-
-              text-[10px]
-              font-semibold
-              uppercase
-
-              tracking-[0.18em]
-
-              text-zinc-600
-            "
-          >
-            Operations
-          </p>
-
-          <nav className="space-y-1">
-            {operations.map(
-              renderLink
-            )}
-          </nav>
-
-        </div>
-
-        {/* =========================
-            UTILITIES
-        ========================= */}
-
-        <div className="mt-7">
-
-          <p
-            className="
-              mb-2 px-3
-
-              text-[10px]
-              font-semibold
-              uppercase
-
-              tracking-[0.18em]
-
-              text-zinc-600
-            "
-          >
-            Utilities
-          </p>
-
-          <nav className="space-y-1">
-            {utilities.map(
-              renderLink
-            )}
-          </nav>
-
-        </div>
-
+      <div className="sg-sidebar-navigation">
+        {([{ label: "Workspace", links: navigation }, { label: "Operations", links: operations }, { label: "Utilities", links: utilities }]).map(({ label, links }) => (
+          <div key={label} className="sg-sidebar-group">
+            <p className="sg-sidebar-section">{label}</p>
+            <nav aria-label={label} className="space-y-1">{links.map(renderLink)}</nav>
+          </div>
+        ))}
       </div>
+      {!mobile && <div className="sg-sidebar-footer">
+        <button type="button" disabled={!ready} className="sg-sidebar-link w-full" onClick={toggleSidebar}
+          title={expanded ? "Collapse sidebar" : "Expand sidebar"} aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"} aria-expanded={expanded}>
+          {expanded ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}<span className="sg-sidebar-label">Collapse sidebar</span>
+        </button>
+      </div>}
+    </>;
+  }
 
-    </aside>
-  );
+  return <>
+    <aside className="sg-sidebar sg-desktop-sidebar" aria-label="Main navigation">{content(false)}</aside>
+    <button ref={trigger} type="button" className="sg-mobile-menu-trigger sg-button sg-button-ghost sg-button-icon" aria-label="Open navigation"
+      aria-expanded={mobileOpen} aria-controls="dashboard-mobile-navigation" aria-haspopup="dialog" onClick={() => setMobileOpen(true)}><Menu size={20} /></button>
+    <dialog ref={dialog} id="dashboard-mobile-navigation" className="sg-mobile-navigation" aria-label="Main navigation" onCancel={() => setMobileOpen(false)}
+      onClose={() => { setMobileOpen(false); if (window.matchMedia("(max-width: 1023px)").matches) trigger.current?.focus(); }}
+      onClick={(event) => { if (event.target === event.currentTarget) setMobileOpen(false); }}>
+      <aside className="sg-sidebar sg-mobile-sidebar">{content(true)}</aside>
+    </dialog>
+  </>;
 }

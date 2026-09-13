@@ -491,11 +491,7 @@ export default function InfrastructureSearch() {
       ========================= */}
 
       <div
-        className={`relative flex h-10 items-center rounded-xl border bg-[#0d0f12] transition ${
-          open
-            ? "border-zinc-600"
-            : "border-zinc-800 hover:border-zinc-700"
-        }`}
+        className="sg-input-frame relative flex h-10 items-center rounded-xl border border-surface-edge bg-surface-inset"
       >
 
         <Search
@@ -527,8 +523,9 @@ export default function InfrastructureSearch() {
               true
             );
           }}
+          aria-label="Search infrastructure"
           placeholder="Search infrastructure..."
-          className="h-full w-full bg-transparent pl-10 pr-16 text-sm text-zinc-200 outline-none placeholder:text-zinc-600"
+          className="h-full min-w-0 w-full bg-transparent pl-10 pr-8 sm:pr-16 text-sm text-zinc-200 outline-none placeholder:text-zinc-600"
         />
 
         {loading ? (
@@ -544,14 +541,14 @@ export default function InfrastructureSearch() {
 
               inputRef.current?.focus();
             }}
-            className="absolute right-3 flex h-6 w-6 items-center justify-center rounded-md text-zinc-600 transition hover:bg-zinc-800 hover:text-white"
+            className="absolute right-3 flex h-6 w-6 items-center justify-center rounded-md text-zinc-600 transition hover:bg-surface-hover hover:text-white"
           >
             <X
               size={13}
             />
           </button>
         ) : (
-          <div className="absolute right-2.5 flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-600">
+          <div className="absolute right-2.5 hidden sm:flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-600">
 
             <span>
               ⌘
@@ -572,7 +569,7 @@ export default function InfrastructureSearch() {
 
       {open &&
         searching && (
-        <div className="absolute left-0 top-full z-[100] mt-2 w-[440px] max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl border border-zinc-800 bg-[#0b0d0f] shadow-2xl">
+        <div className="absolute left-0 top-full z-[100] mt-2 w-[440px] max-w-[calc(100vw-100px)] overflow-hidden rounded-2xl border border-zinc-800 bg-surface shadow-2xl">
 
           {/* =========================
               LOADING
@@ -858,7 +855,7 @@ function SearchResultButton({
       onClick={
         onClick
       }
-      className="group flex w-full items-center gap-3 px-4 py-2.5 text-left outline-none transition hover:bg-zinc-900 focus:bg-zinc-900 focus:outline-none"
+      className="group flex w-full items-center gap-3 px-4 py-2.5 text-left outline-none transition hover:bg-surface-hover focus:bg-surface-hover focus:outline-none"
     >
 
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-[#111317] text-zinc-500 transition group-hover:text-zinc-300">

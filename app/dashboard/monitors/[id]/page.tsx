@@ -1,3 +1,4 @@
+import { StatusBadge } from "@/components/dashboard/dashboard-badges";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
@@ -115,13 +116,13 @@ export default async function MonitorDetailsPage({
     .join(" ");
 
   return (
-    <main className="p-8">
-      <div className="mx-auto max-w-7xl">
+    <div className="sg-page-shell">
+      <div className="sg-page">
 
         {/* BACK */}
         <Link
           href="/dashboard/monitors"
-          className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-500 transition hover:text-white"
+          className="mb-6 inline-flex items-center gap-2 text-sm text-surface-muted transition hover:text-white"
         >
           <ArrowLeft size={16} />
           Back to monitors
@@ -132,34 +133,18 @@ export default async function MonitorDetailsPage({
 
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold">
+              <h1 className="sg-page-title">
                 {monitor.name}
               </h1>
 
-              {monitor.status === "online" && (
-                <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">
-                  ● Online
-                </span>
-              )}
-
-              {monitor.status === "offline" && (
-                <span className="rounded-full bg-red-500/10 px-3 py-1 text-xs font-medium text-red-400">
-                  ● Offline
-                </span>
-              )}
-
-              {monitor.status === "unknown" && (
-                <span className="rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-400">
-                  ● Unknown
-                </span>
-              )}
+              <StatusBadge status={monitor.status ?? "unknown"} />
             </div>
 
             <a
               href={monitor.url}
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-2 text-zinc-500 transition hover:text-zinc-300"
+              className="mt-2 inline-flex items-center gap-2 text-surface-muted transition hover:text-zinc-300"
             >
               <Globe size={15} />
               {monitor.url}
@@ -214,14 +199,14 @@ export default async function MonitorDetailsPage({
         </div>
 
         {/* RESPONSE CHART */}
-        <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+        <div className="sg-surface mt-6 p-6">
 
           <div className="mb-6">
-            <h2 className="font-semibold">
+            <h2 className="sg-section-title">
               Response time
             </h2>
 
-            <p className="mt-1 text-sm text-zinc-500">
+            <p className="mt-1 text-sm text-surface-muted">
               Last {chartChecks.length} checks
             </p>
           </div>
@@ -276,7 +261,7 @@ export default async function MonitorDetailsPage({
               </svg>
             </div>
           ) : (
-            <div className="flex h-56 items-center justify-center text-sm text-zinc-600">
+            <div className="flex h-56 items-center justify-center text-sm text-surface-muted">
               More checks are required to display the chart.
             </div>
           )}
@@ -284,27 +269,27 @@ export default async function MonitorDetailsPage({
         </div>
 
         {/* HISTORY */}
-        <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+        <div className="sg-surface mt-6 overflow-hidden">
 
-          <div className="border-b border-zinc-800 px-6 py-5">
-            <h2 className="font-semibold">
+          <div className="border-b border-surface-edge px-6 py-5">
+            <h2 className="sg-section-title">
               Check history
             </h2>
 
-            <p className="mt-1 text-sm text-zinc-500">
+            <p className="mt-1 text-sm text-surface-muted">
               Latest monitoring results.
             </p>
           </div>
 
           {!checks?.length ? (
-            <div className="px-6 py-12 text-center text-zinc-500">
+            <div className="px-6 py-12 text-center text-surface-muted">
               No checks recorded yet.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
 
-                <thead className="border-b border-zinc-800 text-xs uppercase text-zinc-600">
+                <thead className="border-b border-surface-edge text-xs uppercase text-surface-muted">
                   <tr>
                     <th className="px-6 py-4">
                       Status
@@ -355,7 +340,7 @@ export default async function MonitorDetailsPage({
                           : "--"}
                       </td>
 
-                      <td className="px-6 py-4 text-zinc-500">
+                      <td className="px-6 py-4 text-surface-muted">
                         {new Date(
                           check.checked_at
                         ).toLocaleString()}
@@ -372,7 +357,7 @@ export default async function MonitorDetailsPage({
         </div>
 
       </div>
-    </main>
+    </div>
   );
 }
 
@@ -386,9 +371,9 @@ function StatCard({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+    <div className="sg-surface p-5">
 
-      <div className="flex items-center gap-2 text-zinc-500">
+      <div className="flex items-center gap-2 text-surface-muted">
         {icon}
         <p className="text-sm">
           {label}

@@ -185,9 +185,9 @@ export default async function AddDevicePage({
   }
 
   return (
-    <main className="relative z-10 p-8">
+    <div className="sg-page-shell">
 
-      <div className="mx-auto max-w-4xl">
+      <div className="sg-page">
 
         {/* =========================
             BACK
@@ -195,7 +195,7 @@ export default async function AddDevicePage({
 
         <Link
           href={`/dashboard/organizations/${organization.id}/clients/${client.id}`}
-          className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-500 transition hover:text-white"
+          className="mb-6 inline-flex items-center gap-2 text-sm text-surface-muted transition hover:text-white"
         >
           <ArrowLeft
             size={16}
@@ -210,7 +210,7 @@ export default async function AddDevicePage({
 
         <div className="mb-8 flex items-start gap-5">
 
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-[#0d0f12] text-zinc-400">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-surface-edge bg-surface text-zinc-400">
             <MonitorUp
               size={24}
             />
@@ -218,11 +218,11 @@ export default async function AddDevicePage({
 
           <div>
 
-            <h1 className="text-3xl font-bold tracking-tight text-white">
+            <h1 className="sg-page-title">
               Add device
             </h1>
 
-            <p className="mt-2 text-zinc-500">
+            <p className="mt-2 text-surface-muted">
               Enroll a new device into{" "}
               <span className="text-zinc-300">
                 {client.name}
@@ -230,7 +230,7 @@ export default async function AddDevicePage({
               .
             </p>
 
-            <p className="mt-1 text-xs text-zinc-600">
+            <p className="mt-1 text-xs text-surface-muted">
               {organization.name}
             </p>
 
@@ -256,6 +256,6 @@ export default async function AddDevicePage({
 
       </div>
 
-    </main>
+    </div>
   );
 }

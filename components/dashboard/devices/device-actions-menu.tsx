@@ -84,15 +84,15 @@ export default function DeviceActionsMenu({ device, busy, online, open, onOpenCh
     <div ref={containerRef} className="relative">
       <button ref={triggerRef} type="button" aria-expanded={open} aria-controls={panelId}
         onClick={() => onOpenChange(!open)}
-        className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-800 px-4 text-sm font-medium text-zinc-300 transition hover:bg-zinc-900 hover:text-white">
+        className="sg-button sg-button-secondary">
         Actions
         <ChevronDown size={15} aria-hidden="true" className={`transition-transform duration-150 motion-reduce:transition-none ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div id={panelId} role="group" aria-label="Device actions" className="absolute right-0 top-full z-50 mt-2 w-64 max-w-[calc(100vw-2rem)] origin-top-right overflow-hidden rounded-xl border border-zinc-800 bg-[#111317] p-1.5 shadow-2xl animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 duration-150 motion-reduce:animate-none">
+        <div id={panelId} role="group" aria-label="Device actions" className="absolute right-0 top-full z-50 mt-2 w-64 max-w-[calc(100vw-2rem)] origin-top-right overflow-hidden rounded-xl border border-surface-edge bg-surface p-1.5 shadow-2xl animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 duration-150 motion-reduce:animate-none">
           {["Maintenance", "Agent", "Power"].map((group, index) => (
             <div key={group} className={index ? "mt-1 border-t border-zinc-800/70 pt-1" : ""}>
-              <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">{group}</p>
+              <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-surface-muted">{group}</p>
               {DEVICE_ACTIONS.filter((action) => action.group === group).map((action) => {
                 const Icon = icons[action.icon];
                 // Availability is advisory; the command POST always revalidates authorization and safety.
@@ -104,7 +104,7 @@ export default function DeviceActionsMenu({ device, busy, online, open, onOpenCh
                 return (
                   <div key={action.type} title={reason || undefined} tabIndex={reason ? 0 : undefined} aria-label={reason ? `${action.label}: ${reason}` : undefined}>
                     <button type="button" disabled={Boolean(reason)} onClick={() => onAction(action.type, { confirm: confirmation })}
-                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs transition hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-emerald-500 disabled:pointer-events-none disabled:opacity-35 ${action.type === "shutdown" ? "text-red-300" : "text-zinc-300"}`}>
+                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs transition hover:bg-surface-hover focus-visible:outline focus-visible:outline-surface-focus disabled:pointer-events-none disabled:opacity-35 ${action.type === "shutdown" ? "text-red-300" : "text-zinc-300"}`}>
                       <Icon size={15} className="shrink-0 opacity-70" aria-hidden="true" />{action.label}
                     </button>
                   </div>

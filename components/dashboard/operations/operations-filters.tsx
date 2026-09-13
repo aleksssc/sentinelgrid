@@ -12,7 +12,7 @@ import {
   type OperationsFilters, type OperationsKind,
 } from "@/lib/operations/filters";
 
-const control = "h-10 w-full rounded-xl border border-zinc-800 bg-[#090a0c] px-3 text-sm text-zinc-200 outline-none transition hover:border-zinc-700 focus-visible:border-emerald-500/50 focus-visible:ring-2 focus-visible:ring-emerald-500/20";
+const control = "h-10 w-full rounded-xl border border-zinc-800 bg-[#090a0c] px-3 text-sm text-zinc-200 outline-none transition hover:border-surface-accent-edge focus-visible:border-surface-focus focus-visible:ring-2 focus-visible:ring-surface-focus";
 type Option = { id: string; name: string };
 
 export default function OperationsFilterBar({ kind, filters, statuses, placeholder }: {
@@ -86,12 +86,12 @@ export default function OperationsFilterBar({ kind, filters, statuses, placehold
   return (
     <form action={`/dashboard/${kind}`} method="get" role="search" aria-label={`${kind} filters`}
       onSubmit={(event) => { event.preventDefault(); cancelSearch(); navigate(draft); }}
-      className="grid items-end gap-3 border-b border-white/[0.07] p-5 sm:grid-cols-2 xl:flex xl:px-6">
+      className="grid items-end gap-3 border-b border-surface-edge p-5 sm:grid-cols-2 xl:flex xl:px-6">
       <input type="hidden" name="source" value={filters.source} />
       <label className="block min-w-0 sm:col-span-2 xl:flex-1">
         <span className="mb-2 block text-xs font-medium text-zinc-400">Search</span>
         <span className="relative block">
-          <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600" aria-hidden="true" />
+          <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-surface-muted" aria-hidden="true" />
           <input ref={input} name="q" value={draft.query} maxLength={100} placeholder={placeholder} autoComplete="off"
             onChange={(event) => {
               const query = event.target.value;
@@ -100,9 +100,9 @@ export default function OperationsFilterBar({ kind, filters, statuses, placehold
             }}
             onCompositionStart={() => { composing.current = true; cancelSearch(); }}
             onCompositionEnd={(event) => { composing.current = false; change({ query: event.currentTarget.value }, true); }}
-            className={`${control} pl-10 pr-10 placeholder:text-zinc-600`} />
+            className={`sg-control ${control} pl-10 pr-10 placeholder:text-zinc-600`} />
           {draft.query && <button type="button" aria-label="Clear search" onClick={() => { change({ query: "" }); input.current?.focus(); }}
-            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 outline-none transition hover:bg-zinc-800 hover:text-white focus-visible:ring-2 focus-visible:ring-emerald-500">
+            className="sg-button sg-button-ghost sg-button-icon absolute right-2 top-1/2 w-6 -translate-y-1/2 text-surface-muted outline-none focus-visible:ring-2 focus-visible:ring-surface-focus">
             <X size={14} />
           </button>}
         </span>
@@ -115,8 +115,8 @@ export default function OperationsFilterBar({ kind, filters, statuses, placehold
         icon={<SlidersHorizontal size={15} />} onChange={(value) => change({ status: value })} />}
       <div className="flex h-10 min-w-[112px] items-center gap-3 sm:col-span-2 xl:justify-end">
         {filtered && <button type="button" onClick={() => { change({ query: "", status: "all", days: 7 }); input.current?.focus(); }}
-          className="rounded-lg px-2 py-1.5 text-xs text-zinc-400 outline-none transition hover:bg-white/5 hover:text-white focus-visible:ring-2 focus-visible:ring-emerald-500">Reset</button>}
-        <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5 text-xs text-zinc-500">
+          className="sg-button sg-button-secondary sg-button-sm outline-none focus-visible:ring-2 focus-visible:ring-surface-focus">Reset</button>}
+        <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5 text-xs text-surface-muted">
           {busy ? <><Loader2 size={13} aria-hidden="true" className="animate-spin motion-reduce:animate-none" />Updating...</> : <span className="sr-only">Filters applied</span>}
         </span>
       </div>
@@ -135,17 +135,17 @@ function FilterDropdown({ label, name, value, options, icon, onChange }: {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button type="button" aria-labelledby={`${id} ${id}-value`}
-            className={`${control} group flex items-center gap-2.5 text-left data-[state=open]:border-emerald-500/40 data-[state=open]:bg-[#111518]`}>
-            <span aria-hidden="true" className="shrink-0 text-zinc-500 group-data-[state=open]:text-emerald-400">{icon}</span>
+            className={`sg-control ${control} group flex items-center gap-2.5 text-left data-[state=open]:border-surface-accent-edge data-[state=open]:bg-surface-selected`}>
+            <span aria-hidden="true" className="shrink-0 text-surface-muted group-data-[state=open]:text-surface-accent">{icon}</span>
             <span id={`${id}-value`} className="flex-1 truncate">{options.find((option) => option.id === value)?.name}</span>
-            <ChevronDown size={14} aria-hidden="true" className="shrink-0 text-zinc-500 transition-transform duration-150 group-data-[state=open]:rotate-180 motion-reduce:transition-none" />
+            <ChevronDown size={14} aria-hidden="true" className="shrink-0 text-surface-muted transition-transform duration-150 group-data-[state=open]:rotate-180 motion-reduce:transition-none" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" sideOffset={6}
-          className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-44 rounded-xl border-zinc-800 bg-[#0d0f12] p-1.5 text-zinc-300 shadow-2xl shadow-black/50 duration-150 motion-reduce:animate-none">
+          className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-44 rounded-xl border-surface-edge bg-surface p-1.5 text-zinc-300 shadow-2xl shadow-black/50 duration-150 motion-reduce:animate-none">
           <DropdownMenuRadioGroup aria-labelledby={id} value={value} onValueChange={onChange}>
             {options.map((option) => <DropdownMenuRadioItem key={option.id} value={option.id}
-              className="cursor-pointer rounded-lg py-2.5 pr-3 text-sm focus:bg-white/[0.06] focus:text-white data-[state=checked]:bg-emerald-500/10 data-[state=checked]:text-emerald-400">{option.name}</DropdownMenuRadioItem>)}
+              className="cursor-pointer rounded-lg py-2.5 pr-3 text-sm focus:bg-surface-hover focus:text-white data-[state=checked]:bg-surface-selected data-[state=checked]:text-surface-accent">{option.name}</DropdownMenuRadioItem>)}
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -216,68 +216,25 @@ function UsageRow({
 
   return (
     <div
-      className="
-        group
-        rounded-xl
-        border
-        border-transparent
-        p-2
-        transition-all
-        duration-200
-        hover:border-white/[0.06]
-        hover:bg-[#17191f]
-      "
+      className="group rounded-xl border border-transparent p-2 transition-all duration-200 hover:border-surface-accent-edge hover:bg-surface-hover"
     >
       <div className="space-y-2.5">
 
-        <div className="
-          flex
-          items-center
-          justify-between
-          gap-4
-        ">
+        <div className="flex items-center justify-between gap-4">
 
-          <div className="
-            flex
-            items-center
-            gap-2.5
-          ">
+          <div className="flex items-center gap-2.5">
 
             <div
-              className="
-                flex
-                h-8
-                w-8
-                items-center
-                justify-center
-                rounded-lg
-                border
-                border-white/[0.08]
-                bg-[#1a1c22]
-                transition-all
-                duration-200
-                group-hover:border-white/[0.14]
-                group-hover:bg-[#202229]
-              "
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-surface-edge bg-[#1a1c22] transition-all duration-200 group-hover:border-surface-accent-edge group-hover:bg-surface-hover"
             >
               <Icon
                 size={15}
-                className="
-                  text-zinc-400
-                  transition-colors
-                  group-hover:text-white
-                "
+                className="text-zinc-400 transition-colors group-hover:text-white"
               />
             </div>
 
             <span
-              className="
-                text-sm
-                font-medium
-                text-zinc-300
-                transition-colors
-                group-hover:text-white
-              "
+              className="text-sm font-medium text-zinc-300 transition-colors group-hover:text-white"
             >
               {label}
             </span>
@@ -285,12 +242,7 @@ function UsageRow({
           </div>
 
 
-          <div className="
-            flex
-            items-center
-            gap-1.5
-            text-sm
-          ">
+          <div className="flex items-center gap-1.5 text-sm">
 
             <span
               className={
@@ -302,18 +254,13 @@ function UsageRow({
               {usage}
             </span>
 
-            <span className="text-zinc-600">
+            <span className="text-surface-muted">
               /
             </span>
 
             {limit === Infinity ? (
 
-              <span className="
-                flex
-                items-center
-                gap-1
-                text-zinc-400
-              ">
+              <span className="flex items-center gap-1 text-zinc-400">
                 <InfinityIcon size={14} />
                 Unlimited
               </span>
@@ -332,12 +279,7 @@ function UsageRow({
 
 
         <div
-          className="
-            h-1.5
-            overflow-hidden
-            rounded-full
-            bg-[#22242a]
-          "
+          className="h-1.5 overflow-hidden rounded-full bg-[#22242a]"
         >
           <div
             className={`
@@ -619,14 +561,7 @@ export default async function BillingPage() {
 
   return (
     <div
-      className="
-        mx-auto
-        w-full
-        max-w-[1500px]
-        px-6
-        py-8
-        lg:px-10
-      "
+      className="sg-page"
     >
 
       {/* ===============================================
@@ -634,28 +569,13 @@ export default async function BillingPage() {
       =============================================== */}
 
       <div
-        className="
-          mb-8
-          flex
-          flex-col
-          gap-4
-          md:flex-row
-          md:items-end
-          md:justify-between
-        "
+        className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between"
       >
 
         <div>
 
           <div
-            className="
-              mb-2
-              flex
-              items-center
-              gap-2
-              text-sm
-              text-zinc-500
-            "
+            className="mb-2 flex items-center gap-2 text-sm text-surface-muted"
           >
             <CreditCard size={15} />
 
@@ -664,25 +584,14 @@ export default async function BillingPage() {
 
 
           <h1
-            className="
-              text-3xl
-              font-semibold
-              tracking-tight
-              text-white
-            "
+            className="sg-page-title"
           >
             Billing
           </h1>
 
 
           <p
-            className="
-              mt-2
-              max-w-2xl
-              text-sm
-              leading-6
-              text-zinc-500
-            "
+            className="mt-2 max-w-2xl text-sm leading-6 text-surface-muted"
           >
             Manage your SentinelGrid plan,
             infrastructure limits and subscription.
@@ -692,20 +601,7 @@ export default async function BillingPage() {
 
 
         <div
-          className="
-            flex
-            items-center
-            gap-2
-            rounded-full
-            border
-            border-emerald-500/20
-            bg-[#10201c]
-            px-3
-            py-1.5
-            text-xs
-            font-medium
-            text-emerald-400
-          "
+          className="flex items-center gap-2 rounded-full border border-emerald-500/20 bg-[#10201c] px-3 py-1.5 text-xs font-medium text-emerald-400"
         >
           <ShieldCheck size={14} />
 
@@ -728,68 +624,23 @@ export default async function BillingPage() {
       =============================================== */}
 
       <div
-        className="
-          group
-          mb-10
-          overflow-hidden
-          rounded-2xl
-          border
-          border-white/[0.08]
-          bg-[#111318]
-          transition-all
-          duration-300
-          hover:border-white/[0.14]
-          hover:shadow-2xl
-          hover:shadow-black/20
-        "
+        className="sg-surface group mb-10 overflow-hidden bg-[#111318] transition-all duration-300 hover:border-surface-accent-edge hover:shadow-2xl hover:shadow-black/20"
       >
 
         <div
-          className="
-            grid
-            gap-8
-            p-6
-            lg:grid-cols-[0.8fr_1.2fr]
-            lg:p-8
-          "
+          className="grid gap-8 p-6 lg:grid-cols-[0.8fr_1.2fr] lg:p-8"
         >
 
           {/* PLAN */}
 
           <div
-            className="
-              flex
-              flex-col
-              justify-between
-              border-b
-              border-white/[0.07]
-              pb-8
-              lg:border-b-0
-              lg:border-r
-              lg:pb-0
-              lg:pr-8
-            "
+            className="flex flex-col justify-between border-b border-surface-edge pb-8 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-8"
           >
 
             <div>
 
               <div
-                className="
-                  mb-5
-                  flex
-                  h-11
-                  w-11
-                  items-center
-                  justify-center
-                  rounded-xl
-                  border
-                  border-white/[0.08]
-                  bg-[#1a1c22]
-                  transition-all
-                  duration-300
-                  group-hover:border-white/[0.15]
-                  group-hover:bg-[#202229]
-                "
+                className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl border border-surface-edge bg-[#1a1c22] transition-all duration-300 group-hover:border-surface-accent-edge group-hover:bg-surface-hover"
               >
                 <Crown
                   size={20}
@@ -799,35 +650,18 @@ export default async function BillingPage() {
 
 
               <p
-                className="
-                  text-xs
-                  font-semibold
-                  uppercase
-                  tracking-[0.16em]
-                  text-zinc-500
-                "
+                className="text-xs font-semibold uppercase tracking-[0.16em] text-surface-muted"
               >
                 Current plan
               </p>
 
 
               <div
-                className="
-                  mt-2
-                  flex
-                  flex-wrap
-                  items-end
-                  gap-3
-                "
+                className="mt-2 flex flex-wrap items-end gap-3"
               >
 
                 <h2
-                  className="
-                    text-4xl
-                    font-semibold
-                    tracking-tight
-                    text-white
-                  "
+                  className="sg-section-title text-4xl tracking-tight text-white"
                 >
                   {
                     PLAN_LABELS[
@@ -841,18 +675,7 @@ export default async function BillingPage() {
                 "business" && (
 
                   <span
-                    className="
-                      mb-1
-                      rounded-full
-                      border
-                      border-white/[0.10]
-                      bg-[#202229]
-                      px-2.5
-                      py-1
-                      text-[11px]
-                      font-medium
-                      text-zinc-300
-                    "
+                    className="sg-badge mb-1 bg-[#202229] text-zinc-300"
                   >
                     Most Popular
                   </span>
@@ -863,20 +686,11 @@ export default async function BillingPage() {
 
 
               <div
-                className="
-                  mt-5
-                  flex
-                  items-end
-                  gap-1
-                "
+                className="mt-5 flex items-end gap-1"
               >
 
                 <span
-                  className="
-                    text-2xl
-                    font-semibold
-                    text-white
-                  "
+                  className="text-2xl font-semibold text-white"
                 >
                   {formatPrice(
                     currentPlan,
@@ -896,11 +710,7 @@ export default async function BillingPage() {
                   ) && (
 
                     <span
-                      className="
-                        pb-1
-                        text-sm
-                        text-zinc-500
-                      "
+                      className="pb-1 text-sm text-surface-muted"
                     >
                       / month
                     </span>
@@ -911,13 +721,7 @@ export default async function BillingPage() {
 
 
               <p
-                className="
-                  mt-3
-                  max-w-sm
-                  text-sm
-                  leading-6
-                  text-zinc-500
-                "
+                className="mt-3 max-w-sm text-sm leading-6 text-surface-muted"
               >
                 {
                   PLAN_DESCRIPTIONS[
@@ -933,17 +737,7 @@ export default async function BillingPage() {
               ?.cancel_at_period_end && (
 
               <div
-                className="
-                  mt-6
-                  rounded-xl
-                  border
-                  border-amber-500/20
-                  bg-[#211b10]
-                  p-3
-                  text-xs
-                  leading-5
-                  text-amber-300
-                "
+                className="mt-6 rounded-xl border border-amber-500/20 bg-[#211b10] p-3 text-xs leading-5 text-amber-300"
               >
                 Your subscription is
                 scheduled to cancel at the
@@ -964,11 +758,7 @@ export default async function BillingPage() {
             <div className="mb-5">
 
               <div
-                className="
-                  flex
-                  items-center
-                  gap-2
-                "
+                className="flex items-center gap-2"
               >
                 <Gauge
                   size={17}
@@ -976,11 +766,7 @@ export default async function BillingPage() {
                 />
 
                 <h3
-                  className="
-                    text-sm
-                    font-semibold
-                    text-white
-                  "
+                  className="text-sm font-semibold text-white"
                 >
                   Plan usage
                 </h3>
@@ -988,11 +774,7 @@ export default async function BillingPage() {
 
 
               <p
-                className="
-                  mt-1
-                  text-xs
-                  text-zinc-600
-                "
+                className="mt-1 text-xs text-surface-muted"
               >
                 Resources currently assigned
                 to your account.
@@ -1002,11 +784,7 @@ export default async function BillingPage() {
 
 
             <div
-              className="
-                grid
-                gap-3
-                sm:grid-cols-2
-              "
+              className="grid gap-3 sm:grid-cols-2"
             >
 
               <UsageRow
@@ -1054,11 +832,7 @@ export default async function BillingPage() {
       <div className="mb-5">
 
         <div
-          className="
-            flex
-            items-center
-            gap-2
-          "
+          className="flex items-center gap-2"
         >
           <Sparkles
             size={17}
@@ -1066,11 +840,7 @@ export default async function BillingPage() {
           />
 
           <h2
-            className="
-              text-lg
-              font-semibold
-              text-white
-            "
+            className="sg-section-title text-white"
           >
             Available plans
           </h2>
@@ -1078,11 +848,7 @@ export default async function BillingPage() {
 
 
         <p
-          className="
-            mt-1
-            text-sm
-            text-zinc-500
-          "
+          className="mt-1 text-sm text-surface-muted"
         >
           Scale SentinelGrid as your
           infrastructure grows.
@@ -1097,12 +863,7 @@ export default async function BillingPage() {
       =============================================== */}
 
       <div
-        className="
-          grid
-          gap-4
-          md:grid-cols-2
-          xl:grid-cols-4
-        "
+        className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
       >
 
         {PLAN_ORDER.map(
@@ -1127,7 +888,7 @@ export default async function BillingPage() {
 
               <div
                 key={plan}
-                className={`
+                className={`sg-surface
                   group
                   relative
                   flex
@@ -1148,14 +909,14 @@ export default async function BillingPage() {
                       ? `
                         border-white/[0.15]
                         bg-[#16181e]
-                        hover:border-white/[0.25]
-                        hover:bg-[#191b22]
+                        hover:border-surface-accent-edge
+                        hover:bg-surface-hover
                       `
                       : `
-                        border-white/[0.08]
+                        border-surface-edge
                         bg-[#111318]
-                        hover:border-white/[0.16]
-                        hover:bg-[#15171c]
+                        hover:border-surface-accent-edge
+                        hover:bg-surface-hover
                       `
                   }
                 `}
@@ -1166,25 +927,7 @@ export default async function BillingPage() {
                 {isBusiness && (
 
                   <div
-                    className="
-                      absolute
-                      right-4
-                      top-4
-                      rounded-full
-                      border
-                      border-white/[0.10]
-                      bg-[#24262d]
-                      px-2.5
-                      py-1
-                      text-[10px]
-                      font-semibold
-                      uppercase
-                      tracking-wider
-                      text-zinc-300
-                      transition
-                      group-hover:border-white/[0.18]
-                      group-hover:text-white
-                    "
+                    className="absolute right-4 top-4 rounded-full border border-white/[0.10] bg-[#24262d] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-300 transition group-hover:border-surface-accent-edge group-hover:text-white"
                   >
                     Popular
                   </div>
@@ -1197,15 +940,7 @@ export default async function BillingPage() {
                 <div>
 
                   <p
-                    className="
-                      text-xs
-                      font-semibold
-                      uppercase
-                      tracking-[0.14em]
-                      text-zinc-500
-                      transition-colors
-                      group-hover:text-zinc-400
-                    "
+                    className="text-xs font-semibold uppercase tracking-[0.14em] text-surface-muted transition-colors group-hover:text-zinc-400"
                   >
                     {
                       PLAN_LABELS[
@@ -1216,21 +951,11 @@ export default async function BillingPage() {
 
 
                   <div
-                    className="
-                      mt-4
-                      flex
-                      items-end
-                      gap-1
-                    "
+                    className="mt-4 flex items-end gap-1"
                   >
 
                     <span
-                      className="
-                        text-3xl
-                        font-semibold
-                        tracking-tight
-                        text-white
-                      "
+                      className="text-3xl font-semibold tracking-tight text-white"
                     >
                       {isEnterprise
                         ? "Custom"
@@ -1246,11 +971,7 @@ export default async function BillingPage() {
                       price !== 0 && (
 
                       <span
-                        className="
-                          pb-1
-                          text-sm
-                          text-zinc-600
-                        "
+                        className="pb-1 text-sm text-surface-muted"
                       >
                         /mo
                       </span>
@@ -1261,15 +982,7 @@ export default async function BillingPage() {
 
 
                   <p
-                    className="
-                      mt-4
-                      min-h-[48px]
-                      text-sm
-                      leading-6
-                      text-zinc-500
-                      transition-colors
-                      group-hover:text-zinc-400
-                    "
+                    className="mt-4 min-h-[48px] text-sm leading-6 text-surface-muted transition-colors group-hover:text-zinc-400"
                   >
                     {
                       PLAN_DESCRIPTIONS[
@@ -1284,21 +997,14 @@ export default async function BillingPage() {
                 {/* SEPARATOR */}
 
                 <div
-                  className="
-                    my-6
-                    h-px
-                    bg-[#25272d]
-                  "
+                  className="my-6 h-px bg-[#25272d]"
                 />
 
 
                 {/* FEATURES */}
 
                 <div
-                  className="
-                    flex-1
-                    space-y-3
-                  "
+                  className="flex-1 space-y-3"
                 >
 
                   {
@@ -1311,25 +1017,12 @@ export default async function BillingPage() {
                           key={
                             feature
                           }
-                          className="
-                            flex
-                            items-start
-                            gap-2.5
-                            text-sm
-                            text-zinc-400
-                            transition-colors
-                            duration-200
-                            group-hover:text-zinc-300
-                          "
+                          className="flex items-start gap-2.5 text-sm text-zinc-400 transition-colors duration-200 group-hover:text-zinc-300"
                         >
 
                           <Check
                             size={15}
-                            className="
-                              mt-0.5
-                              shrink-0
-                              text-zinc-300
-                            "
+                            className="mt-0.5 shrink-0 text-zinc-300"
                           />
 
                           {feature}
@@ -1351,21 +1044,7 @@ export default async function BillingPage() {
 
                     <button
                       disabled
-                      className="
-                        flex
-                        h-10
-                        w-full
-                        cursor-default
-                        items-center
-                        justify-center
-                        rounded-lg
-                        border
-                        border-white/[0.08]
-                        bg-[#1a1c22]
-                        text-sm
-                        font-medium
-                        text-zinc-500
-                      "
+                      className="flex h-10 w-full cursor-default items-center justify-center rounded-lg border border-surface-edge bg-[#1a1c22] text-sm font-medium text-surface-muted"
                     >
                       Current Plan
                     </button>
@@ -1374,25 +1053,7 @@ export default async function BillingPage() {
 
                     <Link
                       href="/contact"
-                      className="
-                        flex
-                        h-10
-                        w-full
-                        items-center
-                        justify-center
-                        gap-2
-                        rounded-lg
-                        border
-                        border-white/[0.10]
-                        bg-[#1b1d23]
-                        text-sm
-                        font-medium
-                        text-white
-                        transition-all
-                        duration-200
-                        hover:border-white/[0.20]
-                        hover:bg-[#23252c]
-                      "
+                      className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.10] bg-[#1b1d23] text-sm font-medium text-white transition-all duration-200 hover:border-surface-accent-edge hover:bg-surface-hover"
                     >
                       Contact Sales
 
@@ -1405,26 +1066,7 @@ export default async function BillingPage() {
 
                     <button
                       type="button"
-                      className="
-                        flex
-                        h-10
-                        w-full
-                        items-center
-                        justify-center
-                        gap-2
-                        rounded-lg
-                        bg-white
-                        text-sm
-                        font-semibold
-                        text-black
-                        transition-all
-                        duration-200
-                        hover:-translate-y-0.5
-                        hover:bg-zinc-200
-                        hover:shadow-lg
-                        hover:shadow-black/20
-                        active:translate-y-0
-                      "
+                      className="sg-button sg-button-primary w-full"
                     >
                       {currentPlan ===
                       "free"
@@ -1456,14 +1098,7 @@ export default async function BillingPage() {
       =============================================== */}
 
       <div
-        className="
-          mt-6
-          flex
-          items-center
-          gap-2
-          text-xs
-          text-zinc-600
-        "
+        className="mt-6 flex items-center gap-2 text-xs text-surface-muted"
       >
         <CreditCard size={13} />
 

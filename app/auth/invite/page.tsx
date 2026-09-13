@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import OnboardingShell from "@/components/onboarding/onboarding-shell";
 
 import { createClient } from "@/lib/supabase/server";
 
@@ -137,7 +138,7 @@ export default async function InvitePage() {
   ========================= */
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#05070a] px-6 py-12">
+    <OnboardingShell embedded>
 
       <InviteSetupForm
         token={
@@ -151,6 +152,6 @@ export default async function InvitePage() {
         }
       />
 
-    </main>
+    </OnboardingShell>
   );
 }

@@ -6,6 +6,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Redis } from "@upstash/redis";
 import ts from "typescript";
+import { dashboardLoader } from "./dashboard-test-loader.mjs";
 
 const require = createRequire(import.meta.url);
 function load(path, mocks = {}) {
@@ -24,7 +25,7 @@ function history(range = "1h", samples = [sample()]) {
   const config = metrics.PERFORMANCE_RANGES[range];
   return { range, from: now - config.duration, to: now, interval: config.interval, samples };
 }
-const dependencies = { "@/lib/performance/metrics": metrics };
+const dependencies = { "@/lib/performance/metrics": metrics, "@/components/dashboard/animated-selection": dashboardLoader()("components\\dashboard\\animated-selection.tsx") };
 
 test("only real valid heartbeat percentages become samples, including zero", () => {
   assert.deepEqual(metrics.performanceSample({ cpu_usage: 0, ram_usage: 100 }, now), sample(now, { ram_usage: 100, disk_usage: null }));

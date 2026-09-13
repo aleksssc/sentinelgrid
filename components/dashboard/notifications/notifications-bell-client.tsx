@@ -288,7 +288,7 @@ export default function NotificationsBellClient({
               !current
           )
         }
-        className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.025] text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
+        className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.025] text-zinc-400 transition hover:bg-surface-hover hover:text-white"
         aria-label="Notifications"
       >
         <Bell size={17} />
@@ -460,7 +460,7 @@ export default function NotificationsBellClient({
                                   invitation
                                 )
                               }
-                              className="flex h-8 items-center gap-1.5 rounded-md border border-white/10 px-3 text-[11px] font-medium text-zinc-400 transition hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                              className="flex h-8 items-center gap-1.5 rounded-md border border-white/10 px-3 text-[11px] font-medium text-zinc-400 transition hover:bg-surface-hover hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               <X size={13} />
 
@@ -479,7 +479,7 @@ export default function NotificationsBellClient({
                                   invitation
                                 )
                               }
-                              className="flex h-8 items-center gap-1.5 rounded-md bg-white px-3 text-[11px] font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="flex h-8 items-center gap-1.5 rounded-md bg-white px-3 text-[11px] font-medium text-black transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               <Check
                                 size={13}

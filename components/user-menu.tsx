@@ -9,6 +9,7 @@ import {
   CreditCard,
   UserRound,
   Loader2,
+  Settings2,
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
@@ -300,7 +301,7 @@ export function UserMenu() {
           className="animate-spin"
         />
 
-        <span className="text-xs">
+        <span className="hidden text-xs sm:inline">
           Loading...
         </span>
 
@@ -328,6 +329,8 @@ export function UserMenu() {
 
       <button
         type="button"
+        aria-label="Account menu"
+        aria-expanded={open}
         onClick={() =>
           setOpen(
             current =>
@@ -347,9 +350,9 @@ export function UserMenu() {
           text-left
           outline-none
           transition
-          hover:border-zinc-800
-          hover:bg-zinc-900
-          focus-visible:border-zinc-700
+          hover:border-surface-accent-edge
+          hover:bg-surface-hover
+          focus-visible:border-surface-accent-edge
         "
       >
 
@@ -396,6 +399,7 @@ export function UserMenu() {
         {/* NAME + PLAN */}
 
         <div className="
+          hidden md:block
           min-w-0
           flex-1
         ">
@@ -447,6 +451,7 @@ export function UserMenu() {
 
         <div
           className="
+            sg-account-dropdown
             absolute
             right-0
             top-full
@@ -457,7 +462,7 @@ export function UserMenu() {
             rounded-xl
             border
             border-zinc-800
-            bg-zinc-900
+            bg-surface
             shadow-2xl
             shadow-black/50
           "
@@ -554,7 +559,7 @@ export function UserMenu() {
                 text-sm
                 text-zinc-300
                 transition
-                hover:bg-zinc-800
+                hover:bg-surface-hover
                 hover:text-white
               "
             >
@@ -567,6 +572,18 @@ export function UserMenu() {
 
             </button>
 
+
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                router.push("/dashboard/settings");
+              }}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-300 transition hover:bg-surface-hover hover:text-white"
+            >
+              <Settings2 size={17} />
+              Settings
+            </button>
 
             {/* BILLING */}
 
@@ -592,7 +609,7 @@ export function UserMenu() {
                 text-sm
                 text-zinc-300
                 transition
-                hover:bg-zinc-800
+                hover:bg-surface-hover
                 hover:text-white
               "
             >

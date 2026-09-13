@@ -171,12 +171,12 @@ export default function ProfilePage() {
       .toUpperCase() || "U";
 
   return (
-    <main className="p-8">
-      <div className="mx-auto max-w-4xl">
+    <div className="sg-page-shell">
+      <div className="sg-page">
 
         {/* HEADER */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold">
+          <h1 className="sg-page-title">
             Edit profile
           </h1>
 
@@ -186,14 +186,14 @@ export default function ProfilePage() {
         </div>
 
         {/* PROFILE CARD */}
-        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+        <div className="sg-surface overflow-hidden">
 
-          <div className="border-b border-zinc-800 px-6 py-5">
-            <h2 className="text-lg font-semibold">
+          <div className="border-b border-surface-edge px-6 py-5">
+            <h2 className="sg-section-title">
               Profile information
             </h2>
 
-            <p className="mt-1 text-sm text-zinc-500">
+            <p className="mt-1 text-sm text-surface-muted">
               This information is displayed in your SentinelGrid account.
             </p>
           </div>
@@ -218,15 +218,7 @@ export default function ProfilePage() {
                 )}
 
                 <label
-                  className="
-                    absolute -bottom-2 -right-2
-                    flex h-8 w-8 cursor-pointer
-                    items-center justify-center
-                    rounded-lg border border-zinc-700
-                    bg-zinc-900
-                    transition
-                    hover:bg-zinc-800
-                  "
+                  className="absolute -bottom-2 -right-2 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-zinc-700 bg-surface transition hover:bg-surface-hover"
                 >
                   {uploading ? (
                     <Loader2
@@ -253,7 +245,7 @@ export default function ProfilePage() {
                   Profile picture
                 </p>
 
-                <p className="mt-1 text-sm text-zinc-500">
+                <p className="mt-1 text-sm text-surface-muted">
                   JPG, PNG or WebP. Maximum 5 MB.
                 </p>
               </div>
@@ -274,16 +266,7 @@ export default function ProfilePage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Your name"
-                className="
-                  w-full rounded-xl
-                  border border-zinc-700
-                  bg-zinc-950
-                  px-4 py-3
-                  text-white
-                  outline-none
-                  transition
-                  focus:border-zinc-500
-                "
+                className="sg-control w-full px-4 py-3"
               />
             </div>
 
@@ -300,17 +283,10 @@ export default function ProfilePage() {
                 id="email"
                 value={email}
                 disabled
-                className="
-                  w-full cursor-not-allowed
-                  rounded-xl
-                  border border-zinc-800
-                  bg-zinc-950
-                  px-4 py-3
-                  text-zinc-500
-                "
+                className="sg-control w-full cursor-not-allowed px-4 py-3 text-surface-muted"
               />
 
-              <p className="mt-2 text-xs text-zinc-600">
+              <p className="mt-2 text-xs text-surface-muted">
                 Email changes will be available later.
               </p>
             </div>
@@ -334,17 +310,7 @@ export default function ProfilePage() {
                 type="button"
                 onClick={saveProfile}
                 disabled={saving}
-                className="
-                  flex items-center gap-2
-                  rounded-xl
-                  bg-white
-                  px-5 py-2.5
-                  font-medium text-black
-                  transition
-                  hover:bg-zinc-200
-                  disabled:cursor-not-allowed
-                  disabled:opacity-50
-                "
+                className="sg-button sg-button-primary disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? (
                   <Loader2
@@ -363,6 +329,6 @@ export default function ProfilePage() {
         </div>
 
       </div>
-    </main>
+    </div>
   );
 }

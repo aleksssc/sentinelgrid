@@ -31,7 +31,8 @@ try {
         $version = $properties['ProductVersion']
         $versions += [version]$version
         $files = @(Read-Rows $database 'SELECT `File`, `Version` FROM `File`' 2)
-        if ($files.Count -ne 2) { throw 'Endpoint MSI must contain exactly Agent and Updater.' }
+        $expectedFiles = if ($properties['SENTINELGRID_UPDATE_PROTOCOL'] -eq '2') { 3 } else { 2 }
+        if ($files.Count -ne $expectedFiles) { throw 'Endpoint MSI payload is incomplete.' }
         foreach ($file in $files) {
             if ([version]$file[1] -ne [version]($version + '.0')) { throw "MSI/PE file version mismatch: $($file[0])" }
         }
@@ -42,6 +43,7 @@ try {
     if ($versions[1] -le $versions[0]) { throw 'Target must be newer than baseline.' }
     foreach ($name in $components[0].Keys) { if ($components[1][$name] -ne $components[0][$name]) { throw 'Component identity changed across versions.' } }
     $target = $databases[1]
+    if ($properties['SENTINELGRID_UPDATE_PROTOCOL'] -ne '2') { throw 'Target must support full-product updates.' }
     $sequence = @{}
     foreach ($row in (Read-Rows $target 'SELECT `Action`, `Sequence` FROM `InstallExecuteSequence`' 2)) { $sequence[$row[0]] = [int]$row[1] }
     foreach ($action in @('EnrollSentinelGridAgent', 'ValidateSentinelGridConfig')) {
@@ -53,6 +55,16 @@ try {
         if (($actions[$action] -band 0xC00) -ne 0xC00 -or ($actions[$action] -band 0xC0) -ne 0) { throw 'Enrollment/config validation must be checked, deferred and non-impersonated.' }
     }
     $launch = @(Read-Rows $target 'SELECT `Condition` FROM `LaunchCondition`' 1)
+    $controls = @{}
+    foreach ($row in (Read-Rows $target 'SELECT `Name`, `Event`, `Wait` FROM `ServiceControl`' 3)) { $controls[$row[0]] = $row }
+    foreach ($name in @('SentinelGridAgent','SentinelGridUpdater')) {
+        if (-not $controls.ContainsKey($name) -or ([int]$controls[$name][1] -band 163) -ne 163 -or [int]$controls[$name][2] -ne 1) {
+            throw 'MSI must wait for service stops and restart both services during upgrade.'
+        }
+    }
+    if ($sequence['RemoveExistingProducts'] -le $sequence['InstallExecute'] -or $sequence['RemoveExistingProducts'] -ge $sequence['InstallFinalize']) {
+        throw 'Major upgrade must remain inside the Windows Installer transaction.'
+    }
     if (-not ($launch | Where-Object { $_[0] -eq 'Installed OR NOT SG_SAME_VERSION' })) { throw 'Same-version duplicate-product guard is absent.' }
     Write-Host "PASS: MSI $($versions[0]) -> $($versions[1]) metadata, real PE versions, stable components, same-version guard and checked SYSTEM enrollment sequencing."
     Write-Host 'Read-only MSI database inspection only. No installation, repair, upgrade or uninstall was performed.'

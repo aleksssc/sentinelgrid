@@ -32,7 +32,7 @@ export function DeleteOrganizationButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm font-medium text-red-400 transition hover:bg-red-500/20"
+        className="sg-button sg-button-danger-solid text-red-400"
       >
         <Trash2 size={16} />
         Delete organization
@@ -43,17 +43,7 @@ export function DeleteOrganizationButton({
 
       {open && (
         <div
-          className="
-            fixed
-            inset-0
-            z-50
-            flex
-            items-center
-            justify-center
-            bg-black/70
-            px-4
-            backdrop-blur-sm
-          "
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
           onClick={() => {
             if (!deleting) {
               setOpen(false);
@@ -63,16 +53,7 @@ export function DeleteOrganizationButton({
         >
 
           <div
-            className="
-              w-full
-              max-w-md
-              overflow-hidden
-              rounded-2xl
-              border
-              border-zinc-800
-              bg-zinc-900
-              shadow-2xl
-            "
+            className="sg-surface w-full sg-dialog max-w-md overflow-hidden"
             onClick={(event) =>
               event.stopPropagation()
             }
@@ -80,15 +61,15 @@ export function DeleteOrganizationButton({
 
             {/* HEADER */}
 
-            <div className="flex items-start justify-between border-b border-zinc-800 px-6 py-5">
+            <div className="flex items-start justify-between border-b border-surface-edge px-6 py-5">
 
               <div>
 
-                <h2 className="font-semibold text-white">
+                <h2 className="sg-section-title text-white">
                   Delete organization
                 </h2>
 
-                <p className="mt-1 text-sm text-zinc-500">
+                <p className="mt-1 text-sm text-surface-muted">
                   This action cannot be undone.
                 </p>
 
@@ -102,7 +83,8 @@ export function DeleteOrganizationButton({
                   setOpen(false);
                   setConfirmation("");
                 }}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-800 hover:text-white disabled:pointer-events-none"
+                aria-label="Close delete dialog"
+                className="sg-button sg-button-ghost sg-button-icon w-8 text-surface-muted disabled:pointer-events-none"
               >
                 <X size={17} />
               </button>
@@ -150,22 +132,7 @@ export function DeleteOrganizationButton({
                   onChange={(event) =>
                     setConfirmation(event.target.value)
                   }
-                  className="
-                    mt-3
-                    w-full
-                    rounded-xl
-                    border
-                    border-zinc-800
-                    bg-zinc-950
-                    px-4
-                    py-3
-                    text-sm
-                    text-white
-                    outline-none
-                    transition
-                    focus:border-red-500/50
-                    disabled:opacity-50
-                  "
+                  className="sg-control mt-3 w-full px-4 py-3 disabled:opacity-50"
                 />
 
               </div>
@@ -175,7 +142,7 @@ export function DeleteOrganizationButton({
 
             {/* ACTIONS */}
 
-            <div className="flex justify-end gap-3 border-t border-zinc-800 px-6 py-4">
+            <div className="flex justify-end gap-3 border-t border-surface-edge px-6 py-4">
 
               <button
                 type="button"
@@ -184,7 +151,7 @@ export function DeleteOrganizationButton({
                   setOpen(false);
                   setConfirmation("");
                 }}
-                className="rounded-lg px-4 py-2.5 text-sm text-zinc-400 transition hover:text-white disabled:opacity-50"
+                className="sg-button sg-button-ghost disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -194,22 +161,7 @@ export function DeleteOrganizationButton({
                 type="button"
                 disabled={!canDelete || deleting}
                 onClick={handleDelete}
-                className="
-                  inline-flex
-                  items-center
-                  gap-2
-                  rounded-lg
-                  bg-red-500
-                  px-4
-                  py-2.5
-                  text-sm
-                  font-medium
-                  text-white
-                  transition
-                  hover:bg-red-600
-                  disabled:cursor-not-allowed
-                  disabled:opacity-40
-                "
+                className="sg-button sg-button-danger-solid disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {deleting ? (
                   <>

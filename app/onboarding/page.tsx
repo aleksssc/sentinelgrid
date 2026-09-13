@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { BrandLogo } from "@/components/brand-logo";
+import OnboardingShell from "@/components/onboarding/onboarding-shell";
 
 import OnboardingSubmit from "./onboarding-submit";
 
@@ -651,58 +652,7 @@ export default async function OnboardingPage() {
   // ======================================================
 
   return (
-    <main
-      className="
-        relative
-        flex min-h-screen
-        items-center justify-center
-        overflow-hidden
-        bg-[#09090b]
-        px-6 py-8
-      "
-    >
-      {/* ======================================================
-          BACKGROUND GRID
-      ====================================================== */}
-
-      <div
-        className="
-          pointer-events-none
-          absolute inset-0
-
-          opacity-[0.32]
-
-          [background-image:linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)]
-          [background-size:52px_52px]
-        "
-      />
-
-      {/* ======================================================
-          GLOW
-      ====================================================== */}
-
-      <div
-        className="
-          pointer-events-none
-
-          absolute
-          left-1/2
-          top-1/2
-
-          h-[500px]
-          w-[500px]
-
-          -translate-x-1/2
-          -translate-y-1/2
-
-          rounded-full
-
-          bg-cyan-500/[0.035]
-
-          blur-[100px]
-        "
-      />
-
+    <OnboardingShell>
       {/* ======================================================
           CONTENT
       ====================================================== */}
@@ -1490,6 +1440,6 @@ export default async function OnboardingPage() {
           </>
         )}
       </div>
-    </main>
+    </OnboardingShell>
   );
 }

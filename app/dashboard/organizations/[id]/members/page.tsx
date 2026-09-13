@@ -1,3 +1,4 @@
+import { RoleBadge } from "@/components/dashboard/dashboard-badges";
 import { notFound } from "next/navigation";
 
 import {
@@ -326,7 +327,7 @@ export default async function MembersPage({
   ========================= */
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="sg-page">
 
       {/* HEADER */}
 
@@ -334,7 +335,7 @@ export default async function MembersPage({
 
         <div>
 
-          <div className="mb-3 flex items-center gap-2 text-sm text-zinc-500">
+          <div className="mb-3 flex items-center gap-2 text-sm text-surface-muted">
             <Building2 size={15} />
 
             <span>
@@ -349,12 +350,12 @@ export default async function MembersPage({
           </div>
 
 
-          <h1 className="text-2xl font-semibold tracking-tight text-white">
+          <h1 className="sg-page-title">
             Organization Members
           </h1>
 
 
-          <p className="mt-2 text-sm text-zinc-500">
+          <p className="mt-2 text-sm text-surface-muted">
             Manage who has access to this organization.
           </p>
 
@@ -380,7 +381,7 @@ export default async function MembersPage({
 
           </div>
 
-          <span className="mt-1 block text-xs capitalize text-zinc-500">
+          <span className="mt-1 block text-xs capitalize text-surface-muted">
             {plan} plan
           </span>
 
@@ -399,7 +400,7 @@ export default async function MembersPage({
 
           {/* ACTIVE MEMBERS */}
 
-          <section className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.02]">
+          <section className="overflow-hidden rounded-xl border border-white/10 bg-surface">
 
             <div className="border-b border-white/10 px-5 py-4">
 
@@ -410,13 +411,13 @@ export default async function MembersPage({
                   className="text-zinc-400"
                 />
 
-                <h2 className="font-medium text-white">
+                <h2 className="sg-section-title font-medium text-white">
                   Members
                 </h2>
 
               </div>
 
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-surface-muted">
                 Users with access to this organization.
               </p>
 
@@ -425,7 +426,7 @@ export default async function MembersPage({
 
             {/* OWNER */}
 
-            <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">
+            <div className="flex items-center justify-between border-b border-surface-edge px-5 py-4">
 
               <div className="flex items-center gap-3">
 
@@ -448,7 +449,7 @@ export default async function MembersPage({
 
                     {organization.owner_id ===
                       user.id && (
-                      <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-500">
+                      <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-surface-muted">
                         You
                       </span>
                     )}
@@ -456,7 +457,7 @@ export default async function MembersPage({
                   </div>
 
 
-                  <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500">
+                  <div className="mt-1 flex items-center gap-1.5 text-xs text-surface-muted">
 
                     <Mail size={12} />
 
@@ -470,10 +471,7 @@ export default async function MembersPage({
               </div>
 
 
-              <div className="flex items-center gap-2 rounded-md border border-yellow-500/20 bg-yellow-500/10 px-2.5 py-1 text-xs font-medium text-yellow-400">
-                <Crown size={12} />
-                Owner
-              </div>
+              <RoleBadge role="owner" />
 
             </div>
 
@@ -499,7 +497,7 @@ export default async function MembersPage({
                       key={
                         member.user_id
                       }
-                      className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4 last:border-b-0"
+                      className="flex items-center justify-between border-b border-surface-edge px-5 py-4 last:border-b-0"
                     >
 
                       <div className="flex items-center gap-3">
@@ -524,7 +522,7 @@ export default async function MembersPage({
 
                             {member.user_id ===
                               user.id && (
-                              <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-500">
+                              <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-surface-muted">
                                 You
                               </span>
                             )}
@@ -532,7 +530,7 @@ export default async function MembersPage({
                           </div>
 
 
-                          <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500">
+                          <div className="mt-1 flex items-center gap-1.5 text-xs text-surface-muted">
 
                             <Mail size={12} />
 
@@ -546,15 +544,7 @@ export default async function MembersPage({
                       </div>
 
 
-                      <div className="flex items-center gap-2 rounded-md border border-blue-500/20 bg-blue-500/10 px-2.5 py-1 text-xs font-medium capitalize text-blue-400">
-
-                        <ShieldCheck
-                          size={12}
-                        />
-
-                        {member.role}
-
-                      </div>
+                      <RoleBadge role={member.role} />
 
                     </div>
                   );
@@ -567,7 +557,7 @@ export default async function MembersPage({
           {/* PENDING */}
 
           {isOwner && (
-            <section className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.02]">
+            <section className="overflow-hidden rounded-xl border border-white/10 bg-surface">
 
               <div className="border-b border-white/10 px-5 py-4">
 
@@ -578,13 +568,13 @@ export default async function MembersPage({
                     className="text-zinc-400"
                   />
 
-                  <h2 className="font-medium text-white">
+                  <h2 className="sg-section-title font-medium text-white">
                     Pending Invitations
                   </h2>
 
                 </div>
 
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="mt-1 text-xs text-surface-muted">
                   Invitations waiting to be accepted.
                 </p>
 
@@ -596,7 +586,7 @@ export default async function MembersPage({
 
                 <div className="px-5 py-8 text-center">
 
-                  <p className="text-sm text-zinc-500">
+                  <p className="text-sm text-surface-muted">
                     No pending invitations.
                   </p>
 
@@ -608,7 +598,7 @@ export default async function MembersPage({
                   (invite) => (
                     <div
                       key={invite.id}
-                      className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4 last:border-b-0"
+                      className="flex items-center justify-between border-b border-surface-edge px-5 py-4 last:border-b-0"
                     >
 
                       <div>
@@ -621,7 +611,7 @@ export default async function MembersPage({
 
                         </div>
 
-                        <span className="mt-1 block text-xs capitalize text-zinc-500">
+                        <span className="mt-1 block text-xs capitalize text-surface-muted">
                           {invite.role}
                         </span>
 
@@ -650,13 +640,13 @@ export default async function MembersPage({
 
           {isOwner ? (
 
-            <div className="sticky top-6 rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="sticky top-6 rounded-xl border border-white/10 bg-surface p-5">
 
-              <h2 className="font-medium text-white">
+              <h2 className="sg-section-title font-medium text-white">
                 Invite Member
               </h2>
 
-              <p className="mt-1 text-xs leading-5 text-zinc-500">
+              <p className="mt-1 text-xs leading-5 text-surface-muted">
                 Invite someone to access{" "}
                 {organization.name}.
               </p>
@@ -684,18 +674,18 @@ export default async function MembersPage({
 
           ) : (
 
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="rounded-xl border border-white/10 bg-surface p-5">
 
               <ShieldCheck
                 size={18}
                 className="mb-3 text-blue-400"
               />
 
-              <h2 className="text-sm font-medium text-white">
+              <h2 className="sg-section-title font-medium text-white">
                 Organization Member
               </h2>
 
-              <p className="mt-2 text-xs leading-5 text-zinc-500">
+              <p className="mt-2 text-xs leading-5 text-surface-muted">
                 Only the organization owner can invite or manage team members.
               </p>
 

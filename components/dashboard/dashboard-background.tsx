@@ -1,6 +1,6 @@
 export default function DashboardBackground() {
   return (
-    <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
       {/* MOVING GRID */}
       <div className="dashboard-grid absolute inset-0" />
 

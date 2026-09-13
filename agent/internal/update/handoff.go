@@ -29,6 +29,9 @@ func handoffLocked(ctx context.Context, host Host, state State, release Release,
 	}
 	state.Status = "staged"
 	state.Pending = &Pending{Schema: 1, Version: release.Version, Channel: release.Channel, SHA256: release.SHA256, Size: release.Size, NotAfter: release.ExpiresAt}
+	if release.ArtifactType == "msi" {
+		state.Pending.Schema, state.Pending.ArtifactType, state.Pending.SignerSHA256 = 2, "msi", release.SignerSHA256
+	}
 	if err := host.Save(state); err != nil {
 		return err
 	}
@@ -46,11 +49,17 @@ func handoffLocked(ctx context.Context, host Host, state State, release Release,
 }
 
 func cleanupNames(state State) []string {
+	if state.MSI != nil && state.MSI.RepairRequired {
+		return nil
+	}
 	if Active(state) || state.CompletedAt.IsZero() {
 		return nil
 	}
 	if state.Status != "succeeded" && state.Status != "rolled_back" && state.Status != "failed" {
 		return nil
+	}
+	if state.Pending != nil && state.Pending.Schema == 2 {
+		return []string{"candidate.msi", "msi-result.json", "msi-outcome.json"}
 	}
 	return []string{"previous.exe", "candidate.exe", "pending.json"}
 }

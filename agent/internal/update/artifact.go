@@ -16,6 +16,9 @@ import (
 const MaxArtifactSize int64 = 256 * 1024 * 1024
 
 type Release struct {
+	ArtifactType        string    `json:"artifact_type,omitempty"`
+	SignerSHA256        string    `json:"signer_sha256,omitempty"`
+	UpdateProtocol      int       `json:"update_protocol,omitempty"`
 	Product             string    `json:"product"`
 	Version             string    `json:"latest_version"`
 	Channel             string    `json:"channel"`
@@ -33,6 +36,9 @@ type Release struct {
 type SignatureVerifier func(context.Context, string) error
 
 func (r Release) Validate() error {
+	if r.ArtifactType != "" && (r.ArtifactType != "msi" || r.UpdateProtocol != 2 || !validSignerPins(r.SignerSHA256, true)) {
+		return fmt.Errorf("unsupported or unqualified installation artifact")
+	}
 	if r.Product != "SentinelGridAgent" || r.Platform != "windows" || r.Architecture != "amd64" {
 		return fmt.Errorf("unexpected release identity")
 	}

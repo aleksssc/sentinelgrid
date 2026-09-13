@@ -1,3 +1,6 @@
+import { RoleBadge, StatusBadge } from "@/components/dashboard/dashboard-badges";
+import { PageHeader, SectionHeader, Surface, EmptyState } from "@/components/dashboard/dashboard-primitives";
+import { FormSubmitButton } from "@/components/dashboard/form-submit-button";
 import Link from "next/link";
 
 import { connection } from "next/server";
@@ -20,11 +23,9 @@ import { DeleteOrganizationButton } from "@/components/organization/delete-organ
 import {
   ArrowLeft,
   Building2,
-  CheckCircle2,
   ChevronDown,
   Crown,
   Settings,
-  ShieldCheck,
   UserRound,
   Users,
   XCircle,
@@ -1555,735 +1556,115 @@ async function cancelPendingInvite(
   ========================================================== */
 
   return (
-    <main className="p-8">
-
-      <div className="mx-auto max-w-4xl">
-
-        {/* =====================================================
-                            BACK
-        ====================================================== */}
-
-        <Link
-          href={`/dashboard/organizations/${organization.id}`}
-          className="mb-6 inline-flex items-center gap-2 text-sm text-zinc-500 transition hover:text-white"
-        >
-          <ArrowLeft
-            size={16}
-          />
-
-          Back to{" "}
-          {
-            organization.name
-          }
-        </Link>
-
-        {/* =====================================================
-                            HEADER
-        ====================================================== */}
-
-        <div className="mb-8">
-
-          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400">
-
-            <Settings
-              size={22}
-            />
-
-          </div>
-
-          <h1 className="text-3xl font-bold">
-            Organization settings
-          </h1>
-
-          <p className="mt-2 text-zinc-400">
-            Manage settings for{" "}
-
-            <span className="text-zinc-200">
-              {
-                organization.name
-              }
-            </span>
-            .
-          </p>
-
-        </div>
-
-        {/* =====================================================
-                            GENERAL
-        ====================================================== */}
-
-        <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/70">
-
-          {/* HEADER */}
-
-          <div className="border-b border-zinc-800 px-6 py-5">
-
-            <div className="flex items-center gap-3">
-
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-500/10">
-
-                <Building2
-                  size={17}
-                  className="text-blue-400"
-                />
-
-              </div>
-
+    <div className="sg-page">
+      <Link href={`/dashboard/organizations/${organization.id}`} className="mb-6 inline-flex items-center gap-2 text-sm text-surface-muted transition hover:text-white">
+        <ArrowLeft size={16} />Back to {organization.name}
+      </Link>
+      <PageHeader title="Organization settings" eyebrow={organization.name} icon={<Settings size={22} />}
+        description="Manage organization details, member access and administrative controls." />
+      <div className="space-y-6">
+        <Surface id="general" className="sg-settings-section overflow-hidden">
+          <SectionHeader title="General" description="Basic information about this organization." icon={<Building2 size={17} />} />
+          <form action={updateOrganization}>
+            <input type="hidden" name="organization_id" value={organization.id} />
+            <div className="sg-settings-fields">
               <div>
-
-                <h2 className="font-semibold">
-                  General
-                </h2>
-
-                <p className="mt-1 text-sm text-zinc-500">
-                  Basic information about this organization.
-                </p>
-
+                <label htmlFor="name" className="mb-2 block text-sm font-medium text-zinc-300">Organization name</label>
+                <input id="name" name="name" type="text" required defaultValue={organization.name} className="sg-control w-full px-3 py-2.5" />
+                <p className="sg-meta mt-2">Displayed across your workspace and client pages.</p>
               </div>
-
-            </div>
-
-          </div>
-
-          {/* FORM */}
-
-          <form
-            action={
-              updateOrganization
-            }
-          >
-
-            <input
-              type="hidden"
-              name="organization_id"
-              value={
-                organization.id
-              }
-            />
-
-            <div className="space-y-6 p-6">
-
-              {/* NAME */}
-
               <div>
-
-                <label
-                  htmlFor="name"
-                  className="mb-2 block text-sm font-medium text-zinc-300"
-                >
-                  Organization name
-                </label>
-
-                <input
-                  id="name"
-                  name="name"
-                  type="text"
-                  required
-                  defaultValue={
-                    organization.name
-                  }
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-700 focus:border-blue-500/50"
-                />
-
+                <label htmlFor="description" className="mb-2 block text-sm font-medium text-zinc-300">Description</label>
+                <textarea id="description" name="description" rows={4} defaultValue={organization.description ?? ""} placeholder="Organization description..." className="sg-control w-full resize-y px-3 py-2.5" />
               </div>
-
-              {/* DESCRIPTION */}
-
-              <div>
-
-                <label
-                  htmlFor="description"
-                  className="mb-2 block text-sm font-medium text-zinc-300"
-                >
-                  Description
-                </label>
-
-                <textarea
-                  id="description"
-                  name="description"
-                  rows={4}
-                  defaultValue={
-                    organization.description ??
-                    ""
-                  }
-                  placeholder="Organization description..."
-                  className="w-full resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-700 focus:border-blue-500/50"
-                />
-
-              </div>
-
             </div>
-
-            {/* FOOTER */}
-
-              <div className="flex min-h-[74px] flex-wrap items-center justify-between gap-4 border-t border-zinc-800 px-6 py-4">
-
-              {/* SUCCESS */}
-
-              <div className="min-h-5">
-                {notice === "organization-updated" && (
-                  <SettingsNotice
-                    key={notice}
-                    message="Organization updated successfully."
-                    compact
-                  />
-                )}
-              </div>
-
-              {/* SAVE */}
-
-              <button
-                type="submit"
-                className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200"
-              >
-                Save changes
-              </button>
-
+            <div className="flex min-h-[74px] flex-wrap items-center justify-between gap-4 border-t border-surface-edge px-5 py-4">
+              <div role="status" className="min-h-5">{notice === "organization-updated" && <SettingsNotice key={notice} message="Organization updated successfully." compact />}</div>
+              <FormSubmitButton>Save changes</FormSubmitButton>
             </div>
-
           </form>
+        </Surface>
 
-        </section>
-
-        {/* =====================================================
-                            MEMBERS
-        ====================================================== */}
-
-        <section className="mt-8 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/70">
-
-          {/* HEADER */}
-
-          <div className="flex flex-wrap items-center justify-between gap-6 border-b border-zinc-800 px-6 py-5">
-
-            <div className="flex items-center gap-3">
-
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-violet-500/20 bg-violet-500/10">
-
-                <Users
-                  size={17}
-                  className="text-violet-400"
-                />
-
-              </div>
-
-              <div>
-
-                <h2 className="font-semibold">
-                  Members
-                </h2>
-
-                <p className="mt-1 text-sm text-zinc-500">
-                  Manage users and permissions for this organization.
-                </p>
-
-              </div>
-
-            </div>
-
-            <InviteMemberButton
-              organizationId={
-                organization.id
-              }
-              action={
-                inviteMember
-              }
-            />
-
-          </div>
-
-          {/* ===================================================
-                         MEMBER SUCCESS
-          ==================================================== */}
-
-          {memberNotice && (
-            <SettingsNotice
-              message={
-                memberNotice
-              }
-            />
-          )}
-
-          {/* ===================================================
-                              OWNER
-          ==================================================== */}
-
-          <div className="flex items-center justify-between gap-6 border-b border-zinc-800 px-6 py-4">
-
+        <Surface id="members" className="sg-settings-section overflow-hidden">
+          <SectionHeader title="Members" description="Manage users and permissions for this organization." icon={<Users size={17} />}
+            actions={<InviteMemberButton organizationId={organization.id} action={inviteMember} />} />
+          {memberNotice && <SettingsNotice message={memberNotice} />}
+          <div className="sg-member-row sg-row">
             <div className="flex min-w-0 items-center gap-3">
-
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-red-500/20 bg-red-500/10">
-
-                <Crown
-                  size={15}
-                  className="text-red-400"
-                />
-
+              <span className="sg-section-icon"><Crown size={16} className="text-amber-400" /></span>
+              <div className="min-w-0"><p className="truncate text-sm font-medium text-white">{ownerDisplayName}</p>
+                {ownerDisplayEmail && <p className="mt-1 truncate text-xs text-surface-muted">{ownerDisplayEmail}</p>}
               </div>
-
-              <div className="min-w-0">
-
-                <p className="truncate text-sm font-medium text-white">
-                  {
-                    ownerDisplayName
-                  }
-                </p>
-
-                {ownerDisplayEmail && (
-                  <p className="mt-0.5 truncate text-xs text-zinc-500">
-                    {
-                      ownerDisplayEmail
-                    }
-                  </p>
-                )}
-
-              </div>
-
             </div>
-
-            <RoleBadge
-              role="owner"
-            />
-
+            <RoleBadge role="owner" />
           </div>
-
-          {/* ===================================================
-                        CURRENT MEMBERS
-          ==================================================== */}
-
-          {membersWithUsers.length ===
-          0 ? (
-
-            <div className="px-6 py-8 text-center">
-
-              <UserRound
-                size={20}
-                className="mx-auto text-zinc-700"
-              />
-
-              <p className="mt-3 text-sm text-zinc-500">
-                No additional members yet.
-              </p>
-
-            </div>
-
-          ) : (
-
-            membersWithUsers.map(
-              (
-                member
-              ) => {
-
-                /*
-                  Se existir algum viewer
-                  antigo na BD, mostramos
-                  Member para permitir
-                  corrigir imediatamente.
-                */
-
-                const currentRole =
-                  member.role ===
-                  "admin"
-                    ? "admin"
-                    : "member";
-
-                return (
-                  <div
-                    key={
-                      member.id
-                    }
-                    className="flex flex-wrap items-center justify-between gap-5 border-b border-zinc-800 px-6 py-4 last:border-b-0"
-                  >
-
-                    {/* USER */}
-
-                    <div className="flex min-w-0 items-center gap-3">
-
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950">
-
-                        <UserRound
-                          size={
-                            15
-                          }
-                          className="text-zinc-500"
-                        />
-
-                      </div>
-
-                      <div className="min-w-0">
-
-                        <p className="truncate text-sm font-medium text-white">
-                          {
-                            member.display_name
-                          }
-                        </p>
-
-                        {member.display_email && (
-                          <p className="mt-0.5 truncate text-xs text-zinc-500">
-                            {
-                              member.display_email
-                            }
-                          </p>
-                        )}
-
-                        {member.joined_at && (
-                          <p className="mt-1 text-[11px] text-zinc-600">
-                            Joined{" "}
-
-                            {new Date(
-                              member.joined_at
-                            ).toLocaleDateString()}
-                          </p>
-                        )}
-
-                      </div>
-
-                    </div>
-
-                    {/* ACTIONS */}
-
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-
-                      {/* ROLE */}
-
-                      <form
-                        action={
-                          updateMemberRole
-                        }
-                        className="flex items-center gap-2"
-                      >
-
-                        <input
-                          type="hidden"
-                          name="organization_id"
-                          value={
-                            organization.id
-                          }
-                        />
-
-                        <input
-                          type="hidden"
-                          name="member_id"
-                          value={
-                            member.id
-                          }
-                        />
-
-                        <div className="relative">
-
-                          <select
-                            name="role"
-                            defaultValue={
-                              currentRole
-                            }
-                            className="
-                              appearance-none
-                              rounded-lg
-                              border
-                              border-zinc-800
-                              bg-zinc-950
-                              py-2
-                              pl-3
-                              pr-9
-                              text-xs
-                              font-medium
-                              text-zinc-300
-                              outline-none
-                              transition
-                              hover:border-zinc-700
-                              focus:border-violet-500/50
-                              focus:ring-2
-                              focus:ring-violet-500/10
-                            "
-                          >
-                            <option value="member">
-                              Member
-                            </option>
-
-                            <option value="admin">
-                              Admin
-                            </option>
-
-                          </select>
-
-                          <ChevronDown
-                            size={13}
-                            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600"
-                          />
-
-                        </div>
-
-                        <button
-                          type="submit"
-                          className="rounded-lg border border-zinc-800 px-3 py-2 text-xs font-medium text-zinc-400 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
-                        >
-                          Update
-                        </button>
-
-                      </form>
-
-                      {/* REMOVE */}
-
-                      <RemoveMemberButton
-                        memberName={
-                          member.display_name
-                        }
-                        memberId={
-                          member.id
-                        }
-                        organizationId={
-                          organization.id
-                        }
-                        action={
-                          removeMember
-                        }
-                      />
-
-                    </div>
-
+          {membersWithUsers.length === 0 ? (
+            <EmptyState title="No additional members yet" description="Invite a teammate to collaborate in this organization." icon={<UserRound size={22} />} />
+          ) : membersWithUsers.map((member) => {
+            const currentRole = member.role === "admin" ? "admin" : "member";
+            return (
+              <div key={member.id} className="sg-member-row sg-row">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="sg-section-icon"><UserRound size={16} /></span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-white">{member.display_name}</p>
+                    {member.display_email && <p className="mt-1 truncate text-xs text-surface-muted">{member.display_email}</p>}
+                    {member.joined_at && <p className="mt-1 text-xs text-surface-muted">Joined {new Date(member.joined_at).toLocaleDateString()}</p>}
                   </div>
-                );
-              }
-            )
-
-          )}
-
-          {/* ===================================================
-                        PENDING INVITES
-          ==================================================== */}
-
-          {!!invites?.length && (
-            <>
-
-              <div className="border-y border-zinc-800 bg-zinc-950/50 px-6 py-3">
-
-                <p className="text-xs font-medium uppercase tracking-wider text-zinc-600">
-                  Pending invitations
-                </p>
-
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <form action={updateMemberRole} className="flex flex-wrap items-center gap-2">
+                    <input type="hidden" name="organization_id" value={organization.id} />
+                    <input type="hidden" name="member_id" value={member.id} />
+                    <div className="relative">
+                      <select name="role" aria-label={`Role for ${member.display_name}`} defaultValue={currentRole} className="sg-control sg-control-sm appearance-none py-2 pl-3 pr-9">
+                        <option value="member">Member</option><option value="admin">Admin</option>
+                      </select>
+                      <ChevronDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-surface-muted" />
+                    </div>
+                    <FormSubmitButton variant="secondary" size="sm" pendingLabel="Updating...">Update</FormSubmitButton>
+                  </form>
+                  <RemoveMemberButton memberName={member.display_name} memberId={member.id} organizationId={organization.id} action={removeMember} />
+                </div>
               </div>
-
-              {invites.map(
-                (
-                  invite
-                ) => (
-                  <div
-                    key={
-                      invite.id
-                    }
-                    className="flex flex-wrap items-center justify-between gap-5 border-b border-zinc-800 px-6 py-4 last:border-b-0"
-                  >
-
-                    {/* INVITE INFO */}
-
-                    <div className="min-w-0">
-
-                      <p className="truncate text-sm font-medium text-zinc-300">
-                        {
-                          invite.email
-                        }
-                      </p>
-
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
-
-                        <span>
-                          Invited as{" "}
-
-                          <span className="capitalize">
-                            {
-                              invite.role
-                            }
-                          </span>
-                        </span>
-
-                        {invite.expires_at && (
-                          <>
-                            <span className="text-zinc-800">
-                              •
-                            </span>
-
-                            <span>
-                              Expires{" "}
-
-                              {new Date(
-                                invite.expires_at
-                              ).toLocaleDateString()}
-                            </span>
-                          </>
-                        )}
-
-                      </div>
-
-                    </div>
-
-                    {/* INVITE ACTIONS */}
-
-                    <div className="flex items-center gap-3">
-
-                      <span className="rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-xs font-medium text-yellow-400">
-                        Pending
-                      </span>
-
-                      <form
-                        action={
-                          cancelPendingInvite
-                        }
-                      >
-
-                        <input
-                          type="hidden"
-                          name="organization_id"
-                          value={
-                            organization.id
-                          }
-                        />
-
-                        <input
-                          type="hidden"
-                          name="invite_id"
-                          value={
-                            invite.id
-                          }
-                        />
-
-                        <button
-                          type="submit"
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/[0.04] px-3 py-2 text-xs font-medium text-red-400 transition hover:border-red-500/30 hover:bg-red-500/10"
-                        >
-                          <XCircle
-                            size={
-                              14
-                            }
-                          />
-
-                          Cancel invitation
-                        </button>
-
-                      </form>
-
-                    </div>
-
+            );
+          })}
+          {!!invites?.length && <>
+            <div className="sg-table-heading border-y border-surface-edge px-5 py-3">Pending invitations</div>
+            {invites.map((invite) => (
+              <div key={invite.id} className="sg-member-row sg-row">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-zinc-200">{invite.email}</p>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-surface-muted">
+                    <span>Invited as <span className="capitalize">{invite.role}</span></span>
+                    {invite.expires_at && <span>Expires {new Date(invite.expires_at).toLocaleDateString()}</span>}
                   </div>
-                )
-              )}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <StatusBadge status="pending" />
+                  <form action={cancelPendingInvite}>
+                    <input type="hidden" name="organization_id" value={organization.id} />
+                    <input type="hidden" name="invite_id" value={invite.id} />
+                    <FormSubmitButton variant="danger" size="sm" pendingLabel="Cancelling..."><XCircle size={14} />Cancel invitation</FormSubmitButton>
+                  </form>
+                </div>
+              </div>
+            ))}
+          </>}
+        </Surface>
 
-            </>
-          )}
-
-        </section>
-
-        {/* =====================================================
-                        DANGER ZONE
-        ====================================================== */}
-
-        <section className="mt-8 overflow-hidden rounded-2xl border border-red-500/20 bg-red-500/[0.025]">
-
-          <div className="border-b border-red-500/10 px-6 py-5">
-
-            <h2 className="font-semibold text-red-400">
-              Danger zone
-            </h2>
-
-            <p className="mt-1 text-sm text-zinc-500">
-              Destructive actions for this organization.
-            </p>
-
-          </div>
-
-          <div className="flex items-center justify-between gap-6 p-6">
-
-            <div>
-
-              <p className="font-medium">
-                Delete organization
-              </p>
-
-              <p className="mt-1 max-w-xl text-sm leading-6 text-zinc-500">
-                Permanently delete this organization and all associated clients, sites, devices and monitoring data.
-              </p>
-
+        <Surface id="danger-zone" className="sg-settings-section sg-danger overflow-hidden">
+          <SectionHeader title="Danger zone" description="Destructive actions for this organization." icon={<XCircle size={17} />} />
+          <div className="flex flex-wrap items-center justify-between gap-5 p-5">
+            <div className="min-w-0 flex-1 basis-64">
+              <h3 className="sg-section-title">Delete organization</h3>
+              <p className="sg-section-description max-w-2xl">Permanently delete this organization and all associated clients, sites, devices and monitoring data.</p>
             </div>
-
-            <DeleteOrganizationButton
-              organizationName={
-                organization.name
-              }
-              action={
-                deleteOrganization
-              }
-            />
-
+            <DeleteOrganizationButton organizationName={organization.name} action={deleteOrganization} />
           </div>
-
-        </section>
-
+        </Surface>
       </div>
-
-    </main>
+    </div>
   );
 }
 
-/* =========================================================
-                        ROLE BADGE
-========================================================= */
-
-function RoleBadge({
-  role,
-}: {
-  role: string;
-}) {
-  /* =========================
-     OWNER
-  ========================= */
-
-  if (
-    role === "owner"
-  ) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-red-500/25 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-400">
-
-        <Crown
-          size={12}
-        />
-
-        Owner
-
-      </span>
-    );
-  }
-
-  /* =========================
-     ADMIN
-  ========================= */
-
-  if (
-    role === "admin"
-  ) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-400">
-
-        <ShieldCheck
-          size={12}
-        />
-
-        Admin
-
-      </span>
-    );
-  }
-
-  /* =========================
-     MEMBER
-  ========================= */
-
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/25 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-400">
-
-      <ShieldCheck
-        size={12}
-      />
-
-      Member
-
-    </span>
-  );
-}
