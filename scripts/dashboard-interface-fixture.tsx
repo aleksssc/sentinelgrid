@@ -1,3 +1,4 @@
+import DashboardBackground from "@/components/dashboard/dashboard-background";
 import InfrastructureSearch from "@/components/infrastructure-search";
 import { Input } from "@/components/ui/input";
 import DeviceTabs from "@/components/dashboard/devices/device-tabs";
@@ -15,11 +16,11 @@ export default function InterfaceFixture({ terminalInput }: { terminalInput: str
   const [filter, setFilter] = useState("all");
   return <AppearanceProvider>
     <div className="sg-dashboard relative flex h-dvh overflow-hidden">
+      <DashboardBackground />
       <DashboardSidebar />
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         <header className="sg-topbar flex h-[72px] shrink-0 items-center border-b border-surface-edge px-6">Workspace</header>
         <main id="dashboard-content" className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="dashboard-grid pointer-events-none absolute inset-0" />
           <div className="sg-page relative space-y-5">
             <h1 className="sg-page-title">Settings</h1>
             <div data-fixture="badges"><RoleBadge role="owner" /><RoleBadge role="admin" /><RoleBadge role="member" />{["active", "online", "offline", "warning", "connected"].map(status => <StatusBadge key={status} status={status} />)}</div>

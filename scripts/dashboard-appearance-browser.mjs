@@ -32,6 +32,7 @@ export async function appearanceBrowserFixture() {
       "@/components/ui/input": "components\\ui\\input.tsx",
       "@/components/infrastructure-search": "components\\infrastructure-search.tsx",
       "@/components/brand-logo": "components\\brand-logo.tsx",
+      "@/components/dashboard/dashboard-background": "components\\dashboard\\dashboard-background.tsx",
       "@/components/ui/dropdown-menu": "components\\ui\\dropdown-menu.tsx",
       "@/components/dashboard/dashboard-badges": "components\\dashboard\\dashboard-badges.tsx",
       "@/components/dashboard/animated-selection": "components\\dashboard\\animated-selection.tsx",

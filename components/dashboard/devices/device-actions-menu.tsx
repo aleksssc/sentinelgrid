@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Database, Download, Lock, Network, Power, RotateCcw, ShieldCheck } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { DEVICE_ACTIONS, type ActionAvailability } from "@/lib/remote/action-definitions";
 
 const icons = { inventory: Database, network: Network, policy: ShieldCheck, restart: RotateCcw, update: Download, lock: Lock, power: Power };
@@ -15,32 +16,7 @@ export default function DeviceActionsMenu({ device, busy, online, open, onOpenCh
 }) {
   const [availability, setAvailability] = useState<ActionAvailability | null>(null);
   const [error, setError] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
   const lastCheck = useRef<{ deviceId: string; busy: boolean; online: boolean; at: number } | null>(null);
-  const panelId = useId();
-
-  useEffect(() => {
-    if (!open) return;
-    function dismissOutside(event: Event) {
-      if (event.target instanceof Node && !containerRef.current?.contains(event.target)) onOpenChange(false);
-    }
-    function dismissOnEscape(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      onOpenChange(false);
-      triggerRef.current?.focus();
-    }
-    document.addEventListener("pointerdown", dismissOutside, true);
-    document.addEventListener("focusin", dismissOutside);
-    document.addEventListener("keydown", dismissOnEscape, true);
-    return () => {
-      document.removeEventListener("pointerdown", dismissOutside, true);
-      document.removeEventListener("focusin", dismissOutside);
-      document.removeEventListener("keydown", dismissOnEscape, true);
-    };
-  }, [open, onOpenChange]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -81,40 +57,42 @@ export default function DeviceActionsMenu({ device, busy, online, open, onOpenCh
   }, [device.id, busy, online, open]);
   const name = device.display_name || device.hostname;
   return (
-    <div ref={containerRef} className="relative">
-      <button ref={triggerRef} type="button" aria-expanded={open} aria-controls={panelId}
-        onClick={() => onOpenChange(!open)}
-        className="sg-button sg-button-secondary">
-        Actions
-        <ChevronDown size={15} aria-hidden="true" className={`transition-transform duration-150 motion-reduce:transition-none ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && (
-        <div id={panelId} role="group" aria-label="Device actions" className="absolute right-0 top-full z-50 mt-2 w-64 max-w-[calc(100vw-2rem)] origin-top-right overflow-hidden rounded-xl border border-surface-edge bg-surface p-1.5 shadow-2xl animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 duration-150 motion-reduce:animate-none">
-          {["Maintenance", "Agent", "Power"].map((group, index) => (
-            <div key={group} className={index ? "mt-1 border-t border-zinc-800/70 pt-1" : ""}>
-              <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-surface-muted">{group}</p>
-              {DEVICE_ACTIONS.filter((action) => action.group === group).map((action) => {
-                const Icon = icons[action.icon];
-                // Availability is advisory; the command POST always revalidates authorization and safety.
-                const reason = !online ? "Device is offline" : busy ? "Another device command is already running" : error || availability?.[action.type];
-                const confirmation = action.type === "reboot" ? `Restart ${name}? Open work may be lost. Windows will restart in 30 seconds.` :
-                  action.type === "shutdown" ? `Shut down ${name}? Open work may be lost. Windows will shut down in 30 seconds; physical access may be needed to turn it on again.` :
-                  action.type === "restart_agent" ? `Restart SentinelGrid Agent on ${name}? Monitoring will briefly disconnect.` :
-                  action.type === "update_agent" ? `Check for and install the newest permitted Agent release on ${name}?` : undefined;
-                return (
-                  <div key={action.type} title={reason || undefined} tabIndex={reason ? 0 : undefined} aria-label={reason ? `${action.label}: ${reason}` : undefined}>
-                    <button type="button" disabled={Boolean(reason)} onClick={() => onAction(action.type, { confirm: confirmation })}
-                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs transition hover:bg-surface-hover focus-visible:outline focus-visible:outline-surface-focus disabled:pointer-events-none disabled:opacity-35 ${action.type === "shutdown" ? "text-red-300" : "text-zinc-300"}`}>
-                      <Icon size={15} className="shrink-0 opacity-70" aria-hidden="true" />{action.label}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-          {error && <p role="alert" className="px-3 py-2 text-xs text-red-300">{error}</p>}
-        </div>
-      )}
-    </div>
+    <DropdownMenu open={open} onOpenChange={onOpenChange} modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className="sg-button sg-button-secondary">
+          Actions
+          <ChevronDown size={15} aria-hidden="true" className={`transition-transform duration-150 motion-reduce:transition-none ${open ? "rotate-180" : ""}`} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={8} collisionPadding={12} sticky="always"
+        aria-label="Device actions" className="sg-device-actions-menu w-64 p-1.5 shadow-2xl duration-200 motion-reduce:animate-none">
+        {["Maintenance", "Agent", "Power"].map((group, index) => (
+          <DropdownMenuGroup key={group} className={index ? "mt-1 border-t border-surface-edge pt-1" : ""}>
+            <DropdownMenuLabel className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-surface-muted">{group}</DropdownMenuLabel>
+            {DEVICE_ACTIONS.filter((action) => action.group === group).map((action) => {
+              const Icon = icons[action.icon];
+              // Availability is advisory; the command POST always revalidates authorization and safety.
+              const reason = !online ? "Device is offline" : busy ? "Another device command is already running" : error || availability?.[action.type];
+              const confirmation = action.type === "reboot" ? `Restart ${name}? Open work may be lost. Windows will restart in 30 seconds.` :
+                action.type === "shutdown" ? `Shut down ${name}? Open work may be lost. Windows will shut down in 30 seconds; physical access may be needed to turn it on again.` :
+                action.type === "restart_agent" ? `Restart SentinelGrid Agent on ${name}? Monitoring will briefly disconnect.` :
+                action.type === "update_agent" ? `Check for and install the newest permitted Agent release on ${name}?` : undefined;
+              return (
+                <DropdownMenuItem key={action.type} aria-disabled={Boolean(reason)} title={reason || undefined}
+                  aria-label={reason ? `${action.label}: ${reason}` : undefined}
+                  onSelect={(event) => {
+                    if (reason) { event.preventDefault(); return; }
+                    onAction(action.type, { confirm: confirmation });
+                  }}
+                  className={`gap-3 rounded-lg px-3 py-2 text-xs aria-disabled:opacity-35 ${action.type === "shutdown" ? "text-red-300" : "text-zinc-300"}`}>
+                  <Icon size={15} className="shrink-0 opacity-70" aria-hidden="true" />{action.label}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuGroup>
+        ))}
+        {error && <p role="alert" className="px-3 py-2 text-xs text-red-300">{error}</p>}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

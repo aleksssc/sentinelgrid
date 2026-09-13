@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { Terminal, X } from "lucide-react";
+import ViewportDialog from "@/components/dashboard/viewport-dialog";
 
 import { createClient } from "@/lib/supabase/client";
 import { browserRealtimeURL } from "@/lib/realtime/endpoint";
@@ -961,14 +962,8 @@ export default function DeviceTerminal({
       return;
     }
 
-    bottomRef.current
-      ?.scrollIntoView({
-        behavior:
-          "smooth",
-
-        block:
-          "end",
-      });
+    const output = bottomRef.current?.parentElement;
+    output?.scrollTo({ top: output.scrollHeight, behavior: "instant" });
   }, [
     entries,
     open,
@@ -1002,21 +997,12 @@ export default function DeviceTerminal({
   }
 
   return (
-    <>
-      <button
-        type="button"
-        aria-label="Close remote terminal"
-        onClick={
-          closeTerminal
-        }
-        className="fixed inset-0 z-[70] bg-black/75 backdrop-blur-sm"
-      />
-
-      <div className="fixed left-1/2 top-1/2 z-[80] flex h-[min(720px,calc(100vh-48px))] w-[calc(100%-32px)] max-w-5xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-[#070809] shadow-2xl">
+    <ViewportDialog label="Remote terminal" onDismiss={closeTerminal}>
+      <div className="sg-terminal-panel">
 
         {/* HEADER */}
 
-        <div className="flex shrink-0 items-center justify-between gap-5 border-b border-zinc-800 bg-[#0d0f12] px-5 py-4">
+        <div className="sg-terminal-header">
 
           <div className="flex min-w-0 items-center gap-3">
 
@@ -1028,7 +1014,7 @@ export default function DeviceTerminal({
 
             <div className="min-w-0">
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
 
                 <h2 className="truncate text-sm font-semibold text-white">
                   Remote terminal
@@ -1081,9 +1067,9 @@ export default function DeviceTerminal({
 
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="sg-terminal-controls">
 
-            <div className="relative isolate grid grid-cols-2 rounded-lg border border-zinc-800 bg-[#08090b] p-1">
+            <div className="sg-terminal-shell relative isolate grid grid-cols-2 rounded-lg border border-zinc-800 bg-[#08090b] p-1">
 
               <span
                 aria-hidden="true"
@@ -1143,7 +1129,8 @@ export default function DeviceTerminal({
               onClick={
                 closeTerminal
               }
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 outline-none transition hover:bg-zinc-900 hover:text-white"
+              aria-label="Close remote terminal"
+              className="sg-terminal-close sg-button sg-button-ghost sg-button-icon"
             >
               <X
                 size={18}
@@ -1157,7 +1144,7 @@ export default function DeviceTerminal({
         {/* BODY */}
 
         <div
-          className="min-h-0 flex-1 overflow-y-auto bg-[#050607] px-5 py-4 font-mono text-[13px] leading-6"
+          className="sg-terminal-output min-h-0 flex-1 overflow-auto bg-[#050607] px-5 py-4 font-mono text-[13px] leading-6"
           onClick={(
             event,
           ) => {
@@ -1262,7 +1249,7 @@ export default function DeviceTerminal({
         {/* ERROR */}
 
         {error && (
-          <div className="shrink-0 border-t border-zinc-800 bg-[#100b0d] px-5 py-2.5 text-xs text-red-400">
+          <div role="alert" className="sg-terminal-error shrink-0 border-t border-zinc-800 bg-[#100b0d] px-5 py-2.5 text-xs text-red-400">
             {
               error
             }
@@ -1271,7 +1258,7 @@ export default function DeviceTerminal({
 
         {/* INPUT */}
 
-        <div className="shrink-0 border-t border-zinc-800 bg-[#0d0f12] p-4">
+        <div className="sg-terminal-footer shrink-0 border-t border-zinc-800 bg-[#0d0f12] p-4">
 
           <div className="sg-input-frame flex items-center gap-3 rounded-xl border border-surface-edge bg-[#050607] px-3">
 
@@ -1293,7 +1280,6 @@ export default function DeviceTerminal({
               ref={inputRef}
               data-terminal-input
               aria-label="Terminal command"
-              autoFocus
               type="text"
               spellCheck={false}
               autoComplete="off"
@@ -1346,7 +1332,7 @@ export default function DeviceTerminal({
 
           </div>
 
-          <div className="mt-2 flex items-center justify-between gap-4 text-[11px] text-zinc-700">
+          <div className="sg-terminal-hints mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[11px] text-zinc-700">
 
             <span>
               Enter to run · ↑ ↓ for history · clear to clear output
@@ -1361,6 +1347,6 @@ export default function DeviceTerminal({
         </div>
 
       </div>
-    </>
+    </ViewportDialog>
   );
 }

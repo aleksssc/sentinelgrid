@@ -17,12 +17,15 @@ import { appearanceBrowserFixture } from "./dashboard-appearance-browser.mjs";
 import { checkInterface } from "./dashboard-interface-checks.mjs";
 import { renderOnboardingFixtures } from "./onboarding-appearance-fixtures.mjs";
 import { checkOnboarding } from "./onboarding-appearance-checks.mjs";
+import { deviceBrowserFixture } from "./device-mobile-browser.mjs";
+import { checkDeviceMobile } from "./device-mobile-checks.mjs";
 
 const executable = process.argv[2];
 if (!executable || !existsSync(executable)) throw new Error("Supply the path to an already-installed Chromium browser. No browser is downloaded.");
 const h = React.createElement;
 const fixtures = await renderDashboardFixtures();
 const appearance = await appearanceBrowserFixture();
+const deviceScript = await deviceBrowserFixture();
 fixtures.appearance = `<div id="appearance-root">${appearance.markup}</div>`;
 const mocks = {
   ...fixtureMocks(),
@@ -44,7 +47,10 @@ for (const [mode, markup] of Object.entries(await renderOnboardingFixtures())) {
   documents[`onboarding-${mode}`] = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}${onboardingCss}</style></head><body style="font-family:Arial,sans-serif">${markup}</body></html>`;
 }
 
+documents["mobile-device"] = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="device-root"></div><script src="/device-bundle.js"></script></body></html>`;
+
 const server = createServer((request, response) => {
+  if (request.url === "/device-bundle.js") { response.writeHead(200, { "Content-Type": "text/javascript" }); response.end(deviceScript); return; }
   if (request.url === "/appearance-bundle.js") {
     response.writeHead(200, { "Content-Type": "text/javascript" }); response.end(appearance.script);
     return;
@@ -101,12 +107,13 @@ try {
   });
   const evaluate = async (expression) => {
     const result = await command("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
-    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
+    if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
     return result.result.value;
   };
   await command("Page.enable");
   await command("Runtime.enable");
   let checks = 0;
+  if (!process.argv.includes("--device-only")) {
   for (const width of [320, 390, 768, 1440, 1920]) {
     await command("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
     for (const name of Object.keys(fixtures)) {
@@ -246,9 +253,13 @@ try {
   assert.deepEqual(await evaluate("window.appearanceHydrationErrors"), []);
   await checkInterface({ evaluate, command, appearanceReady, selectedTheme, origin });
   await checkOnboarding({ evaluate, command, origin });
+  }
+  try { await checkDeviceMobile({ evaluate, command, origin }); } catch (error) { throw new Error(`${error.message}\n${runtimeErrors.join("\n")}`, { cause: error }); }
   assert.deepEqual(runtimeErrors, [], "Browser fixtures must not produce runtime or hydration console errors");
+  if (!process.argv.includes("--device-only")) {
   console.log("Appearance selection, persistence, reset, cross-tab sync, keyboard navigation, blocked-storage feedback and hydration passed.");
   console.log(`${checks} responsive page/drawer checks passed (${version.Browser}); keyboard focus and reduced motion passed.`);
+  }
 } finally {
   if (command && socket?.readyState === WebSocket.OPEN) {
     try { await command("Browser.close"); } catch (error) { if (browser?.exitCode === null) console.error("Browser close:", error.message); }

@@ -1542,7 +1542,7 @@ export default function DeviceDashboard({
                     closeDevice
                   }
                   aria-label="Close device details"
-                  className="sg-button sg-button-ghost sg-button-icon w-9 shrink-0 text-surface-muted outline-none focus:outline-none focus-visible:outline-none"
+                  className="sg-button sg-button-ghost sg-button-icon w-9 shrink-0 text-surface-muted"
                 >
                   <X
                     size={18}
@@ -1551,7 +1551,7 @@ export default function DeviceDashboard({
 
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-surface-muted">
+              <div className="sg-device-meta mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-surface-muted">
                 <span className="text-zinc-300">{formatOSName(selectedDevice.os)}</span>
                 <span className="text-zinc-700">/</span>
                 <span>{clientName}</span>
@@ -1561,12 +1561,12 @@ export default function DeviceDashboard({
                 <span>{selectedDevice.last_seen ? `Last seen ${getRelativeLastSeen(selectedDevice.last_seen, now)}` : "Never seen"}</span>
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <DeviceRDP key={selectedDevice.id} deviceId={selectedDevice.id} available={canManage && rdpAvailable} />
+              <div className="sg-device-toolbar mt-4 flex flex-wrap items-center gap-2">
+                <DeviceRDP key={`rdp-${selectedDevice.id}`} deviceId={selectedDevice.id} available={canManage && rdpAvailable} />
 
                 <button
                   type="button"
-                  onClick={() => openRemoteTerminal("powershell")}
+                  onClick={(event) => { event.currentTarget.focus({ preventScroll: true }); openRemoteTerminal("powershell"); }}
                   disabled={!canManage || !terminalAvailable}
                   title={
                     !canManage
@@ -1583,7 +1583,7 @@ export default function DeviceDashboard({
 
                 {canManage && (
                   <ActionsMenu
-                    key={selectedDevice.id}
+                    key={`actions-${selectedDevice.id}`}
                     device={selectedDevice}
                     busy={Boolean(actionBusy)}
                     online={selectedDeviceStatus === "online"}
@@ -1603,7 +1603,7 @@ export default function DeviceDashboard({
                 DRAWER CONTENT
             ========================= */}
 
-            <div className="p-5">
+            <div className="sg-drawer-content p-5">
 
               <div className="flex flex-wrap items-center gap-3 text-xs">
                 <StatusBadge status={selectedDeviceStatus ?? "unknown"} />
@@ -1809,7 +1809,7 @@ export default function DeviceDashboard({
               ========================= */}
 
               {canManage && (
-                <div className="mt-6 flex items-center justify-between border-t border-surface-edge pt-5">
+                <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-surface-edge pt-5">
 
                   <div>
 

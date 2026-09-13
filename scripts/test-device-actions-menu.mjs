@@ -24,6 +24,14 @@ function harness() {
   const refs = [];
   const Menu = load("../components/dashboard/devices/device-actions-menu.tsx", {
     "@/lib/remote/action-definitions": definitions,
+    "@/components/ui/dropdown-menu": {
+      DropdownMenu: ({ open, children }) => React.createElement('div', { 'aria-expanded': open }, open ? children : children[0]),
+      DropdownMenuTrigger: ({ children }) => children,
+      DropdownMenuContent: ({ children, className, 'aria-label': label }) => React.createElement('div', { className, 'aria-label': label }, children),
+      DropdownMenuGroup: ({ children }) => React.createElement('div', null, children),
+      DropdownMenuLabel: ({ children }) => React.createElement('p', null, children),
+      DropdownMenuItem: ({ onSelect, ...props }) => React.createElement('button', { ...props, onClick: onSelect }),
+    },
     react: {
       ...React,
       useState(initial) {
@@ -59,56 +67,28 @@ function harness() {
 test("pending availability does not disable actions; local safety guards and animation remain", () => {
   const menu = harness();
   const html = menu.render();
-  assert.equal((html.match(/ disabled=""/g) ?? []).length, 0);
+  assert.equal((html.match(/aria-disabled="true"/g) ?? []).length, 0);
   for (const action of definitions.DEVICE_ACTIONS) assert.ok(html.includes(action.label));
-  assert.match(html, /animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 duration-150 motion-reduce:animate-none/);
+  assert.match(html, /duration-200 motion-reduce:animate-none/);
   assert.match(html, /aria-expanded="true"/);
   assert.doesNotMatch(html, /Checking action availability/);
-  assert.equal((menu.render({ online: false }).match(/ disabled=""/g) ?? []).length, 8);
-  assert.equal((menu.render({ busy: true }).match(/ disabled=""/g) ?? []).length, 8);
+  assert.equal((menu.render({ online: false }).match(/aria-disabled="true"/g) ?? []).length, 8);
+  assert.equal((menu.render({ busy: true }).match(/aria-disabled="true"/g) ?? []).length, 8);
   assert.doesNotMatch(menu.render({ open: false }), /aria-label="Device actions"/);
 });
 
-test("outside pointer/focus and Escape dismiss; reopen retains availability without a new fetch", async (t) => {
-  const listeners = new Map();
-  t.mock.method(globalThis, "fetch", async () => ({ ok: true, json: async () => ({ actions: {
-    ...Object.fromEntries(definitions.DEVICE_ACTIONS.map(({ type }) => [type, null])),
-    reboot: "Another device command is already running",
-  } }) }));
-  const originalDocument = globalThis.document, originalNode = globalThis.Node;
-  class MockNode {}
-  globalThis.Node = MockNode;
-  globalThis.document = {
-    addEventListener(name, callback) { listeners.set(name, callback); },
-    removeEventListener(name, callback) { if (listeners.get(name) === callback) listeners.delete(name); },
-  };
+test("reopen retains fresh availability without another fetch", async t => {
+  const originalDocument = globalThis.document;
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  t.mock.method(globalThis, "fetch", async () => ({ ok: true, json: async () => ({ actions: { reboot: "Another device command is already running" } }) }));
   const menu = harness();
-  t.after(() => {
-    menu.dispose();
-    if (originalDocument === undefined) delete globalThis.document; else globalThis.document = originalDocument;
-    if (originalNode === undefined) delete globalThis.Node; else globalThis.Node = originalNode;
-  });
-  menu.render({ open: false }); menu.flush();
-  await new Promise((resolve) => setImmediate(resolve));
+  t.after(() => { menu.dispose(); if (originalDocument === undefined) delete globalThis.document; else globalThis.document = originalDocument; });
+  menu.render({open:false}); menu.flush(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(fetch.mock.callCount(), 1);
-  assert.equal(listeners.size, 0);
-  assert.equal((menu.render().match(/ disabled=""/g) ?? []).length, 1);
+  assert.equal((menu.render().match(/aria-disabled="true"/g) ?? []).length, 1);
   menu.flush();
-  const inside = new MockNode(), outside = new MockNode();
-  let focused = false;
-  menu.refs[0].current = { contains: (node) => node === inside };
-  menu.refs[1].current = { focus() { focused = true; } };
-  listeners.get("pointerdown")({ target: inside });
-  assert.deepEqual(menu.changes, []);
-  listeners.get("pointerdown")({ target: outside });
-  listeners.get("focusin")({ target: outside });
-  let prevented = false, stopped = false;
-  listeners.get("keydown")({ key: "Escape", preventDefault() { prevented = true; }, stopPropagation() { stopped = true; } });
-  assert.deepEqual(menu.changes, [false, false, false]);
-  assert.ok(focused && prevented && stopped);
-  menu.render({ open: false }); menu.flush();
-  assert.equal(listeners.size, 0);
-  assert.equal((menu.render().match(/ disabled=""/g) ?? []).length, 1);
+  menu.render({open:false}); menu.flush();
+  assert.equal((menu.render().match(/aria-disabled="true"/g) ?? []).length, 1);
   menu.flush();
   assert.equal(fetch.mock.callCount(), 1);
 });

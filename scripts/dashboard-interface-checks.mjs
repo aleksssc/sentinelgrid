@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { checkRefinement } from "./dashboard-refinement-checks.mjs";
 import { checkControls } from "./dashboard-control-checks.mjs";
+import { checkMobileNavigation } from "./dashboard-mobile-navigation-checks.mjs";
 
 export async function checkInterface({ evaluate, command, appearanceReady, selectedTheme, origin }) {
   async function wait(expression, message = expression) {
@@ -172,6 +173,7 @@ export async function checkInterface({ evaluate, command, appearanceReady, selec
   await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   await wait("!document.querySelector('dialog').open", "Desktop breakpoint dismisses an open mobile dialog");
 
+  await checkMobileNavigation({ evaluate, command, wait, choose });
   const other = await command("Target.createTarget", { url: `${origin}/appearance` });
   const attached = await command("Target.attachToTarget", { targetId: other.targetId, flatten: true });
   const shared = { density: "comfortable", motion: "reduced", sidebar: "expanded", defaultView: "grid", sidebarExpanded: true };

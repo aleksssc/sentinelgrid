@@ -91,11 +91,14 @@ html[data-sg-sidebar="compact"] .sg-desktop-sidebar :is(.sg-sidebar-brand, .sg-s
 html[data-sg-sidebar="compact"] .sg-desktop-sidebar :is(.sg-sidebar-navigation, .sg-sidebar-footer) { --sg-sidebar-gutter: 8px; padding-inline: 8px; }
 .sg-dashboard .sg-mobile-menu-trigger { display: none; }
 .sg-mobile-navigation { position: fixed; inset: 0 auto 0 0; width: min(304px, calc(100vw - 40px)); height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: var(--sg-inset); color: inherit; overflow: visible; }
-.sg-mobile-navigation::backdrop { background: rgb(0 0 0 / 60%); backdrop-filter: blur(3px); }
-.sg-mobile-navigation[open] { animation: sg-navigation-enter 180ms ease-out; }
+.sg-mobile-navigation::backdrop { background: rgb(0 0 0 / 60%); }
+/* Keep the native modal/backdrop stationary; animate only the drawer content. */
+.sg-mobile-navigation[open] .sg-mobile-sidebar { animation: sg-navigation-enter 180ms ease-out; }
+.sg-dashboard:has(.sg-mobile-navigation[open]) :is(.dashboard-grid, .dashboard-glow, .dashboard-scanline) { animation-play-state: paused; }
 .sg-mobile-sidebar { display: flex; width: 100%; box-shadow: 16px 0 60px rgb(0 0 0 / 25%); }
 .sg-mobile-sidebar .sg-sidebar-link { min-height: 44px; }
 .sg-mobile-sidebar .sg-sidebar-mark { display: none; }
+.sg-mobile-sidebar .sg-sidebar-navigation { overscroll-behavior-y: contain; }
 @keyframes sg-navigation-enter { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: translateX(0); } }
 @media (max-width: 1023px) {
   .sg-dashboard .sg-desktop-sidebar { display: none; }
@@ -156,3 +159,47 @@ html[data-sg-motion="reduced"] .sg-dashboard .sg-interactive:hover { transform: 
 .sg-dashboard .sg-segment:hover:not([aria-pressed="true"]) { color: var(--sg-text); }
 .sg-dashboard .sg-filter-option { min-height: 40px; padding-block: 9px; }
 .sg-dashboard .sg-filter-option:focus-visible { outline: 2px solid var(--sg-accent); outline-offset: -3px; }
+
+/* Device overlays must fit the visible viewport, including the iOS keyboard. */
+.sg-viewport-dialog { position: fixed; inset: var(--sg-viewport-top, 0px) auto auto var(--sg-viewport-left, 0px); width: var(--sg-viewport-width, 100%); height: var(--sg-viewport-height, 100dvh); max-width: none; max-height: none; margin: 0; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); border: 0; background: transparent; color: inherit; overflow: hidden; overscroll-behavior: contain; }
+.sg-viewport-dialog[open] { display: flex; align-items: center; justify-content: center; }
+.sg-viewport-dialog::backdrop { background: rgb(0 0 0 / 75%); }
+.sg-terminal-panel { display: flex; flex-direction: column; width: 100%; max-width: 1024px; height: 100%; max-height: 720px; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--sg-border); border-radius: var(--sg-panel-radius, 16px); background: var(--sg-inset); box-shadow: 0 24px 64px rgb(0 0 0 / 40%); animation: sg-terminal-enter 200ms ease-out; }
+.sg-terminal-header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; flex-shrink: 0; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--sg-border); background: var(--sg-surface); }
+.sg-terminal-controls { display: contents; }
+.sg-terminal-close { grid-column: 3; grid-row: 1; min-width: 44px; min-height: 44px; }
+.sg-terminal-shell { width: fit-content; }
+.sg-terminal-shell button { min-height: 36px; }
+.sg-terminal-output { min-width: 0; overscroll-behavior: contain; overflow-wrap: anywhere; }
+.sg-terminal-error { max-height: 72px; overflow: auto; overflow-wrap: anywhere; }
+.sg-terminal-footer { min-width: 0; }
+.sg-device-actions-menu { max-width: min(calc(100vw - 24px), var(--radix-dropdown-menu-content-available-width)); max-height: var(--radix-dropdown-menu-content-available-height); overscroll-behavior: contain; }
+.sg-device-actions-menu [role="menuitem"] { min-height: 40px; }
+.sg-device-meta, .sg-device-toolbar { min-width: 0; overflow-wrap: anywhere; }
+.sg-device-toolbar > div { min-width: 0; max-width: 100%; }
+.sg-dashboard:has(.sg-viewport-dialog[open]) :is(.dashboard-grid, .dashboard-glow, .dashboard-scanline) { animation-play-state: paused; }
+@keyframes sg-terminal-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 639px) {
+  .sg-terminal-header { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 12px; }
+  .sg-terminal-close { grid-column: 2; }
+  .sg-terminal-shell { grid-column: 1 / -1; grid-row: 2; }
+  .sg-terminal-output { padding: 12px; }
+  .sg-terminal-footer { padding: 10px; }
+  .sg-terminal-hints { display: none; }
+  .sg-dashboard .sg-drawer { overscroll-behavior: contain; border-left: 0; padding-bottom: env(safe-area-inset-bottom); }
+  .sg-dashboard .sg-drawer-header { padding: 12px max(12px, env(safe-area-inset-right)) 12px max(12px, env(safe-area-inset-left)); backdrop-filter: none; }
+  .sg-dashboard .sg-drawer-overlay { backdrop-filter: none; }
+  .sg-drawer-content { padding: 16px max(12px, env(safe-area-inset-right)) 16px max(12px, env(safe-area-inset-left)); }
+  .sg-device-toolbar > div { flex-basis: 100%; }
+}
+@media (max-width: 1023px) {
+  .sg-terminal-footer input, .sg-device-toolbar input { font-size: 16px; }
+  .sg-device-actions-menu [role="menuitem"], .sg-drawer-header .sg-button-icon { min-height: 44px; min-width: 44px; }
+}
+@media (max-height: 500px) {
+  .sg-viewport-dialog { padding-block: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-bottom)); }
+  .sg-terminal-header { padding-block: 6px; gap: 4px 8px; }
+  .sg-terminal-header > div:first-child > div:first-child { display: none; }
+  .sg-terminal-hints { display: none; }
+  .sg-dashboard .sg-drawer-header { position: relative; }
+}

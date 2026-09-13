@@ -57,6 +57,7 @@ function harness(t) {
   };
   const mocks = {
     react: hooks,
+    "@/components/dashboard/viewport-dialog": ({ children }) => children,
     "@/lib/supabase/client": { createClient: () => ({ auth: { getSession: async () => ({ data: { session: { access_token: "test-token" } } }) } }) },
     "@/lib/realtime/endpoint": { browserRealtimeURL: async () => "wss://test.invalid" },
   };
