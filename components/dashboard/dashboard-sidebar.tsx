@@ -22,8 +22,9 @@ export default function DashboardSidebar() {
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [loadingOrganization, setLoadingOrganization] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const wasMobileOpen = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -59,13 +60,25 @@ export default function DashboardSidebar() {
 
   useEffect(() => {
     const root = document.documentElement;
-    if (mobileOpen) root.dataset.sgMobileNavigation = "open";
-    else delete root.dataset.sgMobileNavigation;
+    if (!mobileOpen) {
+      delete root.dataset.sgMobileNavigation;
+      if (wasMobileOpen.current) trigger.current?.focus({ preventScroll: true });
+      wasMobileOpen.current = false;
+      return;
+    }
 
-    if (mobileOpen && !dialog.current?.open) dialog.current?.showModal();
-    else if (!mobileOpen && dialog.current?.open) dialog.current.close();
-
-    return () => { delete root.dataset.sgMobileNavigation; };
+    root.dataset.sgMobileNavigation = "open";
+    wasMobileOpen.current = true;
+    const focusFrame = window.requestAnimationFrame(() => closeButton.current?.focus({ preventScroll: true }));
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMobileOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", onKeyDown);
+      delete root.dataset.sgMobileNavigation;
+    };
   }, [mobileOpen]);
 
   const navigation = [
@@ -81,13 +94,13 @@ export default function DashboardSidebar() {
     const active = !disabled && (name === "Clients" ? pathname.startsWith("/dashboard/organizations/") : exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`));
     return (
       <div key={name} className="sg-sidebar-item" data-active={active || undefined}>
-      <Link href={disabled ? pathname : href} aria-label={name} title={name}
-        aria-current={active ? "page" : undefined} aria-disabled={disabled} tabIndex={disabled ? -1 : undefined}
-        onClick={() => setMobileOpen(false)} className="sg-sidebar-link group">
-        <Icon size={18} strokeWidth={active ? 2 : 1.75} aria-hidden="true" />
-        <span className="sg-sidebar-label flex-1">{name}</span>
-        <ChevronRight size={14} className="sg-sidebar-chevron" aria-hidden="true" />
-      </Link>
+        <Link href={disabled ? pathname : href} aria-label={name} title={name}
+          aria-current={active ? "page" : undefined} aria-disabled={disabled} tabIndex={disabled ? -1 : undefined}
+          onClick={() => setMobileOpen(false)} className="sg-sidebar-link group">
+          <Icon size={18} strokeWidth={active ? 2 : 1.75} aria-hidden="true" />
+          <span className="sg-sidebar-label flex-1">{name}</span>
+          <ChevronRight size={14} className="sg-sidebar-chevron" aria-hidden="true" />
+        </Link>
       </div>
     );
   }
@@ -99,7 +112,7 @@ export default function DashboardSidebar() {
           <BrandLogo variant="mark" className="sg-sidebar-mark" />
           <BrandLogo variant="lockup" className="sg-sidebar-lockup" />
         </Link>
-        {mobile && <button type="button" className="sg-button sg-button-ghost sg-button-icon" aria-label="Close navigation" onClick={() => setMobileOpen(false)}><X size={18} /></button>}
+        {mobile && <button ref={closeButton} type="button" className="sg-button sg-button-ghost sg-button-icon" aria-label="Close navigation" onClick={() => setMobileOpen(false)}><X size={18} /></button>}
       </div>
       <div className="sg-sidebar-navigation">
         {([{ label: "Workspace", links: navigation }, { label: "Operations", links: operations }, { label: "Utilities", links: utilities }]).map(({ label, links }) => (
@@ -122,10 +135,9 @@ export default function DashboardSidebar() {
     <aside className="sg-sidebar sg-desktop-sidebar" aria-label="Main navigation">{content(false)}</aside>
     <button ref={trigger} type="button" className="sg-mobile-menu-trigger sg-button sg-button-ghost sg-button-icon" aria-label="Open navigation"
       aria-expanded={mobileOpen} aria-controls="dashboard-mobile-navigation" aria-haspopup="dialog" onClick={() => setMobileOpen(true)}><Menu size={20} /></button>
-    <dialog ref={dialog} id="dashboard-mobile-navigation" className="sg-mobile-navigation" aria-label="Main navigation" onCancel={() => setMobileOpen(false)}
-      onClose={() => { setMobileOpen(false); if (window.matchMedia("(max-width: 1023px)").matches) trigger.current?.focus(); }}
-      onClick={(event) => { if (event.target === event.currentTarget) setMobileOpen(false); }}>
+    {mobileOpen && <div id="dashboard-mobile-navigation" className="sg-mobile-navigation" role="dialog" aria-modal="true" aria-label="Main navigation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) setMobileOpen(false); }}>
       <aside className="sg-sidebar sg-mobile-sidebar">{content(true)}</aside>
-    </dialog>
+    </div>}
   </>;
 }

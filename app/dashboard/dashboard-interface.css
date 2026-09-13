@@ -62,7 +62,7 @@
 .sg-preference-option input:focus-visible + span { outline: 2px solid var(--sg-accent); outline-offset: -2px; }
 .sg-preference-option input:disabled + span { opacity: 0.5; cursor: wait; }
 
-/* The mobile dialog uses the browser's modal focus trap and inert backdrop. */
+/* Shared desktop and mobile sidebar structure. */
 .sg-dashboard .sg-sidebar { flex-direction: column; flex-shrink: 0; height: 100dvh; background: var(--sg-inset); border-right: 1px solid var(--sg-border); }
 .sg-desktop-sidebar { position: relative; z-index: 30; display: flex; width: 224px; transition: width 180ms ease; }
 .sg-sidebar-brand { display: flex; align-items: center; justify-content: space-between; min-height: 72px; padding: 12px 20px; border-bottom: 1px solid var(--sg-border); }
@@ -90,10 +90,9 @@ html[data-sg-sidebar="compact"] .sg-desktop-sidebar .sg-sidebar-mark { display: 
 html[data-sg-sidebar="compact"] .sg-desktop-sidebar :is(.sg-sidebar-brand, .sg-sidebar-link) { justify-content: center; padding-inline: 8px; }
 html[data-sg-sidebar="compact"] .sg-desktop-sidebar :is(.sg-sidebar-navigation, .sg-sidebar-footer) { --sg-sidebar-gutter: 8px; padding-inline: 8px; }
 .sg-dashboard .sg-mobile-menu-trigger { display: none; }
-.sg-mobile-navigation { position: fixed; inset: 0 auto 0 0; width: min(304px, calc(100vw - 40px)); height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: var(--sg-inset); color: inherit; overflow: visible; }
-.sg-mobile-navigation::backdrop { background: rgb(0 0 0 / 60%); }
-/* Keep the native modal/backdrop stationary; animate only the drawer content. */
-.sg-mobile-navigation[open] .sg-mobile-sidebar { animation: sg-navigation-enter 180ms ease-out; }
+/* Avoid the native dialog top layer here: Safari can synchronously inert a large page. */
+.sg-mobile-navigation { position: fixed; inset: 0; z-index: 80; display: flex; width: 100%; height: 100dvh; margin: 0; padding: 0; background: rgb(0 0 0 / 60%); color: inherit; overflow: hidden; overscroll-behavior: contain; touch-action: manipulation; }
+.sg-mobile-navigation .sg-mobile-sidebar { width: min(304px, calc(100vw - 40px)); animation: sg-navigation-enter 180ms ease-out; }
 html[data-sg-mobile-navigation="open"] .sg-dashboard :is(.dashboard-grid, .dashboard-glow, .dashboard-scanline) { animation-play-state: paused; }
 .sg-mobile-sidebar { display: flex; width: 100%; box-shadow: 16px 0 60px rgb(0 0 0 / 25%); }
 .sg-mobile-sidebar .sg-sidebar-link { min-height: 44px; }
