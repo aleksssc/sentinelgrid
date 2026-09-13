@@ -85,9 +85,15 @@ foreach ($key in $names.Keys) {
     if ($key -eq 'msi') { Assert-MSI $path $ExpectedVersion $ExpectedChannel; continue }
     Assert-PE $path
     if ($item.VersionInfo.FileVersion -cne $ExpectedVersion -or $item.VersionInfo.ProductVersion -cne $ExpectedVersion) { throw 'PE version does not match manifest.' }
-    $product = @{ agent='Agent'; updater='Updater'; rdp_client='RDP' }[$key]
+    if ($key -eq 'rdp_client') {
+        if ($item.VersionInfo.ProductName -cne 'SentinelGrid Remote' -or $item.VersionInfo.FileDescription -cne 'SentinelGrid Remote' -or $item.VersionInfo.OriginalFilename -cne 'SentinelGridRDP.exe') {
+            throw 'SentinelGrid Remote PE identity mismatch.'
+        }
+        continue
+    }
+    $product = @{ agent='Agent'; updater='Updater' }[$key]
     $reportedVersion = & $path -version
-    if ($LASTEXITCODE -ne 0 -or $reportedVersion -cne "SentinelGrid $product $ExpectedVersion") { throw 'Component embedded version mismatch.' }
+    if ($LASTEXITCODE -ne 0 -or $reportedVersion -cne ('SentinelGrid {0} {1}' -f $product, $ExpectedVersion)) { throw 'Component embedded version mismatch.' }
     $reportedChannel = & $path -release-channel
     if ($LASTEXITCODE -ne 0 -or $reportedChannel -cne $ExpectedChannel) { throw 'Component embedded channel mismatch.' }
     if ($key -in @('agent', 'updater')) {

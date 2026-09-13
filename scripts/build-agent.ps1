@@ -143,7 +143,7 @@ try {
     & (Join-Path $PSScriptRoot 'prepare-agent-resources.ps1') -Version $Version
     $updaterExe = Join-Path $output 'SentinelGridUpdater.exe'
     $rdpExe = Join-Path $output 'SentinelGridRDP.exe'
-    Invoke-Checked $go @('build', '-trimpath', '-ldflags', $ldflags, '-o', $rdpExe, '.\cmd\sentinelgrid-rdp') 'RDP client build'
+    Invoke-Checked $go @('build', '-trimpath', '-ldflags', ('-H=windowsgui ' + $ldflags), '-o', $rdpExe, '.\cmd\sentinelgrid-rdp') 'RDP client build'
     Invoke-Checked $go (@('build') + $buildTags + @('-trimpath', '-ldflags', $ldflags, '-o', $agentExe, '.\cmd\sentinelgrid-agent')) 'Agent build'
     Invoke-Checked $go (@('build') + $buildTags + @('-trimpath', '-ldflags', $ldflags, '-o', $updaterExe, '.\cmd\sentinelgrid-updater')) 'Updater build'
     $reportedVersion = & $agentExe -version
@@ -151,11 +151,13 @@ try {
     $reportedVersion = & $updaterExe -version
     if ($LASTEXITCODE -ne 0 -or $reportedVersion -ne "SentinelGrid Updater $Version") { throw 'Built updater reported the wrong version.' }
     Sign-Artifact $agentExe 'Agent signing'
-    $reportedVersion = & $rdpExe -version
-    if ($LASTEXITCODE -ne 0 -or $reportedVersion -ne "SentinelGrid RDP $Version") { throw 'Built RDP reported the wrong version.' }
     foreach ($executable in @($agentExe, $updaterExe, $rdpExe)) {
         $info = (Get-Item -LiteralPath $executable).VersionInfo
         if ($info.FileVersion -ne $Version -or $info.ProductVersion -ne $Version) { throw 'PE version resources do not match the package version.' }
+    }
+    $rdpInfo = (Get-Item -LiteralPath $rdpExe).VersionInfo
+    if ($rdpInfo.ProductName -ne 'SentinelGrid Remote' -or $rdpInfo.FileDescription -ne 'SentinelGrid Remote' -or $rdpInfo.OriginalFilename -ne 'SentinelGridRDP.exe') {
+        throw 'Built SentinelGrid Remote PE identity is invalid.'
     }
     Sign-Artifact $updaterExe 'Updater signing'
     Sign-Artifact $rdpExe 'RDP client signing'

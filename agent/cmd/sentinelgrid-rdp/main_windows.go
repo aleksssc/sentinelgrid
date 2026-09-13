@@ -211,7 +211,7 @@ func (v *viewer) window() error {
 	defer runtime.UnlockOSThread()
 	instance := uintptr(0)
 	class, _ := syscall.UTF16PtrFromString("SentinelGridRemoteViewer")
-	title, _ := syscall.UTF16PtrFromString("SentinelGrid Remote Desktop")
+	title, _ := syscall.UTF16PtrFromString("SentinelGrid Remote")
 	callback := syscall.NewCallback(viewerProc)
 	wc := wndClassEx{Size: uint32(unsafe.Sizeof(wndClassEx{})), WndProc: callback, Instance: instance, ClassName: class}
 	if atom, _, err := registerClassEx.Call(uintptr(unsafe.Pointer(&wc))); atom == 0 {

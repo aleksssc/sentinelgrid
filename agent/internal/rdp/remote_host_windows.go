@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	"log"
 	"os"
 	"strings"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 
 	"github.com/gorilla/websocket"
@@ -20,10 +22,12 @@ import (
 const createUnicodeEnvironment = 0x00000400
 
 func LaunchInteractive(ctx context.Context, connection Connection) error {
+	log.Print("[RDP] session received")
 	session := windows.WTSGetActiveConsoleSessionId()
 	if session == 0xffffffff {
 		return fmt.Errorf("no active interactive Windows session")
 	}
+	log.Print("[RDP] interactive session detected")
 	var token windows.Token
 	if err := windows.WTSQueryUserToken(session, &token); err != nil {
 		return fmt.Errorf("interactive user token unavailable: %w", err)
@@ -54,6 +58,7 @@ func LaunchInteractive(ctx context.Context, connection Connection) error {
 	if err := windows.CreateProcessAsUser(token, app, &line[0], nil, nil, false, windows.CREATE_NO_WINDOW|createUnicodeEnvironment, &env[0], nil, &startup, &process); err != nil {
 		return fmt.Errorf("could not start remote host in interactive session: %w", err)
 	}
+	log.Print("[RDP] remote host launched")
 	defer windows.CloseHandle(process.Process)
 	defer windows.CloseHandle(process.Thread)
 	stop := context.AfterFunc(ctx, func() { _ = windows.TerminateProcess(process.Process, 1) })
@@ -79,7 +84,11 @@ func LaunchInteractive(ctx context.Context, connection Connection) error {
 	}
 }
 
+// remoteEnvironment returns a Windows double-NUL-terminated UTF-16 environment block.
 func remoteEnvironment(c Connection) ([]uint16, error) {
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
 	values := make([]string, 0, len(os.Environ())+3)
 	for _, value := range os.Environ() {
 		if !strings.HasPrefix(value, "SENTINELGRID_REMOTE_") {
@@ -87,7 +96,15 @@ func remoteEnvironment(c Connection) ([]uint16, error) {
 		}
 	}
 	values = append(values, "SENTINELGRID_REMOTE_RELAY="+c.Relay, "SENTINELGRID_REMOTE_TICKET="+c.Ticket, "SENTINELGRID_REMOTE_EXPIRES="+c.ExpiresAt.UTC().Format(time.RFC3339Nano))
-	return windows.UTF16FromString(strings.Join(values, "\x00") + "\x00")
+	block := make([]uint16, 0, 2048)
+	for _, value := range values {
+		if strings.IndexByte(value, 0) >= 0 {
+			return nil, fmt.Errorf("invalid environment value")
+		}
+		block = append(block, utf16.Encode([]rune(value))...)
+		block = append(block, 0)
+	}
+	return append(block, 0), nil
 }
 
 func RunRemoteHost(ctx context.Context) error {
@@ -98,11 +115,14 @@ func RunRemoteHost(ctx context.Context) error {
 	if err := connection.Validate(); err != nil {
 		return err
 	}
+	log.Print("[RDP] remote host connecting")
 	ws, err := Dial(ctx, connection)
 	if err != nil {
 		return err
 	}
 	defer ws.Close()
+	log.Print("[RDP] relay connected")
+	log.Print("[RDP] remote host paired")
 	if err := sendScreenInfo(ws); err != nil {
 		return err
 	}

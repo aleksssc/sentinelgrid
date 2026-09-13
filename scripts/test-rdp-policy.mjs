@@ -418,11 +418,7 @@ test(
       ],
     );
 
-    assert.equal(
-      created.connection
-        .relay,
-      "wss://relay.example/rdp",
-    );
+    assert.match(created.launchUrl, /^sentinelgrid:\/\/remote\/[A-Za-z0-9_-]{43}$/);
 
     assert.equal(
       state.calls[0]
@@ -438,30 +434,11 @@ test(
       "user",
     );
 
-    assert.deepEqual(
-      await rdp
-        .consumeRDPTicket(
-          created
-            .connection
-            .ticket,
-        ),
-      {
-        sessionId:
-          session,
-
-        role:
-          "client",
-      },
-    );
-
-    await assert.rejects(
-      rdp.consumeRDPTicket(
-        created
-          .connection
-          .ticket,
-      ),
-      /INVALID_TICKET/,
-    );
+    const launch = await rdp.redeemRDPLaunch(created.launchUrl.split("/").pop());
+    assert.equal(launch.relay, "wss://relay.example/rdp");
+    await assert.rejects(rdp.redeemRDPLaunch(created.launchUrl.split("/").pop()), /INVALID_LAUNCH/);
+    await assert.deepEqual(await rdp.consumeRDPTicket(launch.ticket), { sessionId: session, role: "client" });
+    await assert.rejects(rdp.consumeRDPTicket(launch.ticket), /INVALID_TICKET/);
 
     const agentTicket =
       await rdp

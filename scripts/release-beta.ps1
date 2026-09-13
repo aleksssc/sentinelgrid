@@ -1149,7 +1149,8 @@ if (
     -not $WebsiteURL -and
     (
         Test-Path `
-            -LiteralPath $AgentConfigPath
+            -LiteralPath $AgentConfigPath `
+            -ErrorAction SilentlyContinue
     )
 ) {
 

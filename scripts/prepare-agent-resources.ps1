@@ -10,7 +10,7 @@ try {
     foreach ($entry in @(
         @{ Name = 'Agent'; Directory = 'sentinelgrid-agent'; File = 'SentinelGridAgent.exe' },
         @{ Name = 'Updater'; Directory = 'sentinelgrid-updater'; File = 'SentinelGridUpdater.exe' },
-        @{ Name = 'RDP'; Directory = 'sentinelgrid-rdp'; File = 'SentinelGridRDP.exe' }
+        @{ Name = 'Remote'; Directory = 'sentinelgrid-rdp'; File = 'SentinelGridRDP.exe' }
     )) {
         $output = Join-Path $root "cmd\$($entry.Directory)\version"
         if (Test-Path -LiteralPath ($output + '_windows_amd64.syso')) { throw 'Version resource already exists; finish or clean up the previous build first.' }

@@ -1,7 +1,9 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
   <?ifndef AgentProductCode ?>
   <?define AgentProductCode="*" ?>
   <?endif ?>
+
   <Package
     ProductCode="$(var.AgentProductCode)"
     Name="SentinelGrid Agent"
@@ -10,86 +12,292 @@
     UpgradeCode="B632A689-8C9E-4E77-BF7C-5E9C4A012901"
     Scope="perMachine">
 
-    <MajorUpgrade Schedule="afterInstallExecute"
+    <MajorUpgrade
+      Schedule="afterInstallExecute"
       DowngradeErrorMessage="A newer version of SentinelGrid Agent is already installed." />
+
     <Upgrade Id="B632A689-8C9E-4E77-BF7C-5E9C4A012901">
-      <UpgradeVersion Minimum="$(var.AgentVersion)" Maximum="$(var.AgentVersion)"
-        IncludeMinimum="yes" IncludeMaximum="yes" OnlyDetect="yes" Property="SG_SAME_VERSION" />
+      <UpgradeVersion
+        Minimum="$(var.AgentVersion)"
+        Maximum="$(var.AgentVersion)"
+        IncludeMinimum="yes"
+        IncludeMaximum="yes"
+        OnlyDetect="yes"
+        Property="SG_SAME_VERSION" />
     </Upgrade>
-    <Launch Condition="Installed OR NOT SG_SAME_VERSION"
+
+    <Launch
+      Condition="Installed OR NOT SG_SAME_VERSION"
       Message="This Agent version is already installed. Use the installed package for repair, or install a newer version; a second same-version product is not supported." />
-    <Property Id="SENTINELGRID_SERVER" Value="$(var.AgentServer)" Secure="yes" />
+
+    <Property
+      Id="SENTINELGRID_SERVER"
+      Value="$(var.AgentServer)"
+      Secure="yes" />
+
     <Property Id="SG_EXISTING_CONFIG">
-      <DirectorySearch Id="SentinelGridConfigSearch" Path="[CommonAppDataFolder]SentinelGrid">
-        <FileSearch Id="SentinelGridConfigFileSearch" Name="agent.json" />
+      <DirectorySearch
+        Id="SentinelGridConfigSearch"
+        Path="[CommonAppDataFolder]SentinelGrid">
+        <FileSearch
+          Id="SentinelGridConfigFileSearch"
+          Name="agent.json" />
       </DirectorySearch>
     </Property>
-    <Property Id="SENTINELGRID_CHANNEL" Value="$(var.AgentChannel)" />
-    <Property Id="SENTINELGRID_UPDATE_PROTOCOL" Value="2" />
-    <Property Id="SENTINELGRID_UPDATE_DEVELOPMENT" Value="$(var.UpdateDevelopment)" />
-    <Property Id="SENTINELGRID_UPDATE_SIGNERS" Value="$(var.UpdateSigners)" />
+
+    <Property
+      Id="SENTINELGRID_CHANNEL"
+      Value="$(var.AgentChannel)" />
+
+    <Property
+      Id="SENTINELGRID_UPDATE_PROTOCOL"
+      Value="2" />
+
+    <Property
+      Id="SENTINELGRID_UPDATE_DEVELOPMENT"
+      Value="$(var.UpdateDevelopment)" />
+
+    <Property
+      Id="SENTINELGRID_UPDATE_SIGNERS"
+      Value="$(var.UpdateSigners)" />
+
     <MediaTemplate EmbedCab="yes" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
-      <Directory Id="INSTALLFOLDER" Name="SentinelGrid">
-        <Component Id="SentinelGridAgentComponent" Guid="*">
-          <File Id="SentinelGridAgentExe" Source="$(var.AgentSource)" KeyPath="yes" />
-          <ServiceInstall Id="SentinelGridAgentServiceInstall"
-            Name="SentinelGridAgent" DisplayName="SentinelGrid Agent"
+
+      <Directory
+        Id="INSTALLFOLDER"
+        Name="SentinelGrid">
+
+        <!-- =====================================================
+             SENTINELGRID AGENT
+        ====================================================== -->
+
+        <Component
+          Id="SentinelGridAgentComponent"
+          Guid="*">
+
+          <File
+            Id="SentinelGridAgentExe"
+            Source="$(var.AgentSource)"
+            KeyPath="yes" />
+
+          <ServiceInstall
+            Id="SentinelGridAgentServiceInstall"
+            Name="SentinelGridAgent"
+            DisplayName="SentinelGrid Agent"
             Description="SentinelGrid monitoring and remote management agent."
-            Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" />
-          <ServiceControl Id="SentinelGridAgentServiceControl" Name="SentinelGridAgent"
-            Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+            Type="ownProcess"
+            Start="auto"
+            ErrorControl="normal"
+            Account="LocalSystem" />
+
+          <ServiceControl
+            Id="SentinelGridAgentServiceControl"
+            Name="SentinelGridAgent"
+            Start="install"
+            Stop="both"
+            Remove="uninstall"
+            Wait="yes" />
+
         </Component>
-        <Component Id="SentinelGridUpdaterComponent" Guid="*">
-          <File Id="SentinelGridUpdaterExe" Source="$(var.UpdaterSource)" KeyPath="yes" />
-          <ServiceInstall Id="SentinelGridUpdaterServiceInstall"
-            Name="SentinelGridUpdater" DisplayName="SentinelGrid Agent Update Recovery"
+
+        <!-- =====================================================
+             SENTINELGRID UPDATER
+        ====================================================== -->
+
+        <Component
+          Id="SentinelGridUpdaterComponent"
+          Guid="*">
+
+          <File
+            Id="SentinelGridUpdaterExe"
+            Source="$(var.UpdaterSource)"
+            KeyPath="yes" />
+
+          <ServiceInstall
+            Id="SentinelGridUpdaterServiceInstall"
+            Name="SentinelGridUpdater"
+            DisplayName="SentinelGrid Agent Update Recovery"
             Description="Recovers only the fixed SentinelGrid Agent update journal."
-            Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" />
-          <ServiceControl Id="SentinelGridUpdaterServiceControl" Name="SentinelGridUpdater"
-            Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+            Type="ownProcess"
+            Start="auto"
+            ErrorControl="normal"
+            Account="LocalSystem" />
+
+          <ServiceControl
+            Id="SentinelGridUpdaterServiceControl"
+            Name="SentinelGridUpdater"
+            Start="install"
+            Stop="both"
+            Remove="uninstall"
+            Wait="yes" />
+
         </Component>
-        <Component Id="SentinelGridRDPComponent" Guid="*">
-          <File Id="SentinelGridRDPExe" Source="$(var.RDPSource)" KeyPath="yes" />
+
+        <!-- =====================================================
+             SENTINELGRID REMOTE
+        ====================================================== -->
+
+        <Component
+          Id="SentinelGridRDPComponent"
+          Guid="*">
+
+          <File
+            Id="SentinelGridRDPExe"
+            Source="$(var.RDPSource)"
+            KeyPath="yes" />
+
+          <!-- Default value:
+               HKLM\Software\Classes\sentinelgrid
+          -->
+          <RegistryValue
+            Root="HKLM"
+            Key="Software\Classes\sentinelgrid"
+            Value="URL:SentinelGrid Remote Protocol"
+            Type="string" />
+
+          <!-- Marks this registry class as a URL protocol -->
+          <RegistryValue
+            Root="HKLM"
+            Key="Software\Classes\sentinelgrid"
+            Name="URL Protocol"
+            Value=""
+            Type="string" />
+
+          <!--
+              sentinelgrid://remote/<token>
+
+              launches:
+
+              SentinelGridRDP.exe -uri "sentinelgrid://remote/<token>"
+          -->
+          <RegistryValue
+            Root="HKLM"
+            Key="Software\Classes\sentinelgrid\shell\open\command"
+            Value="&quot;[#SentinelGridRDPExe]&quot; -uri &quot;%1&quot;"
+            Type="string" />
+
         </Component>
+
       </Directory>
+
     </StandardDirectory>
 
-    <Binary Id="SentinelGridMSICoordinator" SourceFile="$(var.UpdaterSource)" />
-    <CustomAction Id="RollbackSentinelGridMaintenance" BinaryRef="SentinelGridMSICoordinator"
-      ExeCommand="-maintenance-rollback" Execute="rollback" Impersonate="no" Return="check" />
-    <CustomAction Id="BeginSentinelGridMaintenance" BinaryRef="SentinelGridMSICoordinator"
-      ExeCommand="-maintenance-begin" Execute="deferred" Impersonate="no" Return="check" />
-    <CustomAction Id="EndSentinelGridMaintenance" BinaryRef="SentinelGridMSICoordinator"
-      ExeCommand="-maintenance-end" Execute="commit" Impersonate="no" Return="check" />
-    <CustomAction Id="ConfigureSentinelGridRecovery" BinaryRef="SentinelGridMSICoordinator"
-      ExeCommand="-configure-recovery" Execute="deferred" Impersonate="no" Return="check" />
+    <!-- =========================================================
+         MSI COORDINATOR
+    ========================================================== -->
 
-    <CustomAction Id="EnrollSentinelGridAgent" FileRef="SentinelGridAgentExe"
-      ExeCommand='-server "[SENTINELGRID_SERVER]" -installer "[OriginalDatabase]"'
-      Execute="deferred" Return="check" Impersonate="no" HideTarget="yes" />
-    <CustomAction Id="ValidateSentinelGridConfig" FileRef="SentinelGridAgentExe"
-      ExeCommand="-validate-config" Execute="deferred" Return="check" Impersonate="no" />
+    <Binary
+      Id="SentinelGridMSICoordinator"
+      SourceFile="$(var.UpdaterSource)" />
+
+    <CustomAction
+      Id="RollbackSentinelGridMaintenance"
+      BinaryRef="SentinelGridMSICoordinator"
+      ExeCommand="-maintenance-rollback"
+      Execute="rollback"
+      Impersonate="no"
+      Return="check" />
+
+    <CustomAction
+      Id="BeginSentinelGridMaintenance"
+      BinaryRef="SentinelGridMSICoordinator"
+      ExeCommand="-maintenance-begin"
+      Execute="deferred"
+      Impersonate="no"
+      Return="check" />
+
+    <CustomAction
+      Id="EndSentinelGridMaintenance"
+      BinaryRef="SentinelGridMSICoordinator"
+      ExeCommand="-maintenance-end"
+      Execute="commit"
+      Impersonate="no"
+      Return="check" />
+
+    <CustomAction
+      Id="ConfigureSentinelGridRecovery"
+      BinaryRef="SentinelGridMSICoordinator"
+      ExeCommand="-configure-recovery"
+      Execute="deferred"
+      Impersonate="no"
+      Return="check" />
+
+    <!-- =========================================================
+         ENROLLMENT
+    ========================================================== -->
+
+    <CustomAction
+      Id="EnrollSentinelGridAgent"
+      FileRef="SentinelGridAgentExe"
+      ExeCommand="-server &quot;[SENTINELGRID_SERVER]&quot; -installer &quot;[OriginalDatabase]&quot;"
+      Execute="deferred"
+      Return="check"
+      Impersonate="no"
+      HideTarget="yes" />
+
+    <CustomAction
+      Id="ValidateSentinelGridConfig"
+      FileRef="SentinelGridAgentExe"
+      ExeCommand="-validate-config"
+      Execute="deferred"
+      Return="check"
+      Impersonate="no" />
+
+    <!-- =========================================================
+         INSTALL SEQUENCE
+    ========================================================== -->
 
     <InstallExecuteSequence>
-      <Custom Action="RollbackSentinelGridMaintenance" After="InstallInitialize"
+
+      <Custom
+        Action="RollbackSentinelGridMaintenance"
+        After="InstallInitialize"
         Condition="(Installed OR WIX_UPGRADE_DETECTED) AND NOT UPGRADINGPRODUCTCODE" />
-      <Custom Action="BeginSentinelGridMaintenance" After="RollbackSentinelGridMaintenance"
+
+      <Custom
+        Action="BeginSentinelGridMaintenance"
+        After="RollbackSentinelGridMaintenance"
         Condition="(Installed OR WIX_UPGRADE_DETECTED) AND NOT UPGRADINGPRODUCTCODE" />
-      <Custom Action="ConfigureSentinelGridRecovery" After="InstallServices" Condition="NOT REMOVE~=&quot;ALL&quot;" />
-      <Custom Action="EnrollSentinelGridAgent" After="ConfigureSentinelGridRecovery"
-        Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT SG_EXISTING_CONFIG" />
-      <Custom Action="ValidateSentinelGridConfig" After="EnrollSentinelGridAgent"
+
+      <Custom
+        Action="ConfigureSentinelGridRecovery"
+        After="InstallServices"
         Condition="NOT REMOVE~=&quot;ALL&quot;" />
-      <Custom Action="EndSentinelGridMaintenance" Before="InstallFinalize"
+
+      <Custom
+        Action="EnrollSentinelGridAgent"
+        After="ConfigureSentinelGridRecovery"
+        Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED AND NOT SG_EXISTING_CONFIG" />
+
+      <Custom
+        Action="ValidateSentinelGridConfig"
+        After="EnrollSentinelGridAgent"
+        Condition="NOT REMOVE~=&quot;ALL&quot;" />
+
+      <Custom
+        Action="EndSentinelGridMaintenance"
+        Before="InstallFinalize"
         Condition="(Installed OR WIX_UPGRADE_DETECTED) AND NOT UPGRADINGPRODUCTCODE" />
+
     </InstallExecuteSequence>
 
-    <Feature Id="MainFeature" Title="SentinelGrid Agent" Level="1">
+    <!-- =========================================================
+         FEATURE
+    ========================================================== -->
+
+    <Feature
+      Id="MainFeature"
+      Title="SentinelGrid Agent"
+      Level="1">
+
       <ComponentRef Id="SentinelGridAgentComponent" />
       <ComponentRef Id="SentinelGridUpdaterComponent" />
       <ComponentRef Id="SentinelGridRDPComponent" />
+
     </Feature>
+
   </Package>
+
 </Wix>
