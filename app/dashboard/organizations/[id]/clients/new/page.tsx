@@ -152,7 +152,7 @@ export default function NewClientPage() {
               <input
                 id="name"
                 type="text"
-                placeholder="Example: Royal Óbidos"
+                placeholder="Example: SentinelGrid"
                 value={name}
                 onChange={(e) =>
                   setName(e.target.value)
