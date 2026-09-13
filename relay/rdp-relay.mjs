@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 
-const MAX_FRAME = 64 * 1024;
+const MAX_FRAME = 2 * 1024 * 1024;
 
 function port(value) {
   const parsed = Number(value ?? 8443);

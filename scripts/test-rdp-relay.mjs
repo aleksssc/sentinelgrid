@@ -137,7 +137,7 @@ test("revocation and policy-service failure disconnect both ends", { timeout: 50
 
 test("text and oversize data are rejected, not forwarded", { timeout: 5000 }, async (t) => {
   const f = await fixture(t);
-  for (const payload of ["arbitrary instruction", randomBytes(65537)]) {
+  for (const payload of ["arbitrary instruction", randomBytes(2 * 1024 * 1024 + 1)]) {
     const { client, agent } = await f.pair();
     const closed = once(agent, "close");
     client.send(payload);

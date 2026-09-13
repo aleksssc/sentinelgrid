@@ -1,13 +1,9 @@
 package rdp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -48,10 +44,8 @@ func Dial(ctx context.Context, c Connection) (*websocket.Conn, error) {
 		}
 		return nil, fmt.Errorf("RDP relay connection failed")
 	}
-	conn.SetReadLimit(64 * 1024)
+	conn.SetReadLimit(maxRemotePacket)
 	conn.SetReadDeadline(time.Now().Add(65 * time.Second))
-	stop := context.AfterFunc(ctx, func() { conn.Close() })
-	defer stop()
 	kind, data, err := conn.ReadMessage()
 	var ready struct {
 		Type string `json:"type"`
@@ -64,52 +58,7 @@ func Dial(ctx context.Context, c Connection) (*websocket.Conn, error) {
 	return conn, nil
 }
 
-func Bridge(ctx context.Context, ws *websocket.Conn, tcp net.Conn) error {
-	stop := context.AfterFunc(ctx, func() { ws.Close(); tcp.Close() })
-	defer stop()
-	defer ws.Close()
-	defer tcp.Close()
-	done := make(chan error, 1)
-	go func() {
-		defer ws.Close()
-		buffer := make([]byte, 32*1024)
-		for {
-			n, err := tcp.Read(buffer)
-			if n > 0 {
-				ws.SetWriteDeadline(time.Now().Add(15 * time.Second))
-				if writeErr := ws.WriteMessage(websocket.BinaryMessage, buffer[:n]); writeErr != nil {
-					done <- writeErr
-					return
-				}
-			}
-			if err != nil {
-				done <- err
-				return
-			}
-		}
-	}()
-	var result error
-	for {
-		kind, data, err := ws.ReadMessage()
-		if err != nil {
-			result = err
-			break
-		}
-		if kind != websocket.BinaryMessage {
-			result = fmt.Errorf("non-binary RDP data rejected")
-			break
-		}
-		tcp.SetWriteDeadline(time.Now().Add(15 * time.Second))
-		if _, err := io.Copy(tcp, bytes.NewReader(data)); err != nil {
-			result = err
-			break
-		}
-	}
-	ws.Close()
-	tcp.Close()
-	tcpErr := <-done
-	if errors.Is(tcpErr, io.EOF) || errors.Is(result, io.EOF) || websocket.IsCloseError(result, websocket.CloseNormalClosure, websocket.CloseGoingAway) || ctx.Err() != nil {
-		return nil
-	}
-	return fmt.Errorf("RDP transport closed unexpectedly")
+func writePacket(ws *websocket.Conn, packet []byte) error {
+	ws.SetWriteDeadline(time.Now().Add(15 * time.Second))
+	return ws.WriteMessage(websocket.BinaryMessage, packet)
 }

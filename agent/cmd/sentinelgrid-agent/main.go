@@ -820,10 +820,20 @@ func main() {
 	showChannel := flag.Bool("release-channel", false, "Show embedded release channel")
 	showUpdateTrust := flag.Bool("update-build-info", false, "Show embedded update trust (no update)")
 	validateConfig := flag.Bool("validate-config", false, "Validate preserved configuration without enrolling or changing it")
-	showRDPReadiness := flag.Bool("rdp-readiness", false, "Probe the fixed local RDP listener and NLA (no changes)")
+	showRDPReadiness := flag.Bool("rdp-readiness", false, "Probe active interactive remote-control desktop (no changes)")
 	showReadiness := flag.Bool("update-readiness", false, "Inspect installed update readiness (no update; administrator required)")
 	lockSession := flag.Bool("lock-session", false, "Lock only the current interactive Windows session")
+	remoteHost := flag.Bool("remote-host", false, "Run authorized remote-control host")
 	flag.Parse()
+	if *remoteHost {
+		if flag.NArg() != 0 || flag.NFlag() != 1 {
+			log.Fatal("Remote host accepts no other arguments")
+		}
+		if err := rdp.RunRemoteHost(context.Background()); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if *lockSession {
 		if flag.NArg() != 0 || flag.NFlag() != 1 {
 			log.Fatal("Session lock accepts no other arguments")
@@ -854,10 +864,10 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := rdp.Available(ctx); err != nil {
-			fmt.Printf("RDP HOST NOT READY: %v\n", err)
+			fmt.Printf("REMOTE HOST NOT READY: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("RDP HOST READY: fixed loopback listener negotiates NLA. Relay, user authorization and interactive access are not qualified by this probe.")
+		fmt.Println("REMOTE HOST READY: an interactive Windows desktop is available. Relay and authorization are not qualified by this probe.")
 		return
 	}
 	if *showUpdateTrust || *showReadiness {

@@ -78,7 +78,7 @@ export default function DeviceRDP({ deviceId, available, access }: Props) {
       link.download = `SentinelGrid-${body.sessionId}.sgrdp`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setMessage("Within 60 seconds, run SentinelGridRDP.exe -connection <download.sgrdp> on your Windows PC. Enter credentials only in Windows Remote Desktop; verify the endpoint certificate.");
+      setMessage("Within 60 seconds, run SentinelGridRDP.exe -connection <download.sgrdp> on your Windows PC. It opens a SentinelGrid remote-control window; no Windows credentials are requested.");
     } catch (error) { setMessage(errorMessage(error, "Remote Desktop request failed.")); }
     finally { setBusy(false); }
   }
@@ -111,7 +111,7 @@ export default function DeviceRDP({ deviceId, available, access }: Props) {
       className="sg-button sg-button-secondary">
       <ExternalLink size={16} />{busy ? "Please wait..." : session ? "Close Remote Desktop" : "Remote Desktop"}
     </button>
-    {session && <p className="mt-2 text-xs text-zinc-400">Tunnel: {session.status}. Windows sign-in is separate.</p>}
+    {session && <p className="mt-2 text-xs text-zinc-400">Remote-control session: {session.status}.</p>}
     {message && <p role="status" className="mt-2 text-xs text-zinc-400">{message}</p>}
   </div>;
 }
