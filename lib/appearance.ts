@@ -13,6 +13,7 @@ export const APP_THEMES = [
 export type AppTheme = (typeof APP_THEMES)[number]["id"];
 export type InterfacePreferences = {
   density: "comfortable" | "compact";
+  presentation: "bubbles" | "minimal";
   motion: "system" | "full" | "reduced";
   sidebar: "expanded" | "compact" | "remember";
   defaultView: "list" | "grid";
@@ -20,7 +21,7 @@ export type InterfacePreferences = {
 };
 
 export const DEFAULT_INTERFACE: InterfacePreferences = {
-  density: "comfortable", motion: "system", sidebar: "expanded", defaultView: "list", sidebarExpanded: true,
+  density: "comfortable", presentation: "bubbles", motion: "system", sidebar: "expanded", defaultView: "list", sidebarExpanded: true,
 };
 
 export function isAppTheme(value: unknown): value is AppTheme {
@@ -35,6 +36,7 @@ export function parseInterfacePreferences(raw: string | null, legacyView: string
   const saved = value as Record<string, unknown>;
   return {
     density: saved.density === "compact" ? "compact" : defaults.density,
+    presentation: saved.presentation === "minimal" ? "minimal" : defaults.presentation,
     motion: saved.motion === "full" || saved.motion === "reduced" ? saved.motion : defaults.motion,
     sidebar: saved.sidebar === "compact" || saved.sidebar === "remember" ? saved.sidebar : defaults.sidebar,
     defaultView: saved.defaultView === "list" || saved.defaultView === "grid" ? saved.defaultView : defaults.defaultView,

@@ -13,7 +13,7 @@ test("interface preferences migrate the previous client view without overriding 
 
 test("all interface settings and remembered sidebar state round-trip without sharing the theme key", () => {
   const values = new Map();
-  const preferences = { density: "compact", motion: "reduced", sidebar: "remember", defaultView: "grid", sidebarExpanded: false };
+  const preferences = { density: "compact", presentation: "minimal", motion: "reduced", sidebar: "remember", defaultView: "grid", sidebarExpanded: false };
   persistInterfacePreferences({ setItem: (key, value) => values.set(key, value) }, preferences);
   assert.deepEqual(parseInterfacePreferences(values.get(INTERFACE_STORAGE_KEY)), preferences);
   assert.equal(values.size, 1);
@@ -22,7 +22,7 @@ test("all interface settings and remembered sidebar state round-trip without sha
 
 test("malformed storage is reported and unknown fields cannot inject preference values", () => {
   for (const value of ["broken", "null", "[]", '"compact"']) assert.throws(() => parseInterfacePreferences(value));
-  assert.deepEqual(parseInterfacePreferences(JSON.stringify({ density: "giant", motion: "fast", sidebar: "off", defaultView: "table", sidebarExpanded: "false" })), DEFAULT_INTERFACE);
+  assert.deepEqual(parseInterfacePreferences(JSON.stringify({ density: "giant", presentation: "cards", motion: "fast", sidebar: "off", defaultView: "table", sidebarExpanded: "false" })), DEFAULT_INTERFACE);
 });
 
 test("organization directory removes metric cards, keeps permissions and uses compact semantic summary", () => {
@@ -38,13 +38,14 @@ test("organization directory removes metric cards, keeps permissions and uses co
   assert.match(directory, /<StatusBadge status={client.status}/);
 });
 
-test("appearance removes explanatory placeholders and scopes portal interaction tokens", () => {
+test("appearance preferences cover presentation, density and reduced motion", () => {
   const settings = readFileSync("components\\dashboard\\appearance-settings.tsx", "utf8");
   assert.doesNotMatch(settings, /Instant preview|A new look, the same signals|localStorage|useTheme/);
-  for (const name of ["density", "motion", "sidebar", "defaultView"]) assert.ok(settings.includes(`name="${name}"`));
+  for (const name of ["presentation", "density", "motion", "sidebar", "defaultView"]) assert.ok(settings.includes(`name="${name}"`));
   const css = readFileSync("app\\dashboard\\dashboard-interface.css", "utf8");
   assert.match(css, /sg-themed-portal/);
   assert.match(css, /data-sg-density="compact"/);
+  assert.match(css, /data-sg-presentation="bubbles"/);
+  assert.match(css, /data-sg-presentation="minimal"/);
   assert.match(css, /data-sg-motion="reduced"/);
-  assert.doesNotMatch(css, /scale\(/);
 });

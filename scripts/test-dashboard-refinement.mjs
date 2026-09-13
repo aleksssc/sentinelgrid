@@ -10,10 +10,13 @@ const load = dashboardLoader();
 const { StatusBadge, RoleBadge } = load("components\\dashboard\\dashboard-badges.tsx");
 const fixtures = await renderDashboardFixtures();
 
-test("Organization and Client share compact headers, summaries and content panels", () => {
+test("Organization uses the standard page header while client details retain their compact header", () => {
+  assert.match(fixtures.organization, /class="sg-page-header"/);
+  assert.doesNotMatch(fixtures.organization, /class="sg-organization-header"/);
+  assert.match(fixtures.clients, /class="sg-organization-header"/);
+
   for (const name of ["organization", "clients"]) {
     const html = fixtures[name];
-    assert.match(html, /class="sg-organization-header"/);
     assert.match(html, /class="sg-compact-summary"/);
     assert.match(html, /sg-surface sg-clients-panel/);
     assert.doesNotMatch(html, /sg-stat(?: |")/);

@@ -2,14 +2,14 @@ import "./dashboard-background.css";
 import "./dashboard-design.css";
 import "./dashboard-themes.css";
 import "./dashboard-interface.css";
+import "./information-style.css";
+import "./information-style-overrides.css";
 import OrganizationGate from "@/components/dashboard/organization-gate";
 import DashboardSidebar from "@/components/dashboard/dashboard-sidebar";
 import DashboardBackground from "@/components/dashboard/dashboard-background";
 import InfrastructureSearch from "@/components/infrastructure-search";
 import NotificationsBell from "@/components/dashboard/notifications/notifications-bell";
 import { UserMenu } from "@/components/user-menu";
-
-export const instant = false;
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (

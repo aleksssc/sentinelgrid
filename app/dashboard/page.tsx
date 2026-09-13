@@ -714,7 +714,6 @@ export default async function DashboardPage() {
           title="Dashboard"
           eyebrow="Infrastructure overview"
           description="Monitor devices, agents, alerts, incidents and service monitors from one place. Devices are marked offline after 90 seconds without a heartbeat."
-          actions={<Link href={enrollDeviceHref} className="sg-button sg-button-primary"><Plus size={16} />Enroll device</Link>}
         />
 
                 <section
@@ -1034,9 +1033,9 @@ export default async function DashboardPage() {
               tone: alertCount > 0 ? "text-amber-400" : "text-emerald-400",
             },
             {
-              label: "Incidents",
+              label: "Recent failures",
               value: incidentCount,
-              description: "Failed commands and audit exceptions from the last 7 days",
+              description: "Command and audit failures recorded in the last 7 days",
               href: "/dashboard/incidents?source=commands&days=7",
               icon: ShieldAlert,
               tone: incidentCount > 0 ? "text-red-400" : "text-emerald-400",
@@ -1053,7 +1052,7 @@ export default async function DashboardPage() {
               label: "Agents",
               value: `${agentCoverage}%`,
               description: `${devicesWithAgentVersion}/${totalDevices} devices reporting an agent version`,
-              href: "/dashboard/organizations",
+              href: "/dashboard/agents",
               icon: Bot,
               tone: agentCoverage === 100 || totalDevices === 0 ? "text-emerald-400" : "text-amber-400",
             },
@@ -1815,11 +1814,11 @@ export default async function DashboardPage() {
                 <div className="min-w-0 flex-1">
 
                   <p className="text-xs font-medium text-zinc-300">
-                    Review incidents
+                    Review failure evidence
                   </p>
 
                   <p className="mt-0.5 text-[11px] text-surface-muted">
-                    Failures and exceptions
+                    Recorded command and audit history
                   </p>
 
                 </div>

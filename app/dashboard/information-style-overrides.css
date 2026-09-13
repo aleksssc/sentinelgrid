@@ -1,0 +1,44 @@
+/* Coverage for inventories that predate the semantic primitives. These rules are
+   intentionally limited to information surfaces, never buttons, inputs or sidebar UI. */
+html[data-sg-presentation="bubbles"] .sg-dashboard .sg-surface > .divide-y > .sg-row,
+html[data-sg-presentation="bubbles"] .sg-dashboard .sg-surface > .divide-y > .sg-admin-user-row,
+html[data-sg-presentation="bubbles"] .sg-dashboard .sg-surface > .divide-y > .sg-admin-audit-row {
+  transition: background-color 150ms, border-color 150ms;
+}
+
+/* Alerts and dialogs communicate state rather than inventory grouping, so they retain
+   their surface treatment in both presentation modes. */
+html[data-sg-presentation="minimal"] .sg-dashboard :is(.sg-danger, .sg-monitor-modal, .sg-dialog) {
+  border-color: var(--sg-border);
+  border-radius: var(--sg-panel-radius);
+  background: var(--sg-surface);
+  box-shadow: 0 4px 20px rgb(0 0 0 / 16%);
+}
+
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-page > section[aria-label="Current page summary"] {
+  gap: 0;
+  margin-bottom: 20px;
+  border-block: 1px solid var(--sg-border);
+}
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-page > section[aria-label="Current page summary"] > .sg-surface {
+  padding: 8px 14px;
+  border-right: 1px solid var(--sg-border);
+}
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-page > section[aria-label="Current page summary"] > .sg-surface:last-child { border-right: 0; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-page > section[aria-label="Current page summary"] > .sg-surface > div:first-child { margin-bottom: 4px; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-page > section[aria-label="Current page summary"] .text-3xl { font-size: 1.25rem; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-page > section[aria-label="Current page summary"] .mt-2 { margin-top: 2px; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-page > section[aria-label="Current page summary"] .leading-5 { display: none; }
+
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-client-directory .sg-toolbar,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-tools-workspace > section,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-tools-categories > section { padding-inline: 0; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-client-directory .sg-client-item { min-height: 0; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-domain-details,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-domain-actions { padding-top: 12px; margin-top: 12px; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-diagnostic-output { border-radius: 6px; }
+
+@media (max-width: 639px) {
+  html[data-sg-presentation="minimal"] .sg-dashboard .sg-page > section[aria-label="Current page summary"] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  html[data-sg-presentation="minimal"] .sg-dashboard .sg-page > section[aria-label="Current page summary"] > .sg-surface:nth-child(2n) { border-right: 0; }
+}

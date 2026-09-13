@@ -24,10 +24,10 @@ export default function OperationsView({ kind, organizationName, filters, result
 }) {
   const incidents = kind === "incidents";
   const personal = filters.source === "monitors";
-  const title = incidents ? "Incidents" : "Alerts";
+  const title = incidents ? "Incident evidence" : "Alerts";
   const Icon = incidents ? TriangleAlert : Bell;
   const tabs = incidents ? [{ id: "commands", name: "Command failures" }, { id: "audit", name: "Audit exceptions" }] :
-    [{ id: "devices", name: "Device signals" }, { id: "monitors", name: "Personal monitors" }];
+    [{ id: "devices", name: "Device signals" }, { id: "monitors", name: "Monitor signals" }];
   const statuses = filters.source === "commands" ? [{ id: "failed", name: "Failed" }, { id: "expired", name: "Expired" }] :
     filters.source === "devices" ? [{ id: "offline", name: "Offline" }, { id: "warning", name: "Warning" }] :
     personal ? [{ id: "offline", name: "Offline" }, { id: "unchecked", name: "Not checked" }] : [];
@@ -48,8 +48,8 @@ export default function OperationsView({ kind, organizationName, filters, result
               <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-surface-accent">Operations</p>
               <h1 className="sg-page-title">{title}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">{incidents ?
-                "Investigate recorded failures across your organization, with the original evidence close at hand." :
-                "Spot connectivity warnings and unsuccessful checks before they need a deeper investigation."}</p>
+                "Review recorded command and audit failures across your organization. These are evidence records, not open incident tickets." :
+                "Review current operational signals that need attention across devices and monitors."}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -108,16 +108,10 @@ export default function OperationsView({ kind, organizationName, filters, result
             </nav>
           </footer>
         </section>
-        <div className="mt-5 flex items-start gap-2 px-1 text-xs leading-5 text-surface-muted"><ArrowDownRight size={14} className="mt-0.5 shrink-0" /><p>{incidents ? "Evidence is read-only. Assignment, acknowledgment and resolution are not available because there is no persisted incident workflow." : "These are derived signals from existing records, not delivered notifications. Alert rules, silencing and notification channels are not configured in the current backend."} Existing device actions remain in Clients.</p></div>
+        <div className="mt-5 flex items-start gap-2 px-1 text-xs leading-5 text-surface-muted"><ArrowDownRight size={14} className="mt-0.5 shrink-0" /><p>{incidents ? "Evidence is read-only while incident ownership, investigation and resolution are not tracked by the current workflow." : "Signals are derived from the latest device and monitor records. Notification rules and silencing are not available yet."} Existing device actions remain in Clients.</p></div>
       </div>
     </div>
   );
-}
-
-function Metric({ label, value, description, icon, tone = "text-zinc-400" }: {
-  label: string; value: string; description: string; icon: React.ReactNode; tone?: string;
-}) {
-  return <div className="sg-surface p-5"><div className={`mb-4 flex items-center justify-between gap-3 ${tone}`}><p className="text-xs font-medium text-surface-muted">{label}</p>{icon}</div><p className="text-3xl font-semibold tracking-tight text-white">{value}</p><p className="mt-2 text-xs leading-5 text-surface-muted">{description}</p></div>;
 }
 
 function EvidenceRow({ row }: { row: OperationRow }) {
@@ -145,3 +139,4 @@ function PageLink({ href, label, children }: { href?: string; label: string; chi
   return href ? <Link prefetch={false} href={href} className={`${classes} text-zinc-300 transition hover:bg-surface-hover hover:text-white`}>{label}{children}</Link> :
     <span aria-disabled="true" className={`${classes} text-zinc-700`}>{label}{children}</span>;
 }
+function Metric({ label, value, description, icon, tone }: { label: string; value: string; description: string; icon: React.ReactNode; tone?: string; }) { return <div className={`sg-surface p-5`}><div className={tone}><p className={`text-xs font-medium text-surface-muted`}>{label}</p>{icon}</div><p className={`text-3xl font-semibold tracking-tight text-white`}>{value}</p><p className={`mt-2 text-xs leading-5 text-surface-muted`}>{description}</p></div>; }

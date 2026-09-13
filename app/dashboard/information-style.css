@@ -1,0 +1,85 @@
+/* Information presentation is a dashboard-wide visual system. Primitives keep the
+   page structure stable while this layer changes only information containers. */
+.sg-dashboard .sg-panel,
+.sg-dashboard .sg-inventory,
+.sg-dashboard .sg-card { min-width: 0; }
+
+html[data-sg-presentation="bubbles"] .sg-dashboard {
+  --sg-information-radius: var(--sg-panel-radius);
+  --sg-information-padding: 20px;
+  --sg-information-row-padding: 14px 20px;
+}
+html[data-sg-presentation="bubbles"] .sg-dashboard .sg-panel,
+html[data-sg-presentation="bubbles"] .sg-dashboard .sg-inventory,
+html[data-sg-presentation="bubbles"] .sg-dashboard .sg-card { border-radius: var(--sg-information-radius); }
+html[data-sg-presentation="bubbles"] .sg-dashboard .sg-inventory > .sg-row + .sg-row { margin-top: 6px; border-top: 1px solid var(--sg-border); }
+html[data-sg-presentation="bubbles"] .sg-dashboard .sg-client-list .sg-client-row,
+html[data-sg-presentation="bubbles"] .sg-dashboard .sg-domain-card { border-radius: 12px; }
+
+html[data-sg-presentation="minimal"] .sg-dashboard {
+  --sg-information-radius: 0px;
+  --sg-information-padding: 0px;
+  --sg-information-row-padding: 10px 0;
+}
+/* Panels become page-canvas sections. Controls, badges, dialogs and navigation retain
+   their own radii and are intentionally not affected. */
+html[data-sg-presentation="minimal"] .sg-dashboard :is(.sg-surface, .sg-panel, .sg-inventory):not(.sg-dialog):not(.sg-drawer-metric) {
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-panel-header {
+  padding: 0 0 12px;
+  border-bottom-color: var(--sg-border);
+}
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-panel-body { padding: 0; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-row,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-member-row,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-admin-user-row,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-admin-audit-row { padding-inline: 0; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-table-heading { padding-inline: 0; background: transparent; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-inventory > :is(.sg-row, details, .sg-table-heading),
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-client-list > .sg-client-row,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-version-list > div,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-admin-status-list > div,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-admin-quick-links a { border-color: var(--sg-border); }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-client-grid { gap: 0; border-top: 1px solid var(--sg-border); }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-client-grid > .sg-client-card,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-client-list > .sg-client-row,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-domain-card {
+  border-width: 0 0 1px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-client-grid > .sg-client-card { padding-inline: 0; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-domain-grid { gap: 0; border-top: 1px solid var(--sg-border); }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-domain-card { padding-inline: 0; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-domain-card:hover,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-row:hover { background: color-mix(in srgb, var(--sg-raised) 55%, transparent); }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-agent-layout,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-admin-overview-grid { gap: 24px; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-tools-list,
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-quick-tools { gap: 0; border-top: 1px solid var(--sg-border); }
+html[data-sg-presentation="minimal"] .sg-dashboard :is(.sg-tool-launcher, .sg-quick-tool) {
+  min-height: 52px;
+  border-width: 0 0 1px;
+  border-radius: 0;
+  background: transparent;
+}
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-tools-section-heading { margin-bottom: 6px; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-empty { padding-inline: 0; }
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-compact-summary {
+  gap: 0;
+  margin-bottom: 16px;
+  padding: 8px 0;
+}
+html[data-sg-presentation="minimal"] .sg-dashboard .sg-compact-summary > div { padding: 3px 12px; }
+
+@media (max-width: 639px) {
+  html[data-sg-presentation="minimal"] .sg-dashboard .sg-row,
+  html[data-sg-presentation="minimal"] .sg-dashboard .sg-member-row,
+  html[data-sg-presentation="minimal"] .sg-dashboard .sg-admin-user-row,
+  html[data-sg-presentation="minimal"] .sg-dashboard .sg-admin-audit-row { padding-block: 10px; }
+}

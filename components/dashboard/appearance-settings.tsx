@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatedSelection } from "@/components/dashboard/animated-selection";
-import { Check, Monitor, Palette, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { Check, Palette, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { APP_THEMES, DEFAULT_APPEARANCE, type InterfacePreferences } from "@/lib/appearance";
 import { useAppearance } from "@/components/dashboard/appearance-provider";
 import { SectionHeader, Surface } from "@/components/dashboard/dashboard-primitives";
@@ -71,8 +71,7 @@ export default function AppearanceSettings() {
               ))}
             </div>
           </fieldset>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="sg-meta flex items-center gap-2"><Monitor size={15} aria-hidden="true" /> Personal to this browser.</p>
+          <div className="mt-4 flex justify-end">
             <button type="button" disabled={!ready} className="sg-button sg-button-ghost sg-button-sm" onClick={() => chooseTheme(DEFAULT_APPEARANCE)}>
               <RotateCcw size={14} aria-hidden="true" /> Reset to Sentinel
             </button>
@@ -80,7 +79,8 @@ export default function AppearanceSettings() {
         </div>
       </Surface>
       <Surface>
-        <SectionHeader title="Interface" icon={<SlidersHorizontal size={17} />} />
+        <SectionHeader title="Interface" description="Personalize how workspace information is presented. Changes are saved in this browser." icon={<SlidersHorizontal size={17} />} />
+        <InterfaceChoice name="presentation" title="Information style" description="Apply one consistent treatment to inventories and panels across SentinelGrid." options={[{ value: "bubbles", label: "Bubbles" }, { value: "minimal", label: "Minimal" }]} />
         <InterfaceChoice name="density" title="Interface density" description="Spacing in rows, panels and controls." options={[{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]} />
         <InterfaceChoice name="motion" title="Motion" description="System follows your device's reduced-motion preference." options={[{ value: "system", label: "System" }, { value: "full", label: "Full" }, { value: "reduced", label: "Reduced" }]} />
         <InterfaceChoice name="sidebar" title="Sidebar behavior" description="Desktop navigation. On smaller screens, use the menu button." options={[{ value: "expanded", label: "Expanded" }, { value: "compact", label: "Compact" }, { value: "remember", label: "Remember last state" }]} />

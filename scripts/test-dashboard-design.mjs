@@ -46,7 +46,7 @@ test("monitor states retain unknown, failed and empty distinctions with labelled
   assert.doesNotMatch(fixtures.monitors, /Live status overview/);
 });
 
-test("settings keep form bindings, member roles, invitations and destructive confirmations", () => {
+test("settings keep form bindings, member roles, invitations and explicit delete dialogs", () => {
   const html = fixtures.settings;
   for (const id of ["general", "members", "danger-zone"]) assert.match(html, new RegExp(`id="${id}"`));
   for (const name of ["organization_id", "name", "description", "member_id", "role", "invite_id"]) assert.match(html, new RegExp(`name="${name}"`));
@@ -54,8 +54,8 @@ test("settings keep form bindings, member roles, invitations and destructive con
   for (const text of ["Save changes", "Invite member", "Update", "Remove", "Cancel invitation", "Delete organization"]) assert.ok(html.includes(text), text);
   assert.match(html, /sg-danger/);
   const deletion = readFileSync("components\\organization\\delete-organization-button.tsx", "utf8");
-  assert.match(deletion, /confirmation\.trim\(\) === organizationName/);
-  assert.match(deletion, /disabled=\{!canDelete \|\| deleting\}/);
+  assert.match(deletion, /Delete permanently/);
+  assert.doesNotMatch(deletion, /confirmation|<input/);
 });
 
 test("submit controls preserve caller disabled state and expose pending feedback", () => {

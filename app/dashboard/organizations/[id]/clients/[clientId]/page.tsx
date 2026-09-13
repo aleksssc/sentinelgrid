@@ -422,14 +422,14 @@ export default async function ClientDetailsPage({
             HEADER
         ========================= */}
 
-        <PageHeader compact
+        <PageHeader
           title={client.name}
           badge={<StatusBadge status={client.status === "active" ? "active" : "inactive"} />}
           icon={<Building2 size={19} />}
           description={client.description || "Monitor and manage this client's infrastructure."}
           actions={canManageInfrastructure && <>
-            <Link href={`/dashboard/organizations/${organization.id}/clients/${client.id}/settings`} className="sg-button sg-button-secondary sg-button-sm"><Settings size={15} />Settings</Link>
-            <Link href={`/dashboard/organizations/${organization.id}/clients/${client.id}/devices/new`} className="sg-button sg-button-primary sg-button-sm"><Plus size={15} />Add device</Link>
+            <Link href={`/dashboard/organizations/${organization.id}/clients/${client.id}/settings`} className="sg-button sg-button-secondary"><Settings size={15} />Settings</Link>
+            <Link href={`/dashboard/organizations/${organization.id}/clients/${client.id}/devices/new`} className="sg-button sg-button-primary"><Plus size={15} />Add device</Link>
           </>}
         />
         <CompactSummary label="Client device summary" items={[

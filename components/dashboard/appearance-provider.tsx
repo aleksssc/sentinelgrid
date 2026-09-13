@@ -31,7 +31,6 @@ function InterfaceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const root = document.documentElement;
-    // Text inputs match :focus-visible even after clicks; track modality without moving focus.
     const pointer = () => { root.dataset.sgInputModality = "pointer"; };
     const keyboard = (event: KeyboardEvent) => {
       if (["Shift", "Control", "Alt", "Meta"].includes(event.key)) return;
@@ -71,6 +70,7 @@ function InterfaceProvider({ children }: { children: ReactNode }) {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     function apply() {
       root.dataset.sgDensity = preferences.density;
+      root.dataset.sgPresentation = preferences.presentation;
       root.dataset.sgMotion = preferences.motion === "system" ? (media.matches ? "reduced" : "full") : preferences.motion;
       root.dataset.sgSidebar = (preferences.sidebar === "remember" ? preferences.sidebarExpanded : preferences.sidebar === "expanded") ? "expanded" : "compact";
     }
