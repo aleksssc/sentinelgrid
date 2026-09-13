@@ -20,17 +20,18 @@ export async function updateSession(request: NextRequest) {
   // para /auth/login.
   // =========================================
 
-  if (
-    pathname.startsWith("/api/agent/") ||
-    pathname.startsWith("/api/realtime/") ||
-    pathname === "/api/remote/rdp/relay" ||
-    /^\/api\/devices\/[a-f0-9-]+\/performance$/i.test(pathname) ||
-    /^\/api\/devices\/[a-f0-9-]+\/rdp(?:\/[a-f0-9-]+)?$/i.test(pathname)
-  ) {
-    return NextResponse.next({
-      request,
-    });
-  }
+if (
+  pathname.startsWith("/api/agent/") ||
+  pathname.startsWith("/api/realtime/") ||
+  pathname === "/api/remote/rdp/relay" ||
+  pathname === "/api/remote/rdp/launch/redeem" ||
+  /^\/api\/devices\/[a-f0-9-]+\/performance$/i.test(pathname) ||
+  /^\/api\/devices\/[a-f0-9-]+\/rdp(?:\/[a-f0-9-]+)?$/i.test(pathname)
+) {
+  return NextResponse.next({
+    request,
+  });
+}
 
   // =========================================
   // SUPABASE RESPONSE
