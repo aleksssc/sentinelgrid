@@ -53,6 +53,9 @@ func LaunchInteractive(ctx context.Context, connection Connection) error {
 	if err != nil {
 		return err
 	}
+	if err := provisionRemoteLog(); err != nil {
+		return fmt.Errorf("could not prepare remote diagnostics log: %w", err)
+	}
 	startup := windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfo{})), Desktop: desktop}
 	var process windows.ProcessInformation
 	if err := windows.CreateProcessAsUser(token, app, &line[0], nil, nil, false, windows.CREATE_NO_WINDOW|createUnicodeEnvironment, &env[0], nil, &startup, &process); err != nil {
@@ -107,7 +110,18 @@ func remoteEnvironment(c Connection) ([]uint16, error) {
 	return append(block, 0), nil
 }
 
-func RunRemoteHost(ctx context.Context) error {
+func RunRemoteHost(ctx context.Context) (runErr error) {
+	logger, err := openRemoteLogger()
+	if err != nil {
+		return err
+	}
+	defer logger.close()
+	logger.event("REMOTE_HOST_START")
+	defer func() { logger.event("REMOTE_HOST_EXIT " + sanitizeRemoteLogError(runErr)) }()
+	return runRemoteHost(ctx, logger)
+}
+
+func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	connection := Connection{Relay: os.Getenv("SENTINELGRID_REMOTE_RELAY"), Ticket: os.Getenv("SENTINELGRID_REMOTE_TICKET")}
 	if value, err := time.Parse(time.RFC3339Nano, os.Getenv("SENTINELGRID_REMOTE_EXPIRES")); err == nil {
 		connection.ExpiresAt = value
@@ -115,17 +129,22 @@ func RunRemoteHost(ctx context.Context) error {
 	if err := connection.Validate(); err != nil {
 		return err
 	}
+	logger.event("REMOTE_ENV_VALID")
+	logger.event("REMOTE_RELAY_CONNECTING")
 	log.Print("[RDP] remote host connecting")
 	ws, err := Dial(ctx, connection)
 	if err != nil {
 		return err
 	}
 	defer ws.Close()
+	logger.event("REMOTE_RELAY_CONNECTED")
 	log.Print("[RDP] relay connected")
+	logger.event("REMOTE_PAIRED")
 	log.Print("[RDP] remote host paired")
 	if err := sendScreenInfo(ws); err != nil {
 		return err
 	}
+	logger.event("REMOTE_CAPTURE_START")
 	log.Print("[RDP] REMOTE_CAPTURE_START")
 	inputDone := make(chan error, 1)
 	go readRemoteInput(ctx, ws, inputDone)
@@ -144,10 +163,12 @@ func RunRemoteHost(ctx context.Context) error {
 		case <-ticker.C:
 			jpg, err := capturePrimaryJPEG()
 			if err != nil {
+				logger.event("REMOTE_CAPTURE_FAILED " + sanitizeRemoteLogError(err))
 				log.Printf("[RDP] REMOTE_CAPTURE_FAILED %s", captureFailureReason(err))
 				return err
 			}
 			if firstFrame {
+				logger.event("REMOTE_CAPTURE_FIRST_FRAME_OK")
 				log.Print("[RDP] REMOTE_CAPTURE_FIRST_FRAME_OK")
 				firstFrame = false
 			}
