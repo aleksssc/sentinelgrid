@@ -82,7 +82,7 @@ export async function deviceBrowserFixture() {
       createRoot(document.getElementById('device-root')).render(h(AppearanceProvider, null,
         h('div', {className:'sg-dashboard relative flex h-dvh overflow-hidden'}, h(Background),
           h('main', {className:'relative z-10 min-w-0 flex-1 overflow-auto'},
-            h('div', {className:'sg-page'}, h(Dashboard, {devices:[device], sites:[device.sites], clientName:'A client with a deliberately long mobile name', canManage:true, rdpConfigured:true, activity:[], activityCommands:[]}))))));
+            h('div', {className:'sg-page'}, h(Dashboard, {devices:[device], sites:[device.sites], clientName:'A client with a deliberately long mobile name', canManage:true, rdpConfigured:true, remoteAccess:{actions:{state:"allowed",canUse:true,canManageBilling:true},terminal:{state:"allowed",canUse:true,canManageBilling:true},rdp:{state:"allowed",canUse:true,canManageBilling:true}}, activity:[], activityCommands:[]}))))));
     `);
     const { webpack } = require("next/dist/compiled/webpack/webpack");
     const bundle = join(directory, "bundle.js");

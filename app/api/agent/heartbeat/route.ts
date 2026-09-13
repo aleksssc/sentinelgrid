@@ -49,7 +49,13 @@ export async function POST(request: NextRequest) {
       .eq("agent_token_hash", createHash("sha256").update(token).digest("hex"))
       .select("id, capabilities").maybeSingle();
     if (error) {
-      console.error("[Heartbeat] DEVICE_UPDATE_FAILED", error.code);
+      console.error("[Heartbeat] DEVICE_UPDATE_FAILED", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        updateFields: Object.keys(update),
+      });
       return NextResponse.json({ error: "Could not update device." }, { status: 503, headers });
     }
     if (!device) return NextResponse.json({ error: "Invalid agent token." }, { status: 401, headers });

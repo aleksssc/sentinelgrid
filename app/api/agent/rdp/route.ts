@@ -5,7 +5,11 @@ import { relayURL } from "@/lib/remote/rdp-policy";
 export async function POST(request: Request) {
   try {
     const { admin, device } = await authenticateUpdateAgent(request);
-    if (!process.env.SENTINELGRID_RELAY_URL) return new Response(null, { status: 204 });
+    console.info("[RDP] agent control requested", { deviceId: device.id });
+    if (!process.env.SENTINELGRID_RELAY_URL) {
+      console.info("[RDP] agent control unavailable: relay URL is not configured", { deviceId: device.id });
+      return new Response(null, { status: 204 });
+    }
     const relay = relayURL(process.env.SENTINELGRID_RELAY_URL);
     const { data, error } = await admin.from("rdp_sessions").select("id")
       .eq("device_id", device.id).eq("status", "requested")
@@ -14,14 +18,17 @@ export async function POST(request: Request) {
     if (error) throw new Error("SESSION_LOOKUP_FAILED");
     if (!data) return new Response(null, { status: 204 });
     const session = await loadRDPSession(data.id);
+    console.info("[RDP] agent session available", { sessionId: session.id, deviceId: device.id });
     try { await assertLiveRDPSession(session); }
     catch (error) { await finishRDPSession(session, "failed"); throw error; }
     const { data: claimed, error: claimError } = await admin.from("rdp_sessions")
       .update({ status: "connecting" }).eq("id", session.id).eq("status", "requested").select("id").maybeSingle();
     if (claimError) throw new Error("SESSION_CLAIM_FAILED");
     if (!claimed) return new Response(null, { status: 204 });
+    console.info("[RDP] agent session claimed", { sessionId: session.id, deviceId: device.id });
     try {
       const ticket = await issueRDPTicket(session.id, "agent");
+      console.info("[RDP] agent tunnel ticket created", { sessionId: session.id, deviceId: device.id });
       return Response.json({ relay, ticket, expires_at: session.expires_at }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) { await finishRDPSession(session, "failed"); throw error; }
   } catch (error) { return rdpError(error); }

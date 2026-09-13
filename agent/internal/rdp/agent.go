@@ -19,6 +19,7 @@ var controlAvailable atomic.Bool
 var wake = make(chan struct{}, 1)
 
 func Wake() {
+	log.Print("[RDP] session available notification received")
 	select {
 	case wake <- struct{}{}:
 	default:
@@ -28,6 +29,7 @@ func Wake() {
 func HeartbeatControl(pending *bool) {
 	controlAvailable.Store(pending != nil)
 	if pending != nil && *pending {
+		log.Print("[RDP] session available through heartbeat")
 		Wake()
 	}
 }
@@ -46,14 +48,16 @@ func Run(ctx context.Context) {
 			}
 		}
 		if err := Available(ctx); err != nil {
+			log.Printf("[RDP] local host unavailable: %v", err)
 			continue
 		}
 		cfg, err := config.Load()
 		if err != nil {
+			log.Printf("[RDP] configuration unavailable: %v", err)
 			continue
 		}
 		if err := poll(ctx, cfg); err != nil && ctx.Err() == nil {
-			log.Printf("RDP: %v", err)
+			log.Printf("[RDP] %v", err)
 		}
 	}
 }
@@ -71,6 +75,7 @@ func poll(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("RDP request creation failed")
 	}
 	request.Header.Set("Authorization", "Bearer "+cfg.AgentToken)
+	log.Print("[RDP] requesting tunnel control")
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
@@ -91,6 +96,7 @@ func poll(ctx context.Context, cfg *config.Config) error {
 	if json.Unmarshal(data, &connection) != nil || connection.Validate() != nil {
 		return fmt.Errorf("invalid RDP control response")
 	}
+	log.Print("[RDP] tunnel control received; connecting relay")
 	// One tunnel at a time per Agent; it never accepts a destination from the server.
 	sessionCtx, sessionCancel := context.WithDeadline(ctx, connection.ExpiresAt)
 	defer sessionCancel()
@@ -99,6 +105,7 @@ func poll(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 	defer ws.Close()
+	log.Print("[RDP] relay connected")
 	if err := Available(sessionCtx); err != nil {
 		return err
 	}
@@ -106,6 +113,7 @@ func poll(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("RDP local listener unavailable")
 	}
+	log.Print("[RDP] local 3389 connected")
 	log.Print("RDP outbound tunnel connected")
 	err = Bridge(sessionCtx, ws, tcp)
 	log.Print("RDP outbound tunnel closed")

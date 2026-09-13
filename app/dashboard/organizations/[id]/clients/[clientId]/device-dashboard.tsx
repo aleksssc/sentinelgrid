@@ -18,6 +18,8 @@ import DeviceTerminal, {
   type TerminalShell,
 } from "@/components/dashboard/devices/device-terminal";
 import DeviceRDP from "@/components/dashboard/devices/device-rdp";
+import { RemoteFeatureGate } from "@/components/dashboard/devices/remote-feature-gate";
+import type { RemoteFeatureAccess } from "@/lib/remote-feature-access";
 import { StatusBadge } from "@/components/dashboard/dashboard-badges";
 import DeviceActivityTimeline from "@/components/dashboard/devices/device-activity";
 import DevicePerformance from "@/components/dashboard/devices/device-performance";
@@ -41,6 +43,7 @@ import {
   Network,
   Search,
   Server,
+  Settings,
   ShieldCheck,
   Terminal,
   Trash2,
@@ -49,6 +52,7 @@ import {
 } from "lucide-react";
 import { SectionHeader, EmptyState } from "@/components/dashboard/dashboard-primitives";
 import DeviceTabs from "@/components/dashboard/devices/device-tabs";
+import DeviceSettingsPanel from "@/components/dashboard/devices/device-settings-panel";
 
 /* =========================
    TYPES
@@ -194,6 +198,11 @@ type Props = {
 
   canManage: boolean;
   rdpConfigured: boolean;
+  remoteAccess: {
+    actions: RemoteFeatureAccess;
+    terminal: RemoteFeatureAccess;
+    rdp: RemoteFeatureAccess;
+  };
 
   activity: DeviceActivity[];
   activityCommands: DeviceActivityCommand[];
@@ -206,7 +215,7 @@ type DeviceTab =
   | "inventory"
   | "software"
   | "services"
-  | "security"
+  | "settings"
   | "activity";
 
 /* =========================
@@ -219,6 +228,7 @@ export default function DeviceDashboard({
   clientName,
   canManage,
   rdpConfigured,
+  remoteAccess,
   activity,
   activityCommands,
   activityError,
@@ -672,7 +682,7 @@ export default function DeviceDashboard({
     shell: TerminalShell
   ) {
     if (
-      !canManage ||
+      !remoteAccess.terminal.canUse ||
       !selectedDevice
     ) {
       return;
@@ -700,7 +710,7 @@ export default function DeviceDashboard({
       payload?: Record<string, unknown>;
     }
   ) {
-    if (!canManage || !selectedDevice || actionBusy) {
+    if (!remoteAccess.actions.canUse || !selectedDevice || actionBusy) {
       return;
     }
 
@@ -1562,39 +1572,34 @@ export default function DeviceDashboard({
               </div>
 
               <div className="sg-device-toolbar mt-4 flex flex-wrap items-center gap-2">
-                <DeviceRDP key={`rdp-${selectedDevice.id}`} deviceId={selectedDevice.id} available={canManage && rdpAvailable} />
+                <DeviceRDP key={`rdp-${selectedDevice.id}`} deviceId={selectedDevice.id} available={rdpAvailable} access={remoteAccess.rdp} />
 
-                <button
-                  type="button"
-                  onClick={(event) => { event.currentTarget.focus({ preventScroll: true }); openRemoteTerminal("powershell"); }}
-                  disabled={!canManage || !terminalAvailable}
-                  title={
-                    !canManage
-                      ? "You do not have permission to open a remote terminal."
-                      : terminalAvailable
-                        ? "Open remote terminal"
-                        : "The device is offline or terminal access is unavailable."
-                  }
-                  className="sg-button sg-button-primary disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Terminal size={16} />
-                  Terminal
-                </button>
+                <RemoteFeatureGate access={remoteAccess.terminal} feature="Terminal">
+                  <button
+                    type="button"
+                    onClick={(event) => { event.currentTarget.focus({ preventScroll: true }); openRemoteTerminal("powershell"); }}
+                    disabled={!terminalAvailable}
+                    title={terminalAvailable ? "Open remote terminal" : "The device is offline or terminal access is unavailable."}
+                    className="sg-button sg-button-primary disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Terminal size={16} />
+                    Terminal
+                  </button>
+                </RemoteFeatureGate>
 
-                {canManage && (
-                  <ActionsMenu
-                    key={`actions-${selectedDevice.id}`}
-                    device={selectedDevice}
-                    busy={Boolean(actionBusy)}
-                    online={selectedDeviceStatus === "online"}
-                    open={actionsOpen}
-                    onOpenChange={setActionsOpen}
-                    onAction={(action, options) => {
-                      setActionsOpen(false);
-                      void runQuickAction(action, options);
-                    }}
-                  />
-                )}
+                <ActionsMenu
+                  key={`actions-${selectedDevice.id}`}
+                  device={selectedDevice}
+                  busy={Boolean(actionBusy)}
+                  online={selectedDeviceStatus === "online"}
+                  access={remoteAccess.actions}
+                  open={actionsOpen}
+                  onOpenChange={setActionsOpen}
+                  onAction={(action, options) => {
+                    setActionsOpen(false);
+                    void runQuickAction(action, options);
+                  }}
+                />
               </div>
 
             </div>
@@ -1801,6 +1806,13 @@ export default function DeviceDashboard({
                   activityCommands={activityCommands}
                   activityError={activityError}
                   now={now}
+                  sites={sites}
+                  canManage={canManage}
+                  onDeviceUpdated={(updated) => {
+                    setDeviceList((current) => current.map((device) => device.id === updated.id ? { ...device, ...updated } : device));
+                    setSelectedDevice((current) => current?.id === updated.id ? { ...current, ...updated } : current);
+                    router.refresh();
+                  }}
                 />
               )}
 
@@ -1863,9 +1875,7 @@ export default function DeviceDashboard({
         device={
           selectedDevice
         }
-        canManage={
-          canManage
-        }
+        canManage={remoteAccess.terminal.canUse}
         onClose={
           closeRemoteTerminal
         }
@@ -2025,7 +2035,7 @@ const DEVICE_TABS: Array<{ id: DeviceTab; label: string }> = [
   { id: "inventory", label: "Inventory" },
   { id: "software", label: "Software" },
   { id: "services", label: "Services" },
-  { id: "security", label: "Security" },
+  { id: "settings", label: "Settings" },
   { id: "activity", label: "Activity" },
 ];
 
@@ -2036,6 +2046,9 @@ function DeviceTabPanel({
   activityCommands,
   activityError,
   now,
+  sites,
+  canManage,
+  onDeviceUpdated,
 }: {
   tab: DeviceTab;
   device: Device;
@@ -2043,6 +2056,9 @@ function DeviceTabPanel({
   activityCommands: DeviceActivityCommand[];
   activityError?: string;
   now: number;
+  sites: Site[];
+  canManage: boolean;
+  onDeviceUpdated: (updated: Pick<Device, "id" | "display_name" | "site_id" | "sites">) => void;
 }) {
   if (tab === "inventory") {
     return (
@@ -2091,13 +2107,16 @@ function DeviceTabPanel({
     return <DevicePerformance key={device.id} deviceId={device.id} />;
   }
 
-  const labels: Record<Exclude<DeviceTab, "overview" | "performance" | "inventory" | "activity">, [string, string]> = {
+  if (tab === "settings") {
+    return <DeviceSettingsPanel device={device} sites={sites} canManage={canManage} onDeviceUpdated={onDeviceUpdated} />;
+  }
+
+  const labels: Record<Exclude<DeviceTab, "overview" | "performance" | "inventory" | "activity" | "settings">, [string, string]> = {
     software: ["Software inventory is not available", "This Agent version does not collect installed software yet."],
     services: ["Services inventory is not available", "Windows service collection and actions are not available from this Agent version yet."],
-    security: ["Security posture is not available", "Security collectors have not reported data for this Agent yet."],
   };
 
-  const unsupportedTab = tab as "software" | "services" | "security";
+  const unsupportedTab = tab as "software" | "services";
 
   return <DeviceTabEmpty title={labels[unsupportedTab][0]} description={labels[unsupportedTab][1]} />;
 }

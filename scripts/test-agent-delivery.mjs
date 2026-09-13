@@ -81,8 +81,24 @@ test("heartbeat authenticates and writes metrics/inventory with one database ope
  assert.equal(update.cpu_usage,0); assert.equal(update.agent_version,"0.1.6"); assert.equal(update.capabilities.terminal,true);
  assert.ok(ops.some(op=>op[0]==="eq" && op[1]==="agent_token_hash"));
 });
+test("heartbeat logs complete Supabase failures without exposing them to the Agent", async () => {
+ const failure = { code: "42703", message: "column devices.serial_number does not exist", details: "detail", hint: "hint" };
+ const admin = database([row(null, failure)]);
+ const { POST } = loadRoute("../app/api/agent/heartbeat/route.ts", admin);
+ const originalError = console.error;
+ const calls = [];
+ console.error = (...args) => calls.push(args);
+ try {
+  const response = await POST(new NextRequest("https://website.example/api/agent/heartbeat", { method: "POST", headers: { Authorization: "Bearer test-token", "Content-Type": "application/json" }, body: JSON.stringify({ inventory: { serial_number: "serial", capabilities: { terminal: true } } }) }));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "Could not update device." });
+ } finally {
+  console.error = originalError;
+ }
+ assert.deepEqual(calls, [["[Heartbeat] DEVICE_UPDATE_FAILED", { ...failure, updateFields: ["status", "last_seen", "serial_number", "capabilities", "last_inventory_at"] }]]);
+});
 test("unknown heartbeat token does not get success or discovery", async () => {
  const admin=database([row(null)]); const {POST}=loadRoute("../app/api/agent/heartbeat/route.ts",admin);
- const response=await POST(new NextRequest("https://website.example/api/agent/heartbeat",{method:"POST",headers:{Authorization:"Bearer invalid"},body:"{}"}));
+ const response=await POST(new NextRequest("https://website.example/api/agent/heartbeat",{method:"POST",headers:{Authorization:"Bearer test-token"},body:"{}"}));
  assert.equal(response.status,401); assert.equal(admin.calls.length,1);
 });

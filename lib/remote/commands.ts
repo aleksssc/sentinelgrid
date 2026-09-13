@@ -78,8 +78,6 @@ async function availability(context: Awaited<ReturnType<typeof commandContext>>)
       reasons[type] = activeUpdateError ? "Could not verify whether an Agent update is running" : "Another device command is already running";
     }
   }
-  // Availability authorizes a request, not its outcome. The Agent checks live support;
-  // update/check and the secure updater remain authoritative for release eligibility.
   return reasons;
 }
 
@@ -94,13 +92,16 @@ export async function createQuickAction({ deviceId, commandType, payload, idempo
   const type = commandType as QuickAction;
   const safePayload = validatePayload(type, payload);
   const context = await commandContext(deviceId);
-  const { supabase, user, device, organization } = context;
+  const { user, device, organization } = context;
   await enforceRemoteRateLimit(user.id, "commands");
   const key = typeof idempotencyKey === "string" && /^[a-zA-Z0-9_-]{8,120}$/.test(idempotencyKey) ? idempotencyKey : randomUUID();
   const redis = getRedis(), lock = `sentinelgrid:device:${device.id}:command-submission`, owner = randomUUID();
   if (!await redis.set(lock, owner, { nx: true, ex: 30 })) throw new Error("COMMAND_BUSY");
   try {
-    const { data: existing, error: existingError } = await supabase.from("device_commands").select("id, status, expires_at")
+    // Authorization is established with the request-scoped client above. Persist with the
+    // server credential so valid admins are not blocked by device_commands RLS insert policy.
+    const admin = createAdminClient();
+    const { data: existing, error: existingError } = await admin.from("device_commands").select("id, status, expires_at")
       .eq("organization_id", organization.id).eq("device_id", device.id).eq("idempotency_key", key).maybeSingle();
     if (existingError) throw new Error("COMMAND_LOOKUP_FAILED");
     if (existing) return { commandId: existing.id, status: existing.status, expiresAt: existing.expires_at };
@@ -112,16 +113,19 @@ export async function createQuickAction({ deviceId, commandType, payload, idempo
       throw new Error("COMMAND_LOOKUP_FAILED");
     }
     const expiresAt = new Date(Date.now() + commandLifetime(type, safePayload.delay_seconds)).toISOString();
-    const { data: command, error } = await supabase.from("device_commands").insert({
+    const { data: command, error } = await admin.from("device_commands").insert({
       organization_id: organization.id, device_id: device.id, requested_by: user.id,
       command_type: type, payload: safePayload, idempotency_key: key, expires_at: expiresAt,
     }).select("id, status, expires_at").single();
-    if (error || !command) throw new Error("COMMAND_CREATE_FAILED");
+    if (error || !command) {
+      console.error("[Device actions] COMMAND_CREATE_FAILED", { code: error?.code, message: error?.message, deviceId: device.id, organizationId: organization.id });
+      throw new Error("COMMAND_CREATE_FAILED");
+    }
     await createAuditLog({ organizationId: organization.id, action: "device.command.requested", targetType: "device",
       targetId: device.id, targetName: device.display_name || device.hostname,
       metadata: { commandId: command.id, commandType: type, expiresAt },
     });
-    const { error: dispatchError } = await supabase.from("device_commands").update({ status: "dispatched", dispatched_at: new Date().toISOString() })
+    const { error: dispatchError } = await admin.from("device_commands").update({ status: "dispatched", dispatched_at: new Date().toISOString() })
       .eq("id", command.id).eq("status", "queued");
     if (dispatchError) throw new Error("COMMAND_DISPATCH_FAILED");
     await publishRealtimeMessage(agentCommandChannel(device.id), { type: "typed_command", command_id: command.id, command_type: type,

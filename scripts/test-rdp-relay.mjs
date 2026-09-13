@@ -3,10 +3,14 @@ import { once } from "node:events";
 import { randomBytes, randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { WebSocket } from "ws";
-import { createRDPRelay } from "../relay/rdp-relay.mjs";
+import { createRDPRelay, rdpRelayConfiguration } from "../relay/rdp-relay.mjs";
 
 const token = () => randomBytes(32).toString("base64url");
 const message = (ws) => once(ws, "message").then(([data, binary]) => ({ data, binary }));
+const relayCredentials = {
+  SENTINELGRID_RDP_BACKEND_URL: "https://app.example",
+  SENTINELGRID_RDP_RELAY_SECRET: "a".repeat(64),
+};
 
 async function fixture(t, options = {}) {
   const tickets = new Map();
@@ -27,12 +31,15 @@ async function fixture(t, options = {}) {
   await once(relay.server, "listening");
   t.after(() => relay.close());
   const url = `ws://127.0.0.1:${relay.server.address().port}/rdp`;
+  const proxyHeaders = options.trustProxy ? { "X-Forwarded-Proto": "https" } : {};
   function issue(role, sessionId = randomUUID()) {
     const ticket = token();
     tickets.set(ticket, { role, sessionId, idleSeconds: 60, expiresAt: new Date(Date.now() + (options.lifetimeMs ?? 10000)).toISOString() });
     return ticket;
   }
-  function connect(ticket, headers = {}) { return new WebSocket(url, { headers: { Authorization: `Bearer ${ticket}`, ...headers } }); }
+  function connect(ticket, headers = {}) {
+    return new WebSocket(url, { headers: { Authorization: `Bearer ${ticket}`, ...proxyHeaders, ...headers } });
+  }
   async function pair(sessionId = randomUUID()) {
     const client = connect(issue("client", sessionId));
     const clientReady = message(client);
@@ -44,6 +51,39 @@ async function fixture(t, options = {}) {
   }
   return { ...relay, pair, issue, connect, ended, revoke: () => { live = false; } };
 }
+
+test("RDP relay configuration preserves secure startup defaults and Railway port priority", () => {
+  const defaults = rdpRelayConfiguration(relayCredentials);
+  assert.equal(defaults.host, "127.0.0.1");
+  assert.equal(defaults.port, 8443);
+  assert.equal(defaults.trustProxy, false);
+  assert.equal(rdpRelayConfiguration({ ...relayCredentials, PORT: "9000" }).port, 9000);
+  assert.equal(rdpRelayConfiguration({ ...relayCredentials, PORT: "9000", SENTINELGRID_RELAY_PORT: "9001" }).port, 9001);
+  assert.throws(() => rdpRelayConfiguration({ ...relayCredentials, SENTINELGRID_RELAY_BIND: "0.0.0.0" }), /Cleartext relay/);
+  assert.throws(() => rdpRelayConfiguration({ ...relayCredentials, SENTINELGRID_RDP_TRUST_PROXY: "yes" }), /Invalid RDP TLS proxy setting/);
+  assert.throws(() => rdpRelayConfiguration({ ...relayCredentials, SENTINELGRID_RELAY_TLS_CERT: "cert.pem" }), /Both relay TLS/);
+  const proxied = rdpRelayConfiguration({ ...relayCredentials, SENTINELGRID_RELAY_BIND: "0.0.0.0", SENTINELGRID_RDP_TRUST_PROXY: "true" });
+  assert.equal(proxied.trustProxy, true);
+  assert.equal(proxied.host, "0.0.0.0");
+  const directTLS = rdpRelayConfiguration({ ...relayCredentials, SENTINELGRID_RELAY_BIND: "0.0.0.0", SENTINELGRID_RELAY_TLS_CERT: "cert.pem", SENTINELGRID_RELAY_TLS_KEY: "key.pem" });
+  assert.equal(directTLS.trustProxy, false);
+  assert.equal(directTLS.cert, "cert.pem");
+});
+
+test("private TLS proxy accepts only an exact HTTPS forwarding header", { timeout: 5000 }, async (t) => {
+  const f = await fixture(t, { trustProxy: true });
+  for (const headers of [{ "X-Forwarded-Proto": "http" }, { "X-Forwarded-Proto": "https,http" }]) {
+    const ws = f.connect(f.issue("client"), headers);
+    await once(ws, "error");
+  }
+  const { client, agent } = await f.pair();
+  const incoming = message(agent);
+  client.send(Buffer.from("proxied secure transport"));
+  assert.equal((await incoming).data.toString(), "proxied secure transport");
+  const closed = once(agent, "close");
+  client.close();
+  await closed;
+});
 
 test("paired native sockets forward binary bytes both ways and close together", { timeout: 5000 }, async (t) => {
   const f = await fixture(t);
@@ -115,7 +155,6 @@ test("duplicate role cannot replace an attached socket", { timeout: 5000 }, asyn
   assert.equal((await incoming).data.toString(), "original");
   client.close();
 });
-
 
 test("session expiry closes both peers and capacity still allows the matching second peer", { timeout: 5000 }, async (t) => {
   const f = await fixture(t, { maxSessions: 1, lifetimeMs: 150 });

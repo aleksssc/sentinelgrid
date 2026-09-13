@@ -7,6 +7,8 @@ import { notFound } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getOrganizationAccessForUser } from "@/lib/organization-access";
+import { getRemoteFeatureAccess } from "@/lib/remote-feature-access";
 
 import DeviceDashboard from "./device-dashboard";
 import {
@@ -130,6 +132,17 @@ export default async function ClientDetailsPage({
   const canManageInfrastructure =
     isOwner ||
     isAdmin;
+
+  const organizationAccess = await getOrganizationAccessForUser(
+    organization.id,
+    user.id,
+  );
+
+  const remoteAccess = {
+    actions: getRemoteFeatureAccess(organizationAccess, "devices.actions", "deviceActions"),
+    terminal: getRemoteFeatureAccess(organizationAccess, "devices.terminal", "terminal"),
+    rdp: getRemoteFeatureAccess(organizationAccess, "devices.rdp", "rdp"),
+  };
 
   /* =========================
      CLIENT
@@ -461,6 +474,7 @@ export default async function ClientDetailsPage({
             canManage={
               canManageInfrastructure
             }
+            remoteAccess={remoteAccess}
             activity={
               deviceActivity
             }

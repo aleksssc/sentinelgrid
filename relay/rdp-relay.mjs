@@ -6,7 +6,41 @@ import { WebSocket, WebSocketServer } from "ws";
 
 const MAX_FRAME = 64 * 1024;
 
-export function createRDPRelay({ authorize, tls, maxSessions = 64, pollMs = 5000, pairMs = 60000 }) {
+function port(value) {
+  const parsed = Number(value ?? 8443);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) throw new Error("Invalid relay port");
+  return parsed;
+}
+
+export function rdpRelayConfiguration(env = process.env) {
+  const backend = new URL(env.SENTINELGRID_RDP_BACKEND_URL ?? "");
+  if (backend.protocol !== "https:" || backend.username || backend.password || backend.search || backend.hash || backend.pathname !== "/") {
+    throw new Error("SENTINELGRID_RDP_BACKEND_URL must be an HTTPS origin");
+  }
+  const secret = env.SENTINELGRID_RDP_RELAY_SECRET ?? "";
+  if (!/^[a-f0-9]{64}$/i.test(secret)) throw new Error("A 32-byte hex relay secret is required");
+  const cert = env.SENTINELGRID_RELAY_TLS_CERT;
+  const key = env.SENTINELGRID_RELAY_TLS_KEY;
+  if (!!cert !== !!key) throw new Error("Both relay TLS certificate and key are required");
+  const proxy = env.SENTINELGRID_RDP_TRUST_PROXY;
+  if (proxy !== undefined && proxy !== "true" && proxy !== "false") throw new Error("Invalid RDP TLS proxy setting");
+  const trustProxy = proxy === "true";
+  const host = env.SENTINELGRID_RELAY_BIND ?? "127.0.0.1";
+  if (!cert && host !== "127.0.0.1" && host !== "::1" && !trustProxy) {
+    throw new Error("Cleartext relay must bind loopback or explicitly trust a private TLS proxy");
+  }
+  return {
+    backend,
+    secret,
+    cert,
+    host,
+    key,
+    port: port(env.SENTINELGRID_RELAY_PORT ?? env.PORT),
+    trustProxy,
+  };
+}
+
+export function createRDPRelay({ authorize, tls, trustProxy = false, maxSessions = 64, pollMs = 5000, pairMs = 60000 }) {
   const sessions = new Map();
   let pending = 0;
   const health = (request, response) => {
@@ -91,8 +125,13 @@ export function createRDPRelay({ authorize, tls, maxSessions = 64, pollMs = 5000
 
   server.on("upgrade", async (request, socket, head) => {
     socket.on("error", () => socket.destroy());
-    const ticket = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(request.headers.authorization ?? "")?.[1];
-    if (request.url !== "/rdp" || request.headers.origin || !ticket || pending >= 32) {
+    // In proxy mode the private ingress must replace this header; a client-supplied value is not proof of TLS.
+    const proxiedSecure = request.headers["x-forwarded-proto"] === "https";
+    if ((!tls && trustProxy && !proxiedSecure) || request.url !== "/rdp" || request.headers.origin || pending >= 32) {
+      socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); return;
+    }
+    const ticket = /^Bearer +(.+)$/.exec(request.headers.authorization ?? "")?.[1];
+    if (!ticket) {
       socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); return;
     }
     pending++;
@@ -122,25 +161,14 @@ export function createRDPRelay({ authorize, tls, maxSessions = 64, pollMs = 5000
 }
 
 async function main() {
-  const backend = new URL(process.env.SENTINELGRID_RDP_BACKEND_URL ?? "");
-  if (backend.protocol !== "https:" || backend.username || backend.password || backend.search || backend.hash || backend.pathname !== "/") {
-    throw new Error("SENTINELGRID_RDP_BACKEND_URL must be an HTTPS origin");
-  }
-  const secret = process.env.SENTINELGRID_RDP_RELAY_SECRET ?? "";
-  if (!/^[a-f0-9]{64}$/i.test(secret)) throw new Error("A 32-byte hex relay secret is required");
-  const cert = process.env.SENTINELGRID_RELAY_TLS_CERT;
-  const key = process.env.SENTINELGRID_RELAY_TLS_KEY;
-  if (!!cert !== !!key) throw new Error("Both relay TLS certificate and key are required");
-  const host = process.env.SENTINELGRID_RELAY_BIND ?? "127.0.0.1";
-  if (!cert && host !== "127.0.0.1" && host !== "::1") throw new Error("Cleartext relay must bind only to loopback behind a TLS proxy");
-  const port = Number(process.env.SENTINELGRID_RELAY_PORT ?? "8443");
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid relay port");
+  const config = rdpRelayConfiguration();
   const relay = createRDPRelay({
-    tls: cert ? { cert: readFileSync(cert), key: readFileSync(key), minVersion: "TLSv1.2" } : undefined,
+    tls: config.cert ? { cert: readFileSync(config.cert), key: readFileSync(config.key), minVersion: "TLSv1.2" } : undefined,
+    trustProxy: config.trustProxy,
     authorize: async (body) => {
-      const response = await fetch(new URL("/api/remote/rdp/relay", backend), {
+      const response = await fetch(new URL("/api/remote/rdp/relay", config.backend), {
         method: "POST", redirect: "error", signal: AbortSignal.timeout(8000),
-        headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
+        headers: { Authorization: `Bearer ${config.secret}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error("RDP authorization failed");
       return response.json();
@@ -148,9 +176,9 @@ async function main() {
   });
   await new Promise((resolve, reject) => {
     relay.server.once("error", reject);
-    relay.server.listen(port, host, resolve);
+    relay.server.listen(config.port, config.host, resolve);
   });
-  console.log("RDP relay listening; one instance per configured relay URL", host, port);
+  console.log("RDP relay listening; one instance per configured relay URL", config.host, config.port);
   for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => {
     void relay.close().catch(() => { console.error("RDP relay shutdown failed"); process.exitCode = 1; });
   });

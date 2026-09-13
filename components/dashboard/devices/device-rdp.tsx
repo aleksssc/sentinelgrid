@@ -3,9 +3,23 @@
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 
+import { RemoteFeatureGate } from "@/components/dashboard/devices/remote-feature-gate";
+import type { RemoteFeatureAccess } from "@/lib/remote-feature-access";
+import { remoteErrorMessage } from "@/lib/remote-feature-errors";
+
 type Session = { sessionId: string; expiresAt: string; status: string };
 
-export default function DeviceRDP({ deviceId, available }: { deviceId: string; available: boolean }) {
+type Props = {
+  deviceId: string;
+  available: boolean;
+  access: RemoteFeatureAccess;
+};
+
+function errorMessage(error: unknown, fallback: string) {
+  return remoteErrorMessage(error instanceof Error ? error.message : error, fallback);
+}
+
+export default function DeviceRDP({ deviceId, available, access }: Props) {
   const [session, setSession] = useState<Session | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -13,40 +27,41 @@ export default function DeviceRDP({ deviceId, available }: { deviceId: string; a
   const sessionId = session?.sessionId;
 
   useEffect(() => {
+    if (!access.canUse) return;
     const controller = new AbortController();
     void (async () => {
       try {
         const response = await fetch(`/api/devices/${deviceId}/rdp`, { cache: "no-store", signal: controller.signal });
         if (response.status === 204) return;
         const body = await response.json();
-        if (!response.ok) throw new Error(body.error || "Session status unavailable");
+        if (!response.ok) throw new Error(body.error || "SESSION_LOOKUP_FAILED");
         setSession(body);
       } catch (error) {
-        if (!controller.signal.aborted) setMessage(error instanceof Error ? error.message : "Session status unavailable");
+        if (!controller.signal.aborted) setMessage(errorMessage(error, "Remote Desktop session status is unavailable."));
       }
     })();
     return () => controller.abort();
-  }, [deviceId]);
+  }, [deviceId, access.canUse]);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!access.canUse || !sessionId) return;
     const controller = new AbortController();
     const timer = setInterval(async () => {
       try {
         const response = await fetch(`/api/devices/${deviceId}/rdp/${sessionId}`, { cache: "no-store", signal: controller.signal });
         const body = await response.json();
-        if (!response.ok) throw new Error(body.error || "Session status unavailable");
+        if (!response.ok) throw new Error(body.error || "SESSION_LOOKUP_FAILED");
         const expired = Date.parse(body.expiresAt) <= Date.now();
         if (["closed", "failed"].includes(body.status) || expired) {
           setSession(null);
           setMessage(expired ? "Remote Desktop session expired." : `Remote Desktop tunnel ${body.status}.`);
         } else { setSession(body); }
       } catch (error) {
-        if (!controller.signal.aborted) setMessage(error instanceof Error ? error.message : "Session status unavailable");
+        if (!controller.signal.aborted) setMessage(errorMessage(error, "Remote Desktop session status is unavailable."));
       }
     }, 5000);
     return () => { controller.abort(); clearInterval(timer); };
-  }, [deviceId, sessionId]);
+  }, [deviceId, sessionId, access.canUse]);
 
   async function start() {
     setBusy(true);
@@ -54,7 +69,7 @@ export default function DeviceRDP({ deviceId, available }: { deviceId: string; a
     try {
       const response = await fetch(`/api/devices/${deviceId}/rdp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Remote Desktop request failed");
+      if (!response.ok) throw new Error(body.error || "SESSION_CREATE_FAILED");
       setSession({ sessionId: body.sessionId, expiresAt: body.expiresAt, status: "requested" });
       const blob = new Blob([JSON.stringify(body.connection)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -64,7 +79,7 @@ export default function DeviceRDP({ deviceId, available }: { deviceId: string; a
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setMessage("Within 60 seconds, run SentinelGridRDP.exe -connection <download.sgrdp> on your Windows PC. Enter credentials only in Windows Remote Desktop; verify the endpoint certificate.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Remote Desktop request failed"); }
+    } catch (error) { setMessage(errorMessage(error, "Remote Desktop request failed.")); }
     finally { setBusy(false); }
   }
 
@@ -75,12 +90,18 @@ export default function DeviceRDP({ deviceId, available }: { deviceId: string; a
       const response = await fetch(`/api/devices/${deviceId}/rdp/${session.sessionId}`, { method: "DELETE" });
       if (!response.ok) {
         const body = await response.json();
-        throw new Error(body.error || "Remote Desktop close failed");
+        throw new Error(body.error || "SESSION_CLOSE_FAILED");
       }
       setSession(null);
       setMessage("Session closed. The relay disconnects within 15 seconds.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Remote Desktop close failed"); }
+    } catch (error) { setMessage(errorMessage(error, "Remote Desktop session could not be closed.")); }
     finally { setBusy(false); }
+  }
+
+  if (!access.canUse) {
+    return <RemoteFeatureGate access={access} feature="Remote Desktop">
+      <button type="button" className="sg-button sg-button-secondary"><ExternalLink size={16} />Remote Desktop</button>
+    </RemoteFeatureGate>;
   }
 
   return <div className="max-w-xl">

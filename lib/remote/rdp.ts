@@ -20,12 +20,23 @@ export class RDPError extends Error {
   constructor(message: string, public status = 403) { super(message); }
 }
 
+function rdpLog(event: string, fields: Record<string, string | number | boolean | null | undefined> = {}) {
+  console.info("[RDP]", event, fields);
+}
+
+function rdpFailure(error: unknown) {
+  if (error instanceof RDPError) return { code: error.message, status: error.status };
+  if (error instanceof UpdateAPIError) return { code: error.code, status: error.status };
+  if (error instanceof Error) return { code: error.message, status: undefined };
+  return { code: "UNKNOWN", status: undefined };
+}
+
 export function rdpError(error: unknown) {
   const failure = error instanceof RDPError ? error
     : error instanceof UpdateAPIError ? new RDPError(error.code, error.status)
     : error instanceof Error && error.message === "RATE_LIMITED" ? new RDPError("RATE_LIMITED", 429)
     : new RDPError("RDP_SERVICE_FAILED", 503);
-  console.error("[RDP]", failure.message);
+  console.error("[RDP] request failed", { ...rdpFailure(error), responseCode: failure.message, responseStatus: failure.status });
   return Response.json({ error: failure.message }, {
     status: failure.status, headers: { "Cache-Control": "no-store" },
   });
@@ -102,6 +113,7 @@ export async function issueRDPTicket(sessionId: string, role: Ticket["role"]) {
   const hash = createHash("sha256").update(ticket).digest("hex");
   const result = await getRedis().set(`sentinelgrid:rdp-ticket:${hash}`, { sessionId, role }, { ex: RDP_TICKET_SECONDS, nx: true });
   if (result !== "OK") throw new Error("TICKET_CREATE_FAILED");
+  rdpLog("ticket created", { sessionId, role, ttlSeconds: RDP_TICKET_SECONDS });
   return ticket;
 }
 
@@ -110,36 +122,25 @@ export async function consumeRDPTicket(ticket: unknown): Promise<Ticket> {
   const hash = createHash("sha256").update(ticket).digest("hex");
   const value = await getRedis().getdel<Ticket>(`sentinelgrid:rdp-ticket:${hash}`);
   if (!value || !UUID.test(value.sessionId) || !["agent", "client"].includes(value.role)) throw new RDPError("INVALID_TICKET", 401);
+  rdpLog("ticket redeemed", { sessionId: value.sessionId, role: value.role });
   return value;
 }
 
 export async function createRDPSession(deviceId: string, reason: unknown) {
+  rdpLog("create requested", { deviceId });
   if (typeof reason !== "string" || reason.trim().length < 3 || reason.trim().length > 240) throw new RDPError("SESSION_REASON_REQUIRED", 400);
   if (!UUID.test(deviceId)) throw new RDPError("DEVICE_NOT_FOUND", 404);
   const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (
-    error ||
-    !user
-  ) {
-    throw new RDPError(
-      "UNAUTHORIZED",
-      401,
-    );
-  }
-
-  await enforceRemoteRateLimit(
-    user.id,
-    "sessions",
-  );
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) throw new RDPError("UNAUTHORIZED", 401);
+  rdpLog("authentication ok", { deviceId, userId: user.id });
+  await enforceRemoteRateLimit(user.id, "sessions");
   const admin = createAdminClient();
   const policy = await devicePolicy(admin, deviceId);
   if (!await mayManage(admin, policy.organizationId, user.id)) throw new RDPError("FORBIDDEN");
+  rdpLog("authorization ok", { deviceId, organizationId: policy.organizationId, userId: user.id });
   assertPolicy(policy);
+  rdpLog("policy ok", { deviceId, organizationId: policy.organizationId });
   const relay = relayURL(process.env.SENTINELGRID_RELAY_URL);
   if (!/^[a-f0-9]{64}$/i.test(process.env.SENTINELGRID_RDP_RELAY_SECRET ?? "")) throw new Error("RDP_NOT_CONFIGURED");
   const { data: sessionId, error: createError } = await admin.rpc("create_rdp_session", {
@@ -148,8 +149,10 @@ export async function createRDPSession(deviceId: string, reason: unknown) {
   if (createError) throw new Error("SESSION_CREATE_FAILED");
   if (typeof sessionId !== "string") throw new RDPError("SESSION_LIMIT_REACHED", 409);
   const session = await loadRDPSession(sessionId);
+  rdpLog("session created", { sessionId: session.id, deviceId, organizationId: session.organization_id });
   try {
     await publishRealtimeMessage(agentCommandChannel(deviceId), { type: "rdp_available" });
+    rdpLog("realtime published", { sessionId: session.id, deviceId, channel: agentCommandChannel(deviceId) });
     const ticket = await issueRDPTicket(session.id, "client");
     return { sessionId: session.id, expiresAt: session.expires_at, connection: {
       version: 1, relay, ticket, expires_at: new Date(Date.now() + RDP_TICKET_SECONDS * 1000).toISOString(),
@@ -192,6 +195,7 @@ export async function assertLiveRDPSession(session: RDPSession) {
 export async function finishRDPSession(session: RDPSession, status: "closed" | "failed") {
   const { error } = await createAdminClient().rpc("finish_rdp_session", { p_session_id: session.id, p_status: status });
   if (error) throw new Error("SESSION_CLOSE_FAILED");
+  rdpLog("session finished", { sessionId: session.id, deviceId: session.device_id, status });
 }
 
 export async function browserRDPSession(deviceId: string, sessionId: string) {
@@ -207,7 +211,7 @@ export async function browserRDPSession(deviceId: string, sessionId: string) {
 
 export function authenticateRDPRelay(request: Request) {
   const expected = process.env.SENTINELGRID_RDP_RELAY_SECRET ?? "";
-  const supplied = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
+  const supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
   if (!/^[a-f0-9]{64}$/i.test(expected) || !/^[a-f0-9]{64}$/i.test(supplied) ||
       !timingSafeEqual(Buffer.from(expected), Buffer.from(supplied))) throw new RDPError("UNAUTHORIZED", 401);
 }

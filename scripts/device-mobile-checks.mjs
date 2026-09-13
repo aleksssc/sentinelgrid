@@ -56,7 +56,7 @@ export async function checkDeviceMobile({ evaluate, command, origin }) {
       await command('Input.dispatchTouchEvent', {type:'touchStart', touchPoints:[{x:width/2,y:4}]});
       await command('Input.dispatchTouchEvent', {type:'touchEnd', touchPoints:[]});
       await wait("!document.querySelector('.sg-device-actions-menu')");
-      for (const tab of ["Overview", "Performance", "Inventory", "Software", "Services", "Security", "Activity"]) {
+      for (const tab of ["Overview", "Performance", "Inventory", "Software", "Services", "Settings", "Activity"]) {
         await evaluate(`Array.from(document.querySelectorAll('.sg-tab')).find(e => e.textContent === ${JSON.stringify(tab)}).click()`);
         await fits(".sg-drawer");
       }

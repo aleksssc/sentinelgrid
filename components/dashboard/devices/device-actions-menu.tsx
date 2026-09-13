@@ -3,13 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Database, Download, Lock, Network, Power, RotateCcw, ShieldCheck } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
+import { RemoteFeatureGate } from "@/components/dashboard/devices/remote-feature-gate";
 import { DEVICE_ACTIONS, type ActionAvailability } from "@/lib/remote/action-definitions";
+import type { RemoteFeatureAccess } from "@/lib/remote-feature-access";
 
 const icons = { inventory: Database, network: Network, policy: ShieldCheck, restart: RotateCcw, update: Download, lock: Lock, power: Power };
 
-export default function DeviceActionsMenu({ device, busy, online, open, onOpenChange, onAction }: {
+export default function DeviceActionsMenu({ device, busy, online, access, open, onOpenChange, onAction }: {
   device: { id: string; hostname: string; display_name: string | null };
   busy: boolean; online: boolean;
+  access: RemoteFeatureAccess;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAction: (action: string, options?: { confirm?: string }) => void;
@@ -19,6 +22,7 @@ export default function DeviceActionsMenu({ device, busy, online, open, onOpenCh
   const lastCheck = useRef<{ deviceId: string; busy: boolean; online: boolean; at: number } | null>(null);
 
   useEffect(() => {
+    if (!access.canUse) return;
     const controller = new AbortController();
     let loading = false;
     if (lastCheck.current && lastCheck.current.deviceId !== device.id) {
@@ -43,7 +47,6 @@ export default function DeviceActionsMenu({ device, busy, online, open, onOpenCh
         if (!controller.signal.aborted) { setAvailability(null); setError(cause instanceof Error ? cause.message : "Could not check action availability"); }
       } finally { loading = false; }
     }
-    // Keep the initial prefetch, but only repeat while the menu can actually be used.
     void refresh();
     if (!open) return () => controller.abort();
     const onVisible = () => { void refresh(); };
@@ -54,8 +57,15 @@ export default function DeviceActionsMenu({ device, busy, online, open, onOpenCh
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [device.id, busy, online, open]);
+  }, [device.id, busy, online, open, access.canUse]);
+
   const name = device.display_name || device.hostname;
+  if (!access.canUse) {
+    return <RemoteFeatureGate access={access} feature="Device Actions">
+      <button type="button" className="sg-button sg-button-secondary">Actions</button>
+    </RemoteFeatureGate>;
+  }
+
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange} modal={false}>
       <DropdownMenuTrigger asChild>
@@ -71,7 +81,6 @@ export default function DeviceActionsMenu({ device, busy, online, open, onOpenCh
             <DropdownMenuLabel className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-surface-muted">{group}</DropdownMenuLabel>
             {DEVICE_ACTIONS.filter((action) => action.group === group).map((action) => {
               const Icon = icons[action.icon];
-              // Availability is advisory; the command POST always revalidates authorization and safety.
               const reason = !online ? "Device is offline" : busy ? "Another device command is already running" : error || availability?.[action.type];
               const confirmation = action.type === "reboot" ? `Restart ${name}? Open work may be lost. Windows will restart in 30 seconds.` :
                 action.type === "shutdown" ? `Shut down ${name}? Open work may be lost. Windows will shut down in 30 seconds; physical access may be needed to turn it on again.` :

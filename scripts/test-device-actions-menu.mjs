@@ -24,6 +24,7 @@ function harness() {
   const refs = [];
   const Menu = load("../components/dashboard/devices/device-actions-menu.tsx", {
     "@/lib/remote/action-definitions": definitions,
+    "@/components/dashboard/devices/remote-feature-gate": ({ children }) => children,
     "@/components/ui/dropdown-menu": {
       DropdownMenu: ({ open, children }) => React.createElement('div', { 'aria-expanded': open }, open ? children : children[0]),
       DropdownMenuTrigger: ({ children }) => children,
@@ -54,7 +55,7 @@ function harness() {
     },
   }).default;
   const changes = [];
-  const props = { device: { id: "device", hostname: "test", display_name: null }, online: true, busy: false,
+  const props = { device: { id: "device", hostname: "test", display_name: null }, online: true, busy: false, access: { state: "allowed", canUse: true, canManageBilling: true },
     open: true, onOpenChange: (open) => changes.push(open), onAction() {} };
   return {
     refs, changes,

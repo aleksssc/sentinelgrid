@@ -13,7 +13,9 @@ import {
 
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "@/components/dashboard/dashboard-badges";
-import { AddMonitorButton } from "@/components/dashboard/add-monitor-button";
+import { AddMonitorButton, type AddMonitorState } from "@/components/dashboard/add-monitor-button";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getUserMonitorCreationAccess } from "@/lib/resource-creation";
 import { CompactSummary, EmptyState, PageHeader, SectionHeader, Surface } from "@/components/dashboard/dashboard-primitives";
 import { FormSubmitButton } from "@/components/dashboard/form-submit-button";
 
@@ -49,12 +51,17 @@ export default async function MonitorsPage() {
   await connection();
 
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const monitorCreationAccess = await getUserMonitorCreationAccess(createAdminClient(), user.id);
+  const monitorCreationReason = monitorCreationAccess.reason === "subscription_restricted" ? "Your subscription requires attention before new monitors can be created." : monitorCreationAccess.reason === "limit_reached" ? "Monitor limit reached. Upgrade your plan to add more monitors." : undefined;
+
   const { data: monitors } = await supabase
     .from("monitors")
     .select("*")
     .order("created_at", { ascending: false });
 
-  async function addMonitor(formData: FormData) {
+  async function addMonitor(_previousState: AddMonitorState, formData: FormData): Promise<AddMonitorState> {
     "use server";
 
     const supabase = await createClient();
@@ -62,30 +69,30 @@ export default async function MonitorsPage() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) return;
+    if (!user) return { error: "You must be signed in." };
 
     const name = String(formData.get("name") ?? "").trim();
     const urlInput = String(formData.get("url") ?? "").trim();
 
-    if (!name || !urlInput) return;
+    if (!name || !urlInput) return { error: "Monitor name and endpoint URL are required." };
 
     let parsedUrl: URL;
 
     try {
       parsedUrl = new URL(urlInput);
     } catch {
-      return;
+      return { error: "Enter a valid endpoint URL." };
     }
 
-    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") return;
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") return { error: "Only HTTP and HTTPS endpoints are supported." };
 
-    await supabase.from("monitors").insert({
-      user_id: user.id,
-      name,
-      url: parsedUrl.toString(),
-    });
+    const currentAccess = await getUserMonitorCreationAccess(createAdminClient(), user.id);
+    if (!currentAccess.allowed) return { error: currentAccess.reason === "subscription_restricted" ? "Your subscription requires attention before new monitors can be created." : "Monitor limit reached. Upgrade your plan to add more monitors." };
 
+    const { error } = await supabase.from("monitors").insert({ user_id: user.id, name, url: parsedUrl.toString() });
+    if (error) { console.error("Monitor creation error:", error); return { error: "Could not create monitor." }; }
     revalidatePath("/dashboard/monitors");
+    return { success: "Monitor created." };
   }
 
   async function checkMonitor(monitorId: string) {
@@ -96,7 +103,7 @@ export default async function MonitorsPage() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) return;
+    if (!user) return ;
 
     const { data: monitor } = await supabase
       .from("monitors")
@@ -173,7 +180,7 @@ export default async function MonitorsPage() {
           eyebrow="Operations"
           icon={<Activity size={22} />}
           description="Keep an eye on websites, APIs and services from one operational view."
-          actions={<AddMonitorButton action={addMonitor} />}
+          actions={<AddMonitorButton action={addMonitor} disabled={!monitorCreationAccess.allowed} disabledReason={monitorCreationReason} />}
         />
 
         <CompactSummary
@@ -197,7 +204,7 @@ export default async function MonitorsPage() {
               title="No monitors yet"
               description="Add your first endpoint to start monitoring it."
               icon={<Globe2 size={22} />}
-              action={<AddMonitorButton action={addMonitor} variant="secondary" />}
+              action={<AddMonitorButton action={addMonitor} variant="secondary" disabled={!monitorCreationAccess.allowed} disabledReason={monitorCreationReason} />}
             />
           ) : (
             <div className="divide-y divide-surface-edge">

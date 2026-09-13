@@ -70,7 +70,7 @@ test("submit controls preserve caller disabled state and expose pending feedback
 });
 
 test("all device sections keep the same tabs, drawer shell and honest unavailable states", () => {
-  for (const tab of ["overview", "inventory", "software", "services", "security", "activity"]) {
+  for (const tab of ["overview", "inventory", "software", "services", "settings", "activity"]) {
     const html = fixtures[`drawer-${tab}`];
     assert.match(html, /sg-drawer /, tab);
     assert.match(html, /aria-label="Close device details"/, tab);
@@ -78,6 +78,7 @@ test("all device sections keep the same tabs, drawer shell and honest unavailabl
     assert.match(html, /aria-pressed="true"/, tab);
   }
   assert.match(fixtures["drawer-software"], /Software inventory is not available/);
+  assert.match(fixtures["drawer-settings"], /Device settings/);
   assert.match(fixtures["drawer-activity"], /No device activity yet/);
   assert.match(fixtures["drawer-overview"], /sg-drawer-metric/);
   assert.match(fixtures.performance, /sg-surface/);

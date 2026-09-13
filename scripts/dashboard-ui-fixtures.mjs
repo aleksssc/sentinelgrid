@@ -75,14 +75,14 @@ export async function renderDashboardFixtures() {
   fixtures["monitors-empty"] = renderToStaticMarkup(await emptyLoad("app\\dashboard\\monitors\\page.tsx").default());
   fixtures.loading = renderToStaticMarkup(h(load("components\\dashboard\\dashboard-loading.tsx").default));
 
-  for (const tab of ["overview", "inventory", "software", "services", "security", "activity"]) {
+  for (const tab of ["overview", "inventory", "software", "services", "settings", "activity"]) {
     let cursor = 0;
-    const drawerLoad = dashboardLoader({ ...mocks, react: { ...React, useState(initial) {
+    const drawerLoad = dashboardLoader({ ...mocks, "@/components/dashboard/devices/device-settings-panel": { default: () => h("div", { className: "sg-surface" }, "Device settings") }, react: { ...React, useState(initial) {
       const index = cursor++;
       return React.useState(index === 1 ? device : index === 2 ? true : index === 3 ? tab : initial);
     } } });
     const Drawer = drawerLoad("app\\dashboard\\organizations\\[id]\\clients\\[clientId]\\device-dashboard.tsx").default;
-    fixtures[`drawer-${tab}`] = renderToStaticMarkup(h(Drawer, { devices: [device], sites: data.sites, clientName: "Northstar Technologies", canManage: true, activityCommands: [], rdpConfigured: false }));
+    fixtures[`drawer-${tab}`] = renderToStaticMarkup(h(Drawer, { devices: [device], sites: data.sites, clientName: "Northstar Technologies", canManage: true, activityCommands: [], rdpConfigured: false, remoteAccess: { actions: { state: "allowed", canUse: true, canManageBilling: true }, terminal: { state: "allowed", canUse: true, canManageBilling: true }, rdp: { state: "allowed", canUse: true, canManageBilling: true } } }));
   }
   const { PerformanceChart } = load("components\\dashboard\\devices\\device-performance.tsx");
   const { Cpu, MemoryStick, HardDrive } = await import("lucide-react");

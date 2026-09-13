@@ -331,14 +331,23 @@ test("menu keeps exact grouping, enables all available actions and retains safet
   const reasons = await commands.quickActionAvailability("device");
   const Menu = load("../components/dashboard/devices/device-actions-menu.tsx", {
     "@/lib/remote/action-definitions": definitions,
+    "@/components/dashboard/devices/remote-feature-gate": ({ children }) => children,
+    "@/components/ui/dropdown-menu": {
+      DropdownMenu: ({ children }) => React.createElement(React.Fragment, null, children),
+      DropdownMenuTrigger: ({ children }) => children,
+      DropdownMenuContent: ({ children }) => React.createElement("div", null, children),
+      DropdownMenuGroup: ({ children }) => React.createElement("div", null, children),
+      DropdownMenuLabel: ({ children }) => React.createElement("p", null, children),
+      DropdownMenuItem: ({ children, ...props }) => React.createElement("button", props, children),
+    },
     react: { ...React, useState: (initial) => [initial === null ? reasons : initial, () => {}] },
   }).default;
   for (const [online, busy, reason] of [[true, false, null], [false, false, "Device is offline"], [true, true, "Another device command is already running"]]) {
-    const html = renderToStaticMarkup(React.createElement(Menu, { device: { id: "device", hostname: "test", display_name: null }, online, busy, open: true, onOpenChange() {}, onAction() {} }));
+    const html = renderToStaticMarkup(React.createElement(Menu, { device: { id: "device", hostname: "test", display_name: null }, online, busy, access: { state: "allowed", canUse: true, canManageBilling: false }, open: true, onOpenChange() {}, onAction() {} }));
     let previous = -1;
     for (const action of definitions.DEVICE_ACTIONS) { const index = html.indexOf(`>${action.label}</button>`); assert.ok(index > previous, action.label); previous = index; }
     assert.match(html, /Maintenance/);
-    assert.equal((html.match(/ disabled=""/g) ?? []).length, reason ? 8 : 0);
+    assert.equal((html.match(/aria-disabled="true"/g) ?? []).length, reason ? 8 : 0);
     if (reason) assert.ok(html.includes(reason));
     assert.doesNotMatch(html, /Available|Unavailable|Agent update required|Why are some actions disabled/);
   }
