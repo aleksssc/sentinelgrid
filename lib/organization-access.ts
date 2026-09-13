@@ -215,7 +215,7 @@ export async function getOrganizationAccess(
       error: membershipError,
     } = await supabase
       .from("organization_members")
-      .select("role, status")
+      .select("role")
       .eq("organization_id", organizationId)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -229,7 +229,6 @@ export async function getOrganizationAccess(
 
     if (
       membership &&
-      membership.status !== "pending" &&
       isOrganizationRole(membership.role)
     ) {
       role = membership.role;
