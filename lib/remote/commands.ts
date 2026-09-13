@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { accessHasFeature, accessHasPermission, getOrganizationAccessForUser } from "@/lib/organization-access";
 import { createAuditLog } from "@/lib/audit/create-audit-log";
 import { agentCommandChannel, publishRealtimeMessage } from "@/lib/realtime/pubsub";
 import { getRedis } from "@/lib/realtime/redis";
@@ -47,14 +48,10 @@ export async function commandContext(deviceId: string) {
   const { data: organization, error: orgError } = await supabase.from("organizations").select("id, owner_id").eq("id", client.organization_id).maybeSingle();
   if (orgError) throw new Error("COMMAND_LOOKUP_FAILED");
   if (!organization) throw new Error("DEVICE_NOT_FOUND");
-  let canManage = organization.owner_id === user.id;
-  if (!canManage) {
-    const { data: membership, error } = await supabase.from("organization_members").select("role")
-      .eq("organization_id", organization.id).eq("user_id", user.id).maybeSingle();
-    if (error) throw new Error("COMMAND_LOOKUP_FAILED");
-    canManage = membership?.role === "admin";
+  const access = await getOrganizationAccessForUser(organization.id, user.id);
+  if (!access || !accessHasPermission(access, "devices.actions") || !accessHasFeature(access, "deviceActions")) {
+    throw new Error("FORBIDDEN");
   }
-  if (!canManage) throw new Error("FORBIDDEN");
   return { supabase, user, device, organization };
 }
 

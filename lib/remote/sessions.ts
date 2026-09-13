@@ -10,6 +10,12 @@ import {
 } from "@/lib/audit/create-audit-log";
 
 import {
+  accessHasFeature,
+  accessHasPermission,
+  getOrganizationAccessForUser,
+} from "@/lib/organization-access";
+
+import {
   getRedis,
 } from "@/lib/realtime/redis";
 
@@ -135,31 +141,22 @@ export async function createRemoteSession({
     );
   }
 
-  const {
-    data: membership,
-  } =
-    await supabase
-      .from(
-        "organization_members",
-      )
-      .select("role")
-      .eq(
-        "organization_id",
-        organization.id,
-      )
-      .eq(
-        "user_id",
-        user.id,
-      )
-      .maybeSingle();
+  const access = await getOrganizationAccessForUser(
+    organization.id,
+    user.id,
+  );
 
-  const allowed =
-    organization.owner_id ===
-      user.id ||
-    membership?.role ===
-      "admin";
-
-  if (!allowed) {
+  if (
+    !access ||
+    !accessHasPermission(
+      access,
+      "devices.terminal",
+    ) ||
+    !accessHasFeature(
+      access,
+      "terminal",
+    )
+  ) {
     throw new Error(
       "FORBIDDEN",
     );

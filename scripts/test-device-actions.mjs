@@ -210,6 +210,18 @@ function apiFixture() {
   let locked = false;
   const commands = load("../lib/remote/commands.ts", {
     "server-only": {}, "@/lib/supabase/server": { createClient: async () => db }, "@/lib/supabase/admin": { createAdminClient: () => db },
+    '@/lib/organization-access': {
+      getOrganizationAccessForUser: async (organizationId, userId) => {
+        const organization = db.rows.organizations.find((row) => row.id === organizationId);
+        if (!organization) return null;
+        const role = organization.owner_id === userId ? 'owner' : db.rows.organization_members?.find((row) => row.organization_id === organizationId && row.user_id === userId)?.role;
+        if (!['owner', 'admin', 'member'].includes(role)) return null;
+        const subscription = db.rows.account_subscriptions?.find((row) => row.user_id === organization.owner_id) ?? { plan: 'pro', status: 'active' };
+        return { organizationId, ownerId: organization.owner_id, userId, role, subscription: { userId: organization.owner_id, plan: subscription.plan, status: subscription.status, customLimits: {} } };
+      },
+      accessHasPermission: (access, permission) => permission === 'devices.actions' && ['owner', 'admin'].includes(access.role),
+      accessHasFeature: (access, feature) => feature === 'deviceActions' && access.subscription.plan !== 'free' && !['restricted', 'canceled'].includes(access.subscription.status),
+    },
     "@/lib/audit/create-audit-log": { createAuditLog: async (entry) => { published.push({ audit: entry }); } },
     "@/lib/realtime/pubsub": { agentCommandChannel: (id) => `commands:${id}`, publishRealtimeMessage: async (channel, payload) => published.push({ channel, payload }) },
     "@/lib/realtime/redis": { getRedis: () => ({ set: async () => { if (locked) return null; locked = true; return "OK"; }, eval: async () => { locked = false; } }) },
@@ -329,5 +341,38 @@ test("menu keeps exact grouping, enables all available actions and retains safet
     assert.equal((html.match(/ disabled=""/g) ?? []).length, reason ? 8 : 0);
     if (reason) assert.ok(html.includes(reason));
     assert.doesNotMatch(html, /Available|Unavailable|Agent update required|Why are some actions disabled/);
+  }
+});
+
+
+test('Device Actions enforce organization entitlement before command side effects', async () => {
+  const cases = [
+    ['free owner', 'owner', 'owner', 'free', 'active', false],
+    ['pro owner', 'owner', 'owner', 'pro', 'active', true],
+    ['invited free admin in pro organization', 'owner', 'admin', 'pro', 'active', true],
+    ['pro member', 'owner', 'member', 'pro', 'active', false],
+    ['restricted pro owner', 'owner', 'owner', 'pro', 'restricted', false],
+    ['canceled pro admin', 'owner', 'admin', 'pro', 'canceled', false],
+    ['past due pro owner', 'owner', 'owner', 'pro', 'past_due', true],
+    ['grace period pro owner', 'owner', 'owner', 'pro', 'grace_period', true],
+  ];
+  for (const [name, ownerId, userId, plan, status, allowed] of cases) {
+    const { db, commands, published } = apiFixture();
+    db.rows.organizations[0].owner_id = ownerId;
+    db.rows.account_subscriptions = [{ user_id: ownerId, plan, status }];
+    db.auth.getUser = async () => ({ data: { user: { id: userId } } });
+    if (userId !== ownerId) db.rows.organization_members = [{ organization_id: 'org', user_id: userId, role: userId === 'admin' ? 'admin' : 'member' }];
+    const request = { deviceId: 'device', commandType: 'force_inventory' };
+    if (allowed) {
+      assert.equal((await commands.createQuickAction(request)).status, 'dispatched', name);
+      assert.equal(db.rows.device_commands.length, 1, name);
+      assert.equal(published.filter((entry) => entry.audit?.action === 'device.command.requested').length, 1, name);
+      assert.equal(published.filter((entry) => entry.channel === 'commands:device').length, 1, name);
+    } else {
+      await assert.rejects(commands.createQuickAction(request), /FORBIDDEN/, name);
+      assert.equal(db.rows.device_commands.length, 0, name);
+      assert.equal(published.filter((entry) => entry.audit?.action === 'device.command.requested').length, 0, name);
+      assert.equal(published.filter((entry) => entry.channel === 'commands:device').length, 0, name);
+    }
   }
 });

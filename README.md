@@ -1,12 +1,18 @@
 <div align="center">
 
-🛡️ SentinelGrid
+<img src="./public/logos/sentinelgrid-logo.svg" alt="SentinelGrid" width="420" />
+
+<br />
 
 Monitor. Manage. Respond.
 
-SentinelGrid is a multi-tenant infrastructure monitoring and remote-management platform for IT teams, MSPs and organizations.
+A modern multi-tenant platform for infrastructure monitoring, endpoint management and secure remote operations.
 
-It combines endpoint monitoring, organization-aware access control, remote actions, terminal access, RDP, incidents, alerts, agent telemetry and update management in a single operational interface.
+<br />
+
+
+
+
 
 <br />
 
@@ -19,335 +25,297 @@ It combines endpoint monitoring, organization-aware access control, remote actio
 
 
 
+<br />
+
+Overview ·
+Features ·
+Architecture ·
+Security ·
+Agent ·
+Plans ·
+Development ·
+Roadmap
+
 </div>
 
-Overview
+⚡ Overview
 
-SentinelGrid is being built as a unified platform for:
+SentinelGrid is an RMM and monitoring platform built for IT teams, MSPs and organizations that need one operational view of their infrastructure.
 
-infrastructure monitoring
+It combines:
 
-endpoint inventory
+Monitoring
+    +
+Inventory & Device Health
+    +
+Remote Actions
+    +
+Terminal & RDP
+    +
+Alerts & Incidents
+    +
+Audit & Agent Lifecycle
 
-device health and performance
+Know what is happening, understand what changed, and act safely from one place.
 
-remote device actions
+SentinelGrid is multi-tenant by design, with organization isolation, role-based access, subscription-aware entitlements and server-side authorization.
 
-remote terminal access
+✨ Core Features
 
-native RDP sessions
+<table>
+<tr>
+<td width="50%" valign="top">
 
-organization and member management
+🖥️ Endpoint Management
 
-incident and alert visibility
+Windows Agent enrollment
 
-audit trails
+Hardware & OS inventory
 
-agent lifecycle and updates
+Device online/offline state
 
-subscription-aware access control
+CPU, RAM and disk telemetry
 
-The platform follows a strict multi-tenant model:
+Agent version tracking
 
-Account
-  │
-  ├── Subscription
-  │
-  └── Organization
-        │
-        ├── Members
-        │
-        └── Clients
-              │
-              ├── Sites
-              │
-              └── Devices
+Device Activity timeline
 
-A user can belong to an organization without owning its subscription. Features inside an organization are determined by:
+Performance history
 
-Organization membership role
-+
-Organization owner's account subscription
-+
-Plan entitlements
-+
-Subscription status
+Client / site / device hierarchy
 
-This allows, for example, a user with a personal Free account to use Pro capabilities inside a Pro organization when their organization role allows it.
+</td>
+<td width="50%" valign="top">
 
-Current Project Status
+⚡ Remote Operations
 
-SentinelGrid is an active development project.
+Force Inventory
 
-Implemented or substantially implemented
+Flush DNS
 
-Supabase authentication
+GPUpdate
 
-account onboarding
+Restart Agent
 
-organization creation
+Update Agent
 
-organization invitations
+Lock workstation
 
-member management
+Restart computer
 
-owner / admin / member roles
+Shutdown computer
 
-clients
+</td>
+</tr>
 
-sites
+<tr>
+<td width="50%" valign="top">
 
-devices
+💻 Remote Access
 
-device enrollment
+PowerShell terminal
 
-Windows Agent
+CMD terminal
 
-inventory collection
+Authenticated realtime transport
 
-heartbeat telemetry
+Native outbound RDP architecture
 
-device online/offline state
+Session expiry and limits
 
-device performance history
+One-use RDP tickets
 
-device activity timeline
+Remote-access organization policies
 
-remote device actions
+</td>
+<td width="50%" valign="top">
 
-terminal sessions
+📡 Monitoring & Operations
 
-native RDP architecture
+HTTP/HTTPS monitoring
 
-realtime WebSocket transport
+Response status & latency
 
-alerts
+Monitoring history
 
-incidents
-
-audit logging
-
-monitoring
-
-notification center
-
-appearance and interface preferences
-
-billing page
-
-plan limits and entitlements
-
-subscription-aware authorization foundation
-
-signed Windows build pipeline
-
-Agent / Updater / RDP full-product MSI pipeline
-
-In progress
-
-full subscription enforcement across remote features
-
-production billing provider integration
-
-complete subscription lifecycle handling
-
-production qualification of Agent auto-update
-
-complete RDP qualification
-
-additional device-management capabilities
-
-Planned later
-
-DNS monitoring
-
-domain management
-
-SSL/TLS monitoring
-
-attack-surface discovery
-
-security findings
-
-vulnerability correlation
-
-reporting
-
-public API and integrations
-
-Architecture
-
-High-level architecture
-
-                         ┌───────────────────────────┐
-                         │          Browser          │
-                         └─────────────┬─────────────┘
-                                       │
-                                       ▼
-                         ┌───────────────────────────┐
-                         │      Next.js Web App      │
-                         │         Vercel            │
-                         └───────┬─────────┬─────────┘
-                                 │         │
-                        HTTPS/API│         │Supabase
-                                 │         │
-                                 ▼         ▼
-                     ┌────────────────┐  ┌────────────────────┐
-                     │ Realtime Relay │  │      Supabase      │
-                     │   Railway /    │  │ Auth + PostgreSQL  │
-                     │ Persistent Node│  │      + RLS         │
-                     └───────┬────────┘  └────────────────────┘
-                             │
-                             │ WebSocket
-                             ▼
-                     ┌────────────────┐
-                     │ Windows Agent  │
-                     │      Go        │
-                     └───────┬────────┘
-                             │
-                  ┌──────────┴──────────┐
-                  │                     │
-                  ▼                     ▼
-          SentinelGridUpdater   SentinelGridRDP
-
-Redis is used for realtime coordination, short-lived tickets and rolling telemetry where appropriate.
-
-Technology Stack
-
-Web application
-
-Next.js
-
-React 19
-
-TypeScript
-
-Tailwind CSS
-
-lucide-react
-
-Radix UI primitives
-
-next-themes
-
-Backend and data
+Alerts
+
+Incidents
+
+Audit logs
+
+Notifications
+
+Operational evidence
+
+</td>
+</tr>
+</table>
+
+🧭 Product Structure
+
+Dashboard
+│
+├── Overview
+├── Monitors
+├── Organizations
+│   ├── Members
+│   ├── Invitations
+│   ├── Clients
+│   └── Settings
+├── Devices
+│   ├── Overview
+│   ├── Activity
+│   ├── Performance
+│   ├── Actions
+│   ├── Terminal
+│   └── RDP
+├── Incidents
+├── Alerts
+├── Billing
+├── Profile
+└── Settings
+
+flowchart LR
+    O["Organization"] --> C["Client"]
+    C --> S["Site"]
+    C --> D["Device"]
+
+🏗️ Architecture
+
+flowchart TB
+    Browser["Browser / Dashboard"]
+    Vercel["Next.js App<br/>Vercel"]
+    Supabase["Supabase<br/>Auth + PostgreSQL + RLS"]
+    Redis["Upstash Redis"]
+    Realtime["Realtime Relay<br/>Railway"]
+    RDPRelay["RDP Relay"]
+    Agent["SentinelGridAgent<br/>Windows / Go"]
+    Updater["SentinelGridUpdater"]
+    RDP["SentinelGridRDP"]
+
+    Browser --> Vercel
+    Vercel --> Supabase
+    Vercel --> Redis
+    Browser <--> Realtime
+    Agent <--> Realtime
+    Realtime <--> Redis
+    Realtime <--> Supabase
+    Browser <--> RDPRelay
+    RDP <--> RDPRelay
+    Agent --> Updater
+    Agent --> RDP
+    Agent --> Vercel
+
+Service
+
+Responsibility
+
+Vercel
+
+Next.js app, dashboard, HTTP APIs, heartbeat, monitoring, billing UI, update APIs
 
 Supabase
 
-PostgreSQL
+Auth, PostgreSQL, RLS, organizations, devices, commands, sessions, subscriptions
 
-Supabase Auth
+Railway
 
-Supabase SSR
-
-Row Level Security
-
-server-side admin client for trusted internal operations
-
-Realtime
-
-Node.js
-
-ws
+Persistent realtime WebSocket service
 
 Upstash Redis
 
-dedicated persistent realtime relay
-
-existing legacy Vercel WebSocket routes retained during migration
+Pub/sub, short-lived tickets, distributed locks, rolling telemetry
 
 Windows Agent
 
+Inventory, heartbeat, telemetry, remote commands, terminal execution, update lifecycle
+
+RDP Relay
+
+Native RDP transport
+
+Persistent realtime traffic is intentionally kept outside Vercel Functions.
+
+🧱 Tech Stack
+
+Area
+
+Technology
+
+Web
+
+Next.js, React 19, TypeScript
+
+UI
+
+Tailwind CSS, Radix UI, lucide-react, next-themes
+
+Auth
+
+Supabase Auth
+
+Database
+
+PostgreSQL / Supabase
+
+Tenant isolation
+
+Supabase RLS + server-side access checks
+
+Realtime
+
+Node.js, ws, Upstash Redis
+
+Agent
+
 Go
 
-Windows Service
+Windows installer
 
-Gorilla WebSocket
+WiX Toolset
 
-kardianos/service
+Signing
 
-Windows system APIs
+Authenticode
 
-signed binaries
+Hosting
 
-WiX MSI packaging
+Vercel + Railway
 
-Current Agent version in the repository:
+🔐 Security Model
 
-0.1.12
+SentinelGrid treats authorization as a backend responsibility.
 
-Infrastructure
+flowchart TB
+    User["Authenticated User"]
+    Membership["Organization Membership"]
+    Owner["Organization Owner"]
+    Subscription["Owner Subscription"]
+    Role["Role Permission"]
+    Entitlement["Plan Entitlement"]
+    State["Subscription State"]
+    Access["Effective Access"]
 
-Vercel — web application and HTTP APIs
+    User --> Membership
+    Membership --> Owner
+    Owner --> Subscription
+    Membership --> Role
+    Subscription --> Entitlement
+    Subscription --> State
+    Role --> Access
+    Entitlement --> Access
+    State --> Access
 
-Supabase Cloud — database and authentication
+The effective rule is:
 
-Railway — persistent realtime relay
+Role permission
+AND
+Owner plan entitlement
+AND
+Subscription status
 
-Upstash Redis — realtime coordination and telemetry history
-
-Multi-Tenant Data Model
-
-The primary hierarchy is:
-
-organizations
-  └── clients
-       └── sites
-       └── devices
-
-Important platform tables and concepts include:
-
-organizations
-organization_members
-organization_invites
-
-clients
-sites
-devices
-
-monitors
-
-device_commands
-remote_sessions
-rdp_sessions
-
-account_subscriptions
-
-audit_logs
-
-agent_update_transactions
-
-Not every table is intended for direct browser access. Sensitive server-only operations use trusted server-side clients.
-
-Authentication
-
-Authentication is powered by Supabase.
-
-Supported flows include:
-
-sign up
-
-login
-
-logout
-
-email confirmation
-
-password recovery
-
-password update
-
-protected dashboard routes
-
-organization onboarding
-
-invitation-based joining
-
-Users cannot arbitrarily join organizations. Membership is controlled through the invitation flow.
-
-Organizations and Roles
-
-SentinelGrid uses three organization roles.
+Roles
 
 Role
 
@@ -355,82 +323,55 @@ Intended access
 
 Owner
 
-Full organization control, billing, members, infrastructure and remote features
+Full organization, billing, members, infrastructure and remote capabilities
 
 Admin
 
-Operational management of clients, devices, monitors and remote features
+Operational management and remote capabilities
 
 Member
 
-Read-only / observational access to organization data
+Primarily read-only / observational access
 
-The centralized authorization layer is implemented in:
+Central authorization lives in:
 
 lib/organization-access.ts
+lib/organization-access-core.ts
+lib/plans.ts
 
-Relevant permission names include:
+Relevant permissions include:
 
 organization.manage
 billing.manage
 members.manage
-
 clients.create
 clients.manage
-
 devices.create
 devices.manage
 devices.actions
 devices.terminal
 devices.rdp
-
 monitors.create
 monitors.manage
 
-The authorization layer resolves:
+💳 Subscription Model
 
-Authenticated user
-    ↓
-Organization membership
-    ↓
-Organization owner
-    ↓
-Owner account subscription
-    ↓
-Role permission
-    ↓
-Plan entitlement
-    ↓
-Subscription status
+Subscriptions belong to the organization owner account.
 
-Subscription Model
+Owner account
+└── Pro subscription
+    └── Organization
+        ├── Owner
+        └── Invited Admin
+            └── Personal plan = Free
 
-Subscriptions belong to accounts, not directly to members.
+Inside that organization, the invited Admin can use Pro capabilities because the organization inherits the owner's subscription.
 
-The owner account's subscription governs the organizations owned by that account.
+The invited member's personal plan does not decide organization access.
 
-Example:
+💎 Plans & Entitlements
 
-Owner account:
-  Plan = Pro
-
-Organization:
-  Owner = Pro account
-
-Invited user:
-  Personal plan = Free
-  Organization role = Admin
-
-Effective organization access:
-  Pro entitlements
-  +
-  Admin permissions
-
-A member's personal plan does not limit what that member can do inside another user's organization.
-
-Plans
-
-Current plan limits defined in the project:
+Current limits
 
 Plan
 
@@ -482,7 +423,7 @@ Custom
 
 Custom
 
-Current prices defined in code:
+Current prices in code
 
 Plan
 
@@ -504,11 +445,7 @@ Enterprise
 
 Custom
 
-These values are product configuration and may change before production launch.
-
-Premium Feature Entitlements
-
-Current entitlement model:
+Premium remote features
 
 Feature
 
@@ -522,49 +459,39 @@ Enterprise
 
 Device Actions
 
-No
+❌
 
-Yes
+✅
 
-Yes
+✅
 
-Yes
+✅
 
 Terminal
 
-No
+❌
 
-Yes
+✅
 
-Yes
+✅
 
-Yes
+✅
 
 RDP
 
-No
+❌
 
-Yes
+✅
 
-Yes
+✅
 
-Yes
+✅
 
-Definitions live in:
+Pricing is still product configuration and may change before commercial launch.
 
-lib/plans.ts
+🔄 Subscription Lifecycle
 
-Important helpers include:
-
-planHasFeature()
-canUsePaidFeatures()
-canCreateResources()
-canCreateResource()
-getPlanLimit()
-
-Subscription Lifecycle
-
-SentinelGrid currently models these statuses:
+Supported states:
 
 active
 trialing
@@ -572,204 +499,60 @@ past_due
 grace_period
 restricted
 canceled
-
-Intended behavior:
 
 Status
 
-Access behavior
+Behavior
 
 active
 
-Full access according to plan
+Full plan access
 
 trialing
 
-Full access according to plan
+Full plan access
 
 past_due
 
-Features remain available temporarily; billing warning should be shown
+Features continue temporarily; billing warning
 
 grace_period
 
-Features remain available temporarily; stronger billing warning
+Features continue temporarily; stronger billing warning
 
 restricted
 
-Existing data remains visible; paid actions and new resource creation are blocked
+Existing data remains; paid actions and new resources are blocked
 
 canceled
 
-Existing data remains visible; paid actions and new resource creation are blocked
+Existing data remains; paid actions and new resources are blocked
 
-SentinelGrid must never automatically delete customer infrastructure because of a downgrade or payment failure.
+SentinelGrid does not delete customer infrastructure because of a downgrade or failed payment.
 
-Example:
-
-Pro account
-100 devices
-        ↓
-downgrade to Free
-        ↓
-100 devices remain visible
-new devices are blocked until usage is below the Free limit
-
-Existing heartbeats, inventory and monitoring should continue for enrolled devices even when a subscription is restricted.
-
-Remote Device Management
-
-Device Actions
-
-Supported actions include:
-
-Maintenance
-
-Force Inventory
-
-Flush DNS
-
-GPUpdate
-
-Agent
-
-Restart Agent
-
-Update Agent
-
-Power
-
-Lock
-
-Restart Computer
-
-Shutdown Computer
-
-Device actions use the existing device_commands flow, with server-side authorization, idempotency, availability checks, rate limiting, audit logging and realtime dispatch.
-
-Core implementation:
-
-lib/remote/commands.ts
-app/api/devices/[deviceId]/commands
-
-The Agent persists command execution state so that accepted operations survive temporary realtime disconnects.
-
-Remote Terminal
-
-SentinelGrid supports remote terminal sessions for enrolled Windows devices.
-
-Supported shells:
-
-PowerShell
-
-CMD
-
-The terminal uses:
-
-Browser
-  ↓
-Realtime relay
-  ↓
-Windows Agent
-
-Session creation is handled server-side, while command transport uses authenticated realtime WebSockets.
-
-Core implementation:
-
-lib/remote/sessions.ts
-lib/realtime/browser-socket.ts
-components/dashboard/devices/device-terminal.tsx
-app/api/devices/[deviceId]/sessions
-
-The backend remains the authority for authorization. UI visibility alone is never treated as a security boundary.
-
-Native RDP
-
-SentinelGrid includes an outbound native RDP architecture.
-
-The design avoids exposing an inbound RDP port directly from the managed endpoint.
-
-Browser
-   │
-   │ authenticated request
-   ▼
-SentinelGrid API
-   │
-   │ short-lived ticket
-   ▼
-RDP Relay
-   ▲
-   │ outbound connection
-   │
-SentinelGridRDP
-   │
-   ▼
-Windows RDP
-
-Existing protections include:
-
-authenticated session creation
-
-owner/admin authorization
-
-organization remote-access policy
-
-Agent capability checks
-
-device online checks
-
-one-use tickets
-
-ticket expiry
-
-session expiry
-
-relay authentication
-
-rate limiting
-
-session limits
-
-idle timeout
-
-revocation / session termination
-
-browser origin validation
-
-auditability
-
-Core implementation:
-
-lib/remote/rdp.ts
-lib/remote/rdp-policy.ts
-app/api/devices/[deviceId]/rdp
-relay/
-
-The current monetization work is integrating devices.rdp permissions and rdp plan entitlement into these existing protections without weakening the RDP protocol or relay security model.
-
-Windows Agent
+🖥️ Windows Agent
 
 SentinelGrid includes a native Windows Agent written in Go.
+
+Current repository version:
+
+0.1.12
 
 Service name:
 
 SentinelGridAgent
 
-The Agent handles:
+Responsibilities
 
 enrollment
 
 authenticated heartbeat
 
-inventory
+hardware & OS inventory
 
-CPU telemetry
+CPU / RAM / disk telemetry
 
-RAM telemetry
-
-disk-capacity telemetry
-
-device online state
+device presence
 
 realtime communication
 
@@ -779,89 +562,50 @@ terminal execution
 
 update checks
 
-update handoff
+secure update handoff
 
-command result recovery
+command recovery
 
-Inventory can include:
+Inventory
 
-hostname
-
-OS
-
-OS version
-
-OS build
-
-architecture
-
-local IP
-
-MAC address
-
-manufacturer
-
-model
-
-serial number
-
+Hostname
+Operating System
+OS Version
+OS Build
+Architecture
+Local IP
+MAC Address
+Manufacturer
+Model
+Serial Number
 CPU
+RAM
+Agent Version
 
-total RAM
+🔗 Device Enrollment
 
-Agent version
+flowchart LR
+    Token["Enrollment Token"] --> API["SentinelGrid API"]
+    API --> Identity["Device / Agent Identity"]
+    Identity --> AgentToken["Long-lived Agent Token"]
 
-Device Enrollment
+Enrollment is intended to obey:
 
-Enrollment uses a SentinelGrid-issued token.
+devices.create
++
+plan device limit
++
+subscription state
 
-The Agent exchanges the enrollment token for device-specific credentials and stores its configuration locally.
+so Agent enrollment cannot bypass SaaS limits.
 
-The design separates:
+📈 Performance & Telemetry
 
-Enrollment token
-        ↓
-Initial enrollment
-        ↓
-Device / Agent identity
-        ↓
-Long-lived Agent token
+Device Performance uses real heartbeat metrics.
 
-Enrollment limits must ultimately obey organization plan limits and devices.create authorization so Agent enrollment cannot bypass SaaS resource limits.
+Supported ranges:
 
-Heartbeat and Inventory
-
-The Agent sends authenticated heartbeats to the application.
-
-Heartbeat data includes operational state such as:
-
-last seen
-
-public IP
-
-CPU usage
-
-RAM usage
-
-RAM totals
-
-disk usage
-
-disk totals
-
-uptime
-
-optional inventory
-
-Existing devices should continue to send heartbeat and inventory data even when the owning subscription becomes restricted.
-
-Device Performance
-
-The Performance tab displays rolling telemetry from Agent heartbeats.
-
-Current ranges:
-
-Last hour
+1 hour
 
 24 hours
 
@@ -869,94 +613,215 @@ Last hour
 
 30 days
 
-History is stored using server-side Upstash Redis configuration.
-
-Retention is bounded and sampling is intentionally reduced at wider ranges.
-
-The performance endpoint authorizes reads against the signed-in user's device visibility before reading Redis.
-
-Example endpoint:
+Endpoint:
 
 GET /api/devices/:deviceId/performance?range=1h|24h|7d|30d
 
-Important behavior:
+Key behavior:
 
-storage failures do not fail Agent heartbeats
+storage failure does not fail heartbeat
 
-old device values are not backfilled as historical samples
+old values are not backfilled
+
+wider periods use lower sampling density
+
+disk usage means capacity used, not I/O throughput
+
+reads are authorized before Redis access
 
 Redis history is rolling telemetry, not a durable audit store
-
-disk usage represents capacity used, not I/O throughput
 
 Test:
 
 npm run test:performance
 
-Realtime Architecture
+⚡ Device Actions
 
-SentinelGrid has a dedicated realtime layer for:
+<table>
+<tr>
+<td width="33%" valign="top">
+
+Maintenance
+
+Force Inventory
+
+Flush DNS
+
+GPUpdate
+
+</td>
+<td width="33%" valign="top">
+
+Agent
+
+Restart Agent
+
+Update Agent
+
+</td>
+<td width="33%" valign="top">
+
+Power
+
+Lock
+
+Restart Computer
+
+Shutdown Computer
+
+</td>
+</tr>
+</table>
+
+Device Actions use:
+
+server-side authorization
+
+devices.actions
+
+plan entitlement checks
+
+subscription state checks
+
+rate limiting
+
+idempotency
+
+Redis locking
+
+device availability checks
+
+organization remote-access policy
+
+audit logging
+
+realtime delivery
+
+expiry and recovery
+
+💻 Remote Terminal
+
+Supported shells:
+
+PowerShell
+CMD
+
+sequenceDiagram
+    participant B as Browser
+    participant A as Next.js API
+    participant R as Realtime Relay
+    participant W as Windows Agent
+
+    B->>A: Create Terminal session
+    A-->>B: Authorized session
+    B->>R: JWT-authenticated WebSocket
+    R->>W: Terminal command
+    W-->>R: stdout / stderr / exit code
+    R-->>B: Result
+
+Authorization is enforced during both:
+
+HTTP session creation
++
+Realtime WebSocket handshake
+
+using:
+
+devices.terminal
++
+terminal entitlement
++
+owner subscription status
+
+🖥️ Native RDP
+
+SentinelGrid includes an outbound RDP architecture that avoids exposing inbound RDP directly from managed endpoints.
+
+flowchart LR
+    Client["Remote Client"]
+    API["SentinelGrid API"]
+    Relay["RDP Relay"]
+    RDP["SentinelGridRDP"]
+    Win["Windows RDP"]
+
+    Client --> API
+    API --> Client
+    Client <--> Relay
+    RDP <--> Relay
+    RDP <--> Win
+
+Existing protections include:
+
+authenticated session creation
+
+organization policy
+
+device capability checks
+
+online-state checks
+
+rate limiting
+
+session limits
+
+short-lived one-use tickets
+
+ticket hashing
+
+session expiry
+
+idle timeout
+
+browser origin validation
+
+relay authentication
+
+session revocation
+
+auditing
+
+Core files:
+
+lib/remote/rdp.ts
+lib/remote/rdp-policy.ts
+app/api/devices/[deviceId]/rdp
+relay/
+
+RDP subscription/entitlement enforcement is the next authorization step.
+
+🌐 Realtime
+
+Realtime carries:
 
 Agent presence
 
-Terminal
-
-device commands
+Device Actions
 
 command results
 
+Terminal
+
 RDP availability notifications
 
-The application can use a standalone Node relay instead of holding long-lived WebSockets inside Vercel Functions.
-
-Migration model:
-
-Before:
 Browser / Agent
-   ↓
-Vercel WebSocket routes
-   ↓
+      ↓
+Realtime Relay
+      ↓
 Redis / Supabase
 
-After:
-Browser / Agent
-   ↓
-Dedicated realtime relay
-   ↓
-Redis / Supabase
-
-Next.js keeps:
-- pages
-- authentication
-- HTTP APIs
-- command submission
-- heartbeat
-- update APIs
-- endpoint discovery
-
-The native RDP binary transport remains separate from the general realtime relay.
-
-Build:
+Next.js keeps pages, authentication, HTTP APIs, heartbeat, monitoring, command submission, update APIs and endpoint discovery.
 
 npm run build:realtime
-
-Run:
-
 npm run start:realtime
-
-Test:
-
 npm run test:realtime
 
-Incidents and Alerts
+See relay/README.md for deployment and rollback details.
+
+🚨 Incidents & Alerts
 
 Incidents
 
-The Incidents page currently surfaces operational failures and audit evidence.
-
-It is not yet a full ticketing or incident-lifecycle platform.
-
-Examples include:
+The current Incidents page surfaces operational failures and audit evidence, including:
 
 failed device commands
 
@@ -964,27 +829,27 @@ expired commands
 
 selected audit failures
 
-update-related operational evidence
+update-related evidence
 
-Assignment, acknowledgement, resolution workflows and silencing are planned for later.
+It is not yet a full ticketing / ITSM workflow.
 
 Alerts
 
-The Alerts page derives signals from existing stored state.
+Current signals include:
 
-Current sources include:
+device heartbeat state
 
-device heartbeat / offline state
+device offline state
 
-personal monitor failures
+monitor failures
 
-monitors without a recent check
+monitors without recent checks
 
-Monitor ownership currently follows the existing personal user_id model.
+Alert rules, silencing, acknowledgement and notification channels are planned later.
 
-Device Activity
+🧾 Device Activity
 
-The Device Activity timeline combines recent:
+Device Activity combines:
 
 audit events
 
@@ -992,37 +857,31 @@ device commands
 
 update evidence
 
-Entries are correlated when command IDs or update transaction IDs are available.
+Where possible, related records are correlated with command and update transaction identifiers.
 
-The UI avoids fabricating missing state. Recorded versions, durations, error codes and transaction IDs are shown only when they actually exist.
+SentinelGrid intentionally avoids inventing missing versions, durations or success states.
 
-Test:
+🔄 Agent Updates
 
-node --test scripts/test-device-activity.mjs
-
-Agent Updates
-
-SentinelGrid includes a signed full-product update architecture.
-
-The MSI contains:
+The full-product MSI contains:
 
 SentinelGridAgent.exe
 SentinelGridUpdater.exe
 SentinelGridRDP.exe
 
-The Agent and dashboard Update Agent action share the same secure MSI update pipeline.
+The Agent scheduler and Update Agent action share the same secure update pipeline.
 
-Major update protections include:
+Protections
 
-version eligibility checks
+release eligibility
 
-channel policy
+release channel policy
 
-release delay policy
+release delay
 
 HTTPS download
 
-exact size verification
+size verification
 
 SHA256 verification
 
@@ -1032,17 +891,13 @@ signer pinning
 
 MSI product validation
 
-fixed UpgradeCode validation
+UpgradeCode validation
 
 staged update journal
 
 transaction correlation
 
-signed updater handoff
-
-Windows Installer execution
-
-process identity verification
+Windows Installer handoff
 
 authenticated post-update heartbeat
 
@@ -1050,46 +905,19 @@ config preservation
 
 explicit recovery state
 
-Current protocol:
+Current update protocol:
 
 Protocol 2
 
-Detailed update documentation:
+Detailed documentation:
 
 installer/windows/UPDATES.md
 
-Production auto-update qualification still requires isolated Windows VM lifecycle testing before broad enablement.
+📡 Monitoring
 
-Windows Signing and MSI
+HTTP/HTTPS monitoring works independently from the Windows Agent.
 
-The build pipeline supports development signing and production signing.
-
-Typical development build:
-
-.\scripts\build-agent.ps1 `
-  -Version 0.1.12 `
-  -Channel beta `
-  -DevSign
-
-The build pipeline signs and verifies:
-
-Agent
-
-Updater
-
-RDP executable
-
-MSI
-
-Hashes and release manifests are generated after signing.
-
-Do not manually replace installed EXEs or sign artifacts after hashes and manifests are generated.
-
-Monitoring
-
-SentinelGrid also includes HTTP/HTTPS monitoring.
-
-Current capabilities include:
+Current capabilities:
 
 monitor creation
 
@@ -1105,66 +933,29 @@ history
 
 dashboard summaries
 
-Monitoring is independent from the Windows Agent.
+🧾 Audit Logging
 
-Audit Logging
+Operational and security-sensitive actions are recorded through the audit layer.
 
-Security-sensitive and operational actions are recorded through the audit layer.
+Examples:
 
-Examples include:
-
-organization actions
+organization changes
 
 member management
 
-device command requests
+remote command requests
 
-remote access activity
+remote-access activity
 
 update lifecycle evidence
 
-Audit logs are separate from rolling telemetry.
+🎨 Dashboard Experience
 
-Dashboard
-
-The dashboard includes areas such as:
-
-Dashboard
-│
-├── Overview
-├── Monitors
-├── Organizations
-│   ├── Members
-│   ├── Invitations
-│   ├── Clients
-│   └── Settings
-├── Devices
-│   ├── Overview
-│   ├── Activity
-│   ├── Performance
-│   ├── Actions
-│   ├── Terminal
-│   └── RDP
-├── Incidents
-├── Alerts
-├── Billing
-├── Profile
-└── Settings
-
-The dashboard uses shared design primitives and a consistent dark operational interface.
-
-Appearance and Interface Preferences
-
-Users can customize dashboard presentation.
-
-Available appearance presets include:
+Appearance presets:
 
 Sentinel
-
 Midnight
-
 Aurora
-
 Graphite
 
 Interface preferences include:
@@ -1173,114 +964,15 @@ Comfortable / Compact density
 
 System / Full / Reduced motion
 
-Expanded / Compact / Remember sidebar mode
+Expanded / Compact / Remember sidebar state
 
 List / Grid default client view
 
-Preferences are browser-side presentation settings and do not modify backend authorization or organization data.
+These affect presentation only and never backend authorization.
 
-Security Model
+💰 Billing Architecture
 
-SentinelGrid follows several key principles.
-
-1. Tenant isolation
-
-Organization resources are scoped through ownership, membership and RLS.
-
-2. Server-side authorization
-
-A hidden or disabled button is never considered sufficient authorization.
-
-Sensitive routes must validate access on the server.
-
-3. Least privilege
-
-Roles are distinct:
-
-Owner  → administrative + operational
-Admin  → operational
-Member → read-only
-
-4. Owner subscription inheritance
-
-Organization features are based on the owner's account subscription, not on the invited member's personal subscription.
-
-5. Short-lived remote access credentials
-
-RDP and remote sessions use short-lived tickets and session expiry.
-
-6. Signed update chain
-
-Agent update artifacts are hash-verified, signature-verified and signer-pinned.
-
-7. No destructive downgrade
-
-Subscription downgrade or cancellation does not delete customer infrastructure.
-
-Authorization Work in Progress
-
-The centralized access model already exists in:
-
-lib/organization-access.ts
-lib/plans.ts
-
-The next monetization/security step is to wire the access layer into all remote paths.
-
-Priority:
-
-1. Device Actions
-2. Terminal HTTP session creation
-3. Terminal realtime handshake
-4. RDP session creation
-5. RDP live-session revalidation
-6. RDP browser status / close
-7. Create Client
-8. Create Device
-9. Create Monitor
-10. Enrollment
-
-The final authorization rule for premium remote capabilities is:
-
-Role permission
-AND
-Plan entitlement
-AND
-Subscription state allows paid features
-
-Examples:
-
-Free Owner
-  Device Actions → denied
-  Terminal       → denied
-  RDP            → denied
-
-Pro Owner
-  Device Actions → allowed
-  Terminal       → allowed
-  RDP            → allowed
-
-Pro Admin
-  Device Actions → allowed
-  Terminal       → allowed
-  RDP            → allowed
-
-Pro Member
-  Device Actions → denied
-  Terminal       → denied
-  RDP            → denied
-
-Restricted Pro
-  Existing data  → visible
-  Heartbeats     → continue
-  Monitoring     → continue
-  New resources  → denied
-  Device Actions → denied
-  Terminal       → denied
-  RDP            → denied
-
-Billing
-
-The current billing model is based around:
+Application subscription state is centered around:
 
 account_subscriptions
 
@@ -1289,69 +981,183 @@ Known fields used by the application include:
 user_id
 plan
 status
-
 custom_price_monthly
-
 custom_max_members
 custom_max_clients
 custom_max_devices
 custom_max_monitors
-
 current_period_end
 cancel_at_period_end
 
-Future production billing integration should keep provider-specific logic isolated.
+Intended production flow:
 
-Preferred design:
+flowchart LR
+    Provider["Billing Provider"]
+    Webhook["Webhook"]
+    Subscription["account_subscriptions"]
+    Access["Access Layer"]
+    App["Application"]
 
-Billing Provider
-      ↓
-Webhook
-      ↓
-account_subscriptions
-      ↓
-organization access layer
-      ↓
-Entire application reacts automatically
+    Provider --> Webhook
+    Webhook --> Subscription
+    Subscription --> Access
+    Access --> App
 
-Before any billing migration, the real Supabase schema and constraints should be inspected rather than assumed.
+✅ Project Status
 
-Environment Variables
+Area
 
-Create:
+Status
 
-.env.local
+Authentication
 
-Use .env.example as the canonical reference.
+✅ Implemented
 
-Main variable groups include:
+Organizations
 
-Supabase
+✅ Implemented
+
+Members & Invitations
+
+✅ Implemented
+
+Clients / Sites / Devices
+
+✅ Implemented
+
+Windows Agent
+
+✅ Implemented
+
+Inventory / Heartbeat
+
+✅ Implemented
+
+Device Performance
+
+✅ Implemented
+
+Device Activity
+
+✅ Implemented
+
+Device Actions
+
+✅ Implemented
+
+Device Actions subscription enforcement
+
+✅ Implemented
+
+Terminal
+
+✅ Implemented
+
+Terminal subscription enforcement
+
+✅ Implemented
+
+Realtime Relay
+
+✅ Implemented
+
+RDP Architecture
+
+✅ Implemented
+
+RDP subscription enforcement
+
+🟡 In progress
+
+Incidents
+
+✅ Implemented
+
+Alerts
+
+✅ Implemented
+
+Audit Logging
+
+✅ Implemented
+
+Plan & Entitlement Foundation
+
+✅ Implemented
+
+Billing Provider Integration
+
+⏳ Planned
+
+Production-qualified Agent Updates
+
+🟡 In progress
+
+Production-qualified RDP
+
+🟡 In progress
+
+DNS / Domains
+
+⏳ Later
+
+🗂️ Repository Structure
+
+sentinelgrid/
+│
+├── agent/                      # Go Windows Agent
+├── app/                        # Next.js App Router
+├── components/                 # Shared UI
+├── installer/                  # MSI / update documentation
+├── lib/
+│   ├── audit/
+│   ├── realtime/
+│   ├── remote/
+│   ├── supabase/
+│   ├── organization-access-core.ts
+│   ├── organization-access.ts
+│   └── plans.ts
+├── relay/                      # Realtime / RDP relay
+├── scripts/                    # Tests, builds and release tooling
+├── public/                     # Brand and static assets
+├── .env.example
+├── package.json
+└── README.md
+
+⚙️ Environment
+
+Use .env.example as the reference and create .env.local.
+
+<details>
+<summary><strong>Supabase</strong></summary>
 
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SECRET_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 
-Application
+</details>
 
-NEXT_PUBLIC_SITE_URL=
-
-Upstash Redis
+<details>
+<summary><strong>Upstash Redis</strong></summary>
 
 UPSTASH_REDIS_KV_REST_API_URL=
 UPSTASH_REDIS_KV_REST_API_TOKEN=
 
-Standalone Realtime
+</details>
+
+<details>
+<summary><strong>Realtime</strong></summary>
 
 SENTINELGRID_REALTIME_URL=
 SENTINELGRID_REALTIME_BROWSER_ORIGIN=
 SENTINELGRID_REALTIME_BIND=
 SENTINELGRID_REALTIME_PORT=
-SENTINELGRID_REALTIME_MAX_CONNECTIONS=
-SENTINELGRID_REALTIME_TRUST_PROXY=
 
-RDP Relay
+</details>
+
+<details>
+<summary><strong>RDP Relay</strong></summary>
 
 SENTINELGRID_RELAY_URL=
 SENTINELGRID_RDP_RELAY_SECRET=
@@ -1359,21 +1165,23 @@ SENTINELGRID_RDP_BACKEND_URL=
 SENTINELGRID_RELAY_BIND=
 SENTINELGRID_RELAY_PORT=
 
-Agent Updates / Signing
+</details>
+
+<details>
+<summary><strong>Agent Updates & Signing</strong></summary>
 
 SENTINELGRID_AGENT_UPDATES_ENABLED=
-
 SENTINELGRID_SIGN_CERT_THUMBPRINT=
 SENTINELGRID_UPDATE_SIGNER_SHA256=
 SENTINELGRID_SIGN_TIMESTAMP_URL=
 
-Never commit real credentials or private signing material.
+</details>
 
-Local Development
+Never commit production secrets, service-role credentials or private signing material.
+
+🚀 Local Development
 
 Requirements
-
-Recommended:
 
 Node.js 22+
 
@@ -1387,22 +1195,22 @@ Upstash Redis
 
 WiX Toolset for MSI builds
 
-Windows SDK / signing tools when building signed Windows releases
+Windows signing tools for signed releases
 
-Clone:
+Clone
 
 git clone https://github.com/aleksssc/sentinelgrid.git
 cd sentinelgrid
 
-Install dependencies:
+Install
 
 npm install
 
-Create local environment configuration:
+Environment
 
 Copy-Item .env.example .env.local
 
-Start the Next.js application:
+Run
 
 npm run dev
 
@@ -1410,23 +1218,7 @@ Open:
 
 http://localhost:3000
 
-Realtime Development
-
-Build the relay:
-
-npm run build:realtime
-
-Run it:
-
-npm run start:realtime
-
-For local testing, the web application and realtime relay normally run in separate terminals.
-
-More detail:
-
-relay/README.md
-
-Testing
+🧪 Testing
 
 Web
 
@@ -1442,13 +1234,17 @@ Realtime
 
 npm run test:realtime
 
-Device actions / activity
+Device Actions
 
 node --test `
   scripts/test-device-actions.mjs `
-  scripts/test-device-activity.mjs `
-  scripts/test-device-action-feedback.mjs `
-  scripts/test-update-command-feedback.mjs
+  scripts/test-device-actions-access.mjs
+
+Terminal access
+
+node --test `
+  scripts/test-terminal-access.mjs `
+  scripts/test-terminal-realtime-access.mjs
 
 RDP
 
@@ -1463,125 +1259,17 @@ cd agent
 go test ./...
 go vet ./...
 
-Automated tests do not replace qualification on a disposable enrolled Windows device for destructive actions such as lock, restart or shutdown.
+Automated tests do not replace qualification on a disposable enrolled Windows machine for destructive remote operations.
 
-Repository Structure
+🗺️ Roadmap
 
-sentinelgrid/
-│
-├── agent/                      # Go Windows Agent
-├── app/                        # Next.js App Router
-├── components/                 # Shared UI components
-├── installer/                  # Windows MSI / update documentation
-├── lib/
-│   ├── audit/
-│   ├── realtime/
-│   ├── remote/
-│   ├── supabase/
-│   ├── organization-access.ts
-│   └── plans.ts
-├── relay/                      # Standalone realtime / RDP relay code
-├── scripts/                    # Tests, build and release tooling
-├── public/                     # Brand and static assets
-├── .env.example
-├── package.json
-└── README.md
-
-Deployment Model
-
-Vercel
-
-Hosts:
-
-Next.js application
-
-dashboard
-
-HTTP APIs
-
-authentication flows
-
-heartbeat endpoints
-
-monitor APIs
-
-billing UI
-
-update APIs
-
-endpoint discovery
-
-Railway
-
-Hosts the persistent realtime service.
-
-This avoids relying on long-lived WebSocket handlers inside Vercel Functions.
-
-Supabase
-
-Provides:
-
-authentication
-
-PostgreSQL
-
-RLS
-
-organization data
-
-device state
-
-command state
-
-audit data
-
-subscription data
-
-remote session state
-
-Upstash Redis
-
-Used for:
-
-realtime pub/sub coordination
-
-short-lived tickets
-
-distributed command coordination
-
-rolling performance telemetry
-
-Operational Principles
-
-SentinelGrid intentionally avoids several unsafe shortcuts:
-
-no security decisions based only on the browser
-
-no direct exposure of server secrets
-
-no automatic deletion on downgrade
-
-no unsigned Agent update installation
-
-no RDP relay tickets without expiry
-
-no unrestricted remote command execution
-
-no assumption that offline means shutdown succeeded
-
-no fabricated telemetry or version history
-
-no bypass of Agent update version/signature checks
-
-Roadmap
-
-Phase 1 — Core RMM and Monitoring
+Phase 1 — Core RMM & Monitoring
 
 Authentication
 
 Organizations
 
-Members and invitations
+Members & invitations
 
 Clients
 
@@ -1595,9 +1283,9 @@ Heartbeat
 
 Inventory
 
-Device performance
+Performance
 
-Device Activity
+Activity
 
 Device Actions
 
@@ -1607,145 +1295,110 @@ Realtime relay
 
 RDP architecture
 
-Alerts
-
 Incidents
 
-Audit logging
+Alerts
 
-Plan / entitlement foundation
+Audit logs
 
-Complete premium authorization enforcement
+Phase 2 — SaaS Authorization & Billing
 
-Production billing integration
+Centralized role / subscription access layer
 
-Production-qualified Agent updates
+Device Actions entitlement enforcement
 
-Production-qualified RDP
+Terminal HTTP entitlement enforcement
 
-Phase 2 — Monitoring Expansion
+Terminal realtime entitlement enforcement
+
+RDP entitlement enforcement
+
+Resource limits for Clients / Devices / Monitors
+
+Enrollment limit enforcement
+
+Billing provider integration
+
+Subscription lifecycle automation
+
+Phase 3 — Remote Management Maturity
+
+Production-qualify RDP
+
+Production-qualify automatic Agent updates
+
+Expand remote administration capabilities
+
+Improve recovery and diagnostics
+
+Phase 4 — Monitoring & Security Expansion
 
 SSL certificate monitoring
 
 DNS monitoring
 
-domain management
+Domain management
 
-richer monitor history
+Port discovery
 
-notification channels
+Service identification
 
-alert rules
+Exposed-service detection
 
-Phase 3 — Infrastructure and Security Intelligence
+Vulnerability correlation
 
-exposed-service detection
+Security findings
 
-port discovery
+Risk scoring
 
-service identification
+Phase 5 — Platform
 
-vulnerability correlation
-
-security findings
-
-risk scoring
-
-asset criticality
-
-Phase 4 — Platform
-
-reporting
+Reports
 
 API access
 
-webhooks
+Webhooks
 
-integrations
+Integrations
 
-advanced RBAC
+Advanced RBAC
 
-custom enterprise limits
+Enterprise customization
 
-production subscription lifecycle automation
+🧠 Engineering Principles
 
-Important Development Notes
+✓ Server-side authorization
+✓ Tenant isolation
+✓ Least privilege
+✓ Owner-subscription inheritance
+✓ Short-lived remote access credentials
+✓ Signed update chain
+✓ No destructive downgrade
+✓ No frontend-only security
+✓ No unsigned Agent updates
+✓ No fabricated telemetry
+✓ No fabricated version history
+✓ No direct exposure of server secrets
 
-Before changing authorization:
+🎯 Vision
 
-inspect the existing server-side checks
-
-preserve current RLS boundaries
-
-keep remote safety checks intact
-
-reuse the centralized access layer
-
-do not replace authorization with frontend-only gating
-
-add tests for Free / Pro / Admin / Member / restricted states
-
-verify direct API calls return 401, 403 or 404 appropriately
-
-Before changing billing:
-
-inspect the real Supabase schema
-
-inspect existing constraints
-
-do not assume provider fields are missing
-
-keep billing provider logic isolated
-
-keep account_subscriptions as the application-facing subscription state
-
-Before changing Agent update code:
-
-keep the signed MSI pipeline
-
-do not bypass hash/signature verification
-
-do not manually replace installed binaries
-
-qualify lifecycle changes in an isolated Windows VM
-
-Brand
-
-Canonical brand assets live under:
-
-public/logos/
-
-Primary assets include:
-
-sentinelgrid-mark.svg
-sentinelgrid-wordmark.svg
-sentinelgrid-logo.svg
-
-UI branding should use the shared brand component rather than duplicating logo markup.
-
-Vision
-
-SentinelGrid aims to become a single operational interface where IT teams can answer:
+SentinelGrid aims to become the operational layer where IT teams can immediately answer:
 
 What infrastructure do we manage?
-
 What is online?
-
 What changed?
-
 What failed?
-
 What needs attention?
-
 What can we safely do remotely?
-
 What should be fixed first?
 
-The long-term goal is to combine infrastructure monitoring, remote management and security visibility without forcing teams to jump between disconnected tools.
+The long-term goal is to combine monitoring, remote management and security visibility without forcing teams to jump between disconnected tools.
 
 <div align="center">
 
-🛡️ SentinelGrid
+<img src="./public/logos/sentinelgrid-mark.svg" alt="SentinelGrid" width="72" />
+
+SentinelGrid
 
 Visibility. Control. Security.
 

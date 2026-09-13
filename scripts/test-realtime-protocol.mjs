@@ -46,6 +46,11 @@ async function fixture(t) {
   };
   const dependencies={
     "@supabase/supabase-js":{createClient:()=>admin},
+    "../organization-access-core":{
+      resolveOrganizationAccessForUser:async (_admin,_organizationId,userId)=>userId === state.owner ? {role:"owner",subscription:{plan:"pro",status:"active"}} : {role:"member",subscription:{plan:"pro",status:"active"}},
+      accessHasPermission:(access,permission)=>(access.role === "owner" || access.role === "admin") && permission === "devices.terminal",
+      accessHasFeature:(access,feature)=>access.subscription.plan !== "free" && !["restricted","canceled"].includes(access.subscription.status) && feature === "terminal",
+    },
     "./redis":{getRedis:()=>({set:async(key,value)=>presence.set(key,value),get:async key=>presence.get(key)})},
     "./pubsub":pubsub,
     "./typed-commands": {

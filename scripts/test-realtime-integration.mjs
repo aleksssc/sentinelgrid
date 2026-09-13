@@ -21,7 +21,7 @@ test("compiled handlers share Redis across hosts, preserve all actions and recov
   const rows={
     devices:[{id:"device",agent_id:"agent",client_id:"client",hostname:"isolated",agent_token_hash:createHash("sha256").update("synthetic-agent-token").digest("hex")}],
     clients:[{id:"client",organization_id:"org"}], organizations:[{id:"org",owner_id:"operator"}],
-    organization_members:[],device_commands:[],audit_logs:[],
+    organization_members:[],account_subscriptions:[{user_id:"operator",plan:"pro",status:"active"}],device_commands:[],audit_logs:[],
   };
   let failProgress=false;
   const backend=createServer(async(request,response)=>{
