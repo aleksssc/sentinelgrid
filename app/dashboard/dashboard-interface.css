@@ -94,12 +94,20 @@ html[data-sg-sidebar="compact"] .sg-desktop-sidebar :is(.sg-sidebar-navigation, 
 .sg-mobile-navigation::backdrop { background: rgb(0 0 0 / 60%); }
 /* Keep the native modal/backdrop stationary; animate only the drawer content. */
 .sg-mobile-navigation[open] .sg-mobile-sidebar { animation: sg-navigation-enter 180ms ease-out; }
-.sg-dashboard:has(.sg-mobile-navigation[open]) :is(.dashboard-grid, .dashboard-glow, .dashboard-scanline) { animation-play-state: paused; }
+html[data-sg-mobile-navigation="open"] .sg-dashboard :is(.dashboard-grid, .dashboard-glow, .dashboard-scanline) { animation-play-state: paused; }
 .sg-mobile-sidebar { display: flex; width: 100%; box-shadow: 16px 0 60px rgb(0 0 0 / 25%); }
 .sg-mobile-sidebar .sg-sidebar-link { min-height: 44px; }
 .sg-mobile-sidebar .sg-sidebar-mark { display: none; }
 .sg-mobile-sidebar .sg-sidebar-navigation { overscroll-behavior-y: contain; }
 @keyframes sg-navigation-enter { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: translateX(0); } }
+/* Avoid repainting large filtered layers while a low-powered touch device handles navigation. */
+@media (max-width: 1023px) {
+  .sg-dashboard :is(.dashboard-grid, .dashboard-glow, .dashboard-scanline) {
+    animation: none;
+    will-change: auto;
+  }
+}
+
 @media (max-width: 1023px) {
   .sg-dashboard .sg-desktop-sidebar { display: none; }
   .sg-dashboard .sg-mobile-menu-trigger { display: inline-flex; position: absolute; top: 18px; left: 12px; z-index: 40; }

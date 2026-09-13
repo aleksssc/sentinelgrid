@@ -58,8 +58,14 @@ export default function DashboardSidebar() {
   }, []);
 
   useEffect(() => {
+    const root = document.documentElement;
+    if (mobileOpen) root.dataset.sgMobileNavigation = "open";
+    else delete root.dataset.sgMobileNavigation;
+
     if (mobileOpen && !dialog.current?.open) dialog.current?.showModal();
     else if (!mobileOpen && dialog.current?.open) dialog.current.close();
+
+    return () => { delete root.dataset.sgMobileNavigation; };
   }, [mobileOpen]);
 
   const navigation = [
