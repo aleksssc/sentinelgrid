@@ -15,9 +15,11 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import {
-  PLAN_LIMITS,
-  type PlanName,
-} from "@/lib/plans";
+  accessCanCreateResource,
+  accessHasPermission,
+  getAccessResourceLimit,
+  getOrganizationAccess,
+} from "@/lib/organization-access";
 
 import InviteMemberForm from "./invite-member-form";
 
@@ -63,6 +65,32 @@ export default async function MembersPage({
 
 
   /* =========================
+     ORGANIZATION ACCESS
+  ========================= */
+
+  const access =
+    await getOrganizationAccess(
+      organizationId
+    );
+
+
+  if (!access) {
+    notFound();
+  }
+
+
+  const isOwner =
+    access.role === "owner";
+
+
+  const canManageMembers =
+    accessHasPermission(
+      access,
+      "members.manage"
+    );
+
+
+  /* =========================
      ORGANIZATION
   ========================= */
 
@@ -86,10 +114,6 @@ export default async function MembersPage({
   ) {
     notFound();
   }
-
-
-  const isOwner =
-    organization.owner_id === user.id;
 
 
   /* =========================
@@ -170,33 +194,22 @@ export default async function MembersPage({
 
 
   /* =========================
-     SUBSCRIPTION
+     OWNER ACCOUNT PLAN
   ========================= */
 
-  const {
-    data: subscription,
-  } = await supabase
-    .from(
-      "organization_subscriptions"
-    )
-    .select("plan")
-    .eq(
-      "organization_id",
-      organizationId
-    )
-    .maybeSingle();
-
-
   const plan =
-    (
-      subscription?.plan ??
-      "free"
-    ) as PlanName;
+    access.subscription.plan;
+
+
+  const subscriptionStatus =
+    access.subscription.status;
 
 
   const memberLimit =
-    PLAN_LIMITS[plan]?.members ??
-    1;
+    getAccessResourceLimit(
+      access,
+      "members"
+    );
 
 
   /* =========================
@@ -312,8 +325,21 @@ export default async function MembersPage({
 
 
   const canInvite =
-    unlimited ||
-    usedSeats < memberLimit;
+    canManageMembers &&
+    accessCanCreateResource(
+      access,
+      "members",
+      usedSeats
+    );
+
+
+  const inviteDisabledReason =
+    subscriptionStatus === "restricted" ||
+    subscriptionStatus === "canceled"
+      ? "Your subscription is restricted. Update billing to invite new members."
+      : !canInvite
+        ? `Your ${plan} plan has reached its member limit.`
+        : undefined;
 
 
   const ownerUser =
@@ -662,9 +688,7 @@ export default async function MembersPage({
                     !canInvite
                   }
                   disabledReason={
-                    !canInvite
-                      ? `Your ${plan} plan has reached its member limit.`
-                      : undefined
+                    inviteDisabledReason
                   }
                 />
 
