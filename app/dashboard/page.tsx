@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/server";
 import {
   Activity,
   ArrowUpRight,
+  Bell,
+  Bot,
   Building2,
   CircleCheck,
   Clock3,
@@ -16,6 +18,7 @@ import {
   MonitorCog,
   Plus,
   Server,
+  ShieldAlert,
   TriangleAlert,
   UsersRound,
   WifiOff,
@@ -72,10 +75,24 @@ type Device = {
   os_name?: string | null;
   operating_system?: string | null;
   platform?: string | null;
+  agent_version?: string | null;
 
   [key: string]: unknown;
 };
+type Monitor = {
+  id: string;
+  name?: string | null;
+  status?: string | null;
+  last_checked_at?: string | null;
+};
 
+type OperationFailure = {
+  id: string;
+  status?: string | null;
+  action?: string | null;
+  command_type?: string | null;
+  created_at?: string | null;
+};
 // ============================================================
 // HELPERS
 // ============================================================
@@ -107,7 +124,23 @@ function getDeviceModel(device: Device) {
   return device.model || device.device_model || null;
 }
 
-function getDeviceStatus(device: Device) {
+const HEARTBEAT_OFFLINE_MS = 90_000;
+
+type DeviceStatus = "online" | "offline" | "warning" | "unknown";
+
+function getTimestamp(value?: string | null) {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function getDeviceStatus(device: Device, now = Date.now()): DeviceStatus {
+  const lastSeen = getTimestamp(device.last_seen);
+
+  if (!lastSeen || now - lastSeen > HEARTBEAT_OFFLINE_MS) {
+    return "offline";
+  }
+
   const status = String(device.status || "").toLowerCase();
 
   if (status === "online") return "online";
@@ -211,6 +244,11 @@ export default async function DashboardPage() {
   if (!user) {
     return null;
   }
+
+  const dashboardNow = Date.now();
+  const sevenDaysAgo = new Date(
+    dashboardNow - 7 * 86_400_000
+  ).toISOString();
 
   // ============================================================
   // ORGANIZATIONS
@@ -384,6 +422,72 @@ export default async function DashboardPage() {
     devices = (devicesData ?? []) as Device[];
   }
 
+
+  // ============================================================
+  // MONITORS AND OPERATIONS
+  // ============================================================
+
+  let monitors: Monitor[] = [];
+  let commandFailures: OperationFailure[] = [];
+  let auditFailures: OperationFailure[] = [];
+
+  const {
+    data: monitorsData,
+    error: monitorsError,
+  } = await supabase
+    .from("monitors")
+    .select("id, name, status, last_checked_at")
+    .eq("user_id", user.id);
+
+  if (monitorsError) {
+    console.error(
+      "Dashboard monitors error:",
+      monitorsError
+    );
+  }
+
+  monitors = (monitorsData ?? []) as Monitor[];
+
+  if (organizationIds.length > 0) {
+    const [
+      commandFailuresResult,
+      auditFailuresResult,
+    ] = await Promise.all([
+      supabase
+        .from("device_commands")
+        .select("id, command_type, status, created_at")
+        .in("organization_id", organizationIds)
+        .in("status", ["failed", "expired"])
+        .gte("created_at", sevenDaysAgo)
+        .limit(50),
+      supabase
+        .from("audit_logs")
+        .select("id, action, status, created_at")
+        .in("organization_id", organizationIds)
+        .eq("status", "failed")
+        .gte("created_at", sevenDaysAgo)
+        .limit(50),
+    ]);
+
+    if (commandFailuresResult.error) {
+      console.error(
+        "Dashboard command failures error:",
+        commandFailuresResult.error
+      );
+    }
+
+    if (auditFailuresResult.error) {
+      console.error(
+        "Dashboard audit failures error:",
+        auditFailuresResult.error
+      );
+    }
+
+    commandFailures =
+      (commandFailuresResult.data ?? []) as OperationFailure[];
+    auditFailures =
+      (auditFailuresResult.data ?? []) as OperationFailure[];
+  }
   // ============================================================
   // DEVICE STATS
   // ============================================================
@@ -422,6 +526,36 @@ export default async function DashboardPage() {
     totalDevices > 0
       ? Math.round(
           (onlineDevices / totalDevices) * 100
+        )
+      : 0;
+  const offlineMonitors = monitors.filter(
+    (monitor) =>
+      String(monitor.status || "").toLowerCase() === "offline"
+  ).length;
+
+  const uncheckedMonitors = monitors.filter(
+    (monitor) => !monitor.last_checked_at
+  ).length;
+
+  const monitorIssues =
+    offlineMonitors + uncheckedMonitors;
+
+  const incidentCount =
+    commandFailures.length + auditFailures.length;
+
+  const alertCount =
+    issues + monitorIssues;
+
+  const devicesWithAgentVersion = devices.filter(
+    (device) =>
+      typeof device.agent_version === "string" &&
+      device.agent_version.trim().length > 0
+  ).length;
+
+  const agentCoverage =
+    totalDevices > 0
+      ? Math.round(
+          (devicesWithAgentVersion / totalDevices) * 100
         )
       : 0;
 
@@ -579,7 +713,7 @@ export default async function DashboardPage() {
         <PageHeader
           title="Dashboard"
           eyebrow="Infrastructure overview"
-          description="Monitor your clients, devices and infrastructure from one place."
+          description="Monitor devices, agents, alerts, incidents and service monitors from one place. Devices are marked offline after 90 seconds without a heartbeat."
           actions={<Link href={enrollDeviceHref} className="sg-button sg-button-primary"><Plus size={16} />Enroll device</Link>}
         />
 
@@ -886,6 +1020,78 @@ export default async function DashboardPage() {
         </section>
 
         {/* ======================================================
+            OPERATIONS
+        ====================================================== */}
+
+        <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            {
+              label: "Alerts",
+              value: alertCount,
+              description: `${issues} device signals, ${monitorIssues} monitor signals`,
+              href: "/dashboard/alerts?source=devices",
+              icon: Bell,
+              tone: alertCount > 0 ? "text-amber-400" : "text-emerald-400",
+            },
+            {
+              label: "Incidents",
+              value: incidentCount,
+              description: "Failed commands and audit exceptions from the last 7 days",
+              href: "/dashboard/incidents?source=commands&days=7",
+              icon: ShieldAlert,
+              tone: incidentCount > 0 ? "text-red-400" : "text-emerald-400",
+            },
+            {
+              label: "Monitors",
+              value: monitors.length,
+              description: `${offlineMonitors} offline, ${uncheckedMonitors} not checked`,
+              href: "/dashboard/monitors",
+              icon: Globe2,
+              tone: monitorIssues > 0 ? "text-amber-400" : "text-sky-400",
+            },
+            {
+              label: "Agents",
+              value: `${agentCoverage}%`,
+              description: `${devicesWithAgentVersion}/${totalDevices} devices reporting an agent version`,
+              href: "/dashboard/organizations",
+              icon: Bot,
+              tone: agentCoverage === 100 || totalDevices === 0 ? "text-emerald-400" : "text-amber-400",
+            },
+          ].map(({ label, value, description, href, icon: Icon, tone }) => (
+            <Link
+              key={label}
+              href={href}
+              className="sg-surface group p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-surface-accent-edge hover:bg-surface-hover sg-interactive"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-surface-edge bg-white/[0.035]">
+                  <Icon
+                    size={17}
+                    className={tone}
+                  />
+                </div>
+
+                <ArrowUpRight
+                  size={14}
+                  className="text-zinc-700 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-zinc-300"
+                />
+              </div>
+
+              <p className="mt-5 text-3xl font-semibold tracking-tight text-white">
+                {value}
+              </p>
+
+              <p className="mt-1 text-xs text-surface-muted">
+                {label}
+              </p>
+
+              <p className="mt-3 line-clamp-2 text-[11px] leading-5 text-zinc-500">
+                {description}
+              </p>
+            </Link>
+          ))}
+        </section>
+        {/* ======================================================
             CONTENT
         ====================================================== */}
 
@@ -907,7 +1113,7 @@ export default async function DashboardPage() {
                 </h2>
 
                 <p className="mt-1 text-xs text-surface-muted">
-                  Latest devices reporting to SentinelGrid.
+                  Latest devices reporting to SentinelGrid, using effective heartbeat status.
                 </p>
               </div>
 
@@ -1139,7 +1345,7 @@ export default async function DashboardPage() {
                   </h2>
 
                   <p className="mt-1 text-xs text-surface-muted">
-                    Devices currently reporting issues.
+                    Devices offline, warning or missing a current heartbeat.
                   </p>
                 </div>
 
@@ -1444,7 +1650,7 @@ export default async function DashboardPage() {
               </h2>
 
               <p className="mt-1 text-xs text-surface-muted">
-                Common SentinelGrid management tasks.
+                Common SentinelGrid management and operations tasks.
               </p>
             </div>
 
@@ -1555,6 +1761,75 @@ export default async function DashboardPage() {
 
               </Link>
 
+              {/* ALERTS */}
+
+              <Link
+                href="/dashboard/alerts?source=devices"
+                className="sg-button sg-button-secondary group duration-200"
+              >
+
+                <div
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-surface-edge bg-white/[0.035]"
+                >
+                  <Bell
+                    size={15}
+                    className="text-surface-muted transition-colors group-hover:text-white"
+                  />
+                </div>
+
+                <div className="min-w-0 flex-1">
+
+                  <p className="text-xs font-medium text-zinc-300">
+                    Review alerts
+                  </p>
+
+                  <p className="mt-0.5 text-[11px] text-surface-muted">
+                    Devices and monitors
+                  </p>
+
+                </div>
+
+                <ArrowUpRight
+                  size={13}
+                  className="text-zinc-700 transition-colors group-hover:text-zinc-300"
+                />
+
+              </Link>
+
+              {/* INCIDENTS */}
+
+              <Link
+                href="/dashboard/incidents?source=commands&days=7"
+                className="sg-button sg-button-secondary group duration-200"
+              >
+
+                <div
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-surface-edge bg-white/[0.035]"
+                >
+                  <ShieldAlert
+                    size={15}
+                    className="text-surface-muted transition-colors group-hover:text-white"
+                  />
+                </div>
+
+                <div className="min-w-0 flex-1">
+
+                  <p className="text-xs font-medium text-zinc-300">
+                    Review incidents
+                  </p>
+
+                  <p className="mt-0.5 text-[11px] text-surface-muted">
+                    Failures and exceptions
+                  </p>
+
+                </div>
+
+                <ArrowUpRight
+                  size={13}
+                  className="text-zinc-700 transition-colors group-hover:text-zinc-300"
+                />
+
+              </Link>
               {/* MONITORS */}
 
               <Link

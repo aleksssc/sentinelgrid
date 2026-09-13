@@ -390,7 +390,14 @@ export async function POST(request: Request) {
             await manifest.arrayBuffer()
           )
         );
-    } catch {
+    } catch (error) {
+      console.error(
+        "[Agent update qualification]",
+        error instanceof Error
+          ? error.message
+          : "UNKNOWN_PRODUCT_RELEASE_ERROR"
+      );
+
       throw new UpdateAPIError(
         "PRODUCT_RELEASE_NOT_QUALIFIED",
         503

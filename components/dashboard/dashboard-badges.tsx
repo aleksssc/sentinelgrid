@@ -7,7 +7,7 @@ export type StatusTone = "neutral" | "success" | "warning" | "danger" | "info";
 const statusTones: Record<string, StatusTone> = {
   active: "success", online: "success", connected: "success", healthy: "success", success: "success", succeeded: "success",
   warning: "warning", pending: "warning", running: "warning",
-  failed: "danger", error: "danger", expired: "danger",
+  offline: "danger", failed: "danger", error: "danger", expired: "danger",
   requested: "info",
 };
 
