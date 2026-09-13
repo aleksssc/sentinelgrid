@@ -62,6 +62,129 @@ export type EnterpriseCustomLimits = {
 
 
 // =========================================================
+// FEATURES / ENTITLEMENTS
+// =========================================================
+
+export const PLAN_FEATURES = {
+  free: {
+    deviceActions: false,
+    terminal: false,
+    rdp: false,
+  },
+
+  pro: {
+    deviceActions: true,
+    terminal: true,
+    rdp: true,
+  },
+
+  business: {
+    deviceActions: true,
+    terminal: true,
+    rdp: true,
+  },
+
+  enterprise: {
+    deviceActions: true,
+    terminal: true,
+    rdp: true,
+  },
+} as const satisfies Record<
+  PlanName,
+  Record<string, boolean>
+>;
+
+
+export type PlanFeature =
+  keyof typeof PLAN_FEATURES.free;
+
+
+export function planHasFeature(
+  plan: PlanName,
+  feature: PlanFeature
+) {
+  return PLAN_FEATURES[plan][feature];
+}
+
+
+// =========================================================
+// SUBSCRIPTION LIFECYCLE
+// =========================================================
+
+export const SUBSCRIPTION_STATUSES = [
+  "active",
+  "trialing",
+  "past_due",
+  "grace_period",
+  "restricted",
+  "canceled",
+] as const;
+
+
+export type SubscriptionStatus =
+  (typeof SUBSCRIPTION_STATUSES)[number];
+
+
+export type SubscriptionAccessMode =
+  | "full"
+  | "grace"
+  | "restricted";
+
+
+export function normalizeSubscriptionStatus(
+  status: string | null | undefined
+): SubscriptionStatus {
+  if (
+    status &&
+    SUBSCRIPTION_STATUSES.includes(
+      status as SubscriptionStatus
+    )
+  ) {
+    return status as SubscriptionStatus;
+  }
+
+  return "active";
+}
+
+
+export function getSubscriptionAccessMode(
+  status: SubscriptionStatus
+): SubscriptionAccessMode {
+  if (
+    status === "restricted" ||
+    status === "canceled"
+  ) {
+    return "restricted";
+  }
+
+  if (
+    status === "past_due" ||
+    status === "grace_period"
+  ) {
+    return "grace";
+  }
+
+  return "full";
+}
+
+
+export function canUsePaidFeatures(
+  status: SubscriptionStatus
+) {
+  return getSubscriptionAccessMode(status) !==
+    "restricted";
+}
+
+
+export function canCreateResources(
+  status: SubscriptionStatus
+) {
+  return getSubscriptionAccessMode(status) !==
+    "restricted";
+}
+
+
+// =========================================================
 // GET EFFECTIVE LIMIT
 // =========================================================
 
@@ -100,12 +223,23 @@ export function canCreateResource({
   resource,
   currentUsage,
   customLimits,
+  subscriptionStatus = "active",
 }: {
   plan: PlanName;
   resource: PlanResource;
   currentUsage: number;
   customLimits?: EnterpriseCustomLimits;
+  subscriptionStatus?: SubscriptionStatus;
 }) {
+
+  if (
+    !canCreateResources(
+      subscriptionStatus
+    )
+  ) {
+    return false;
+  }
+
 
   const limit = getPlanLimit(
     plan,
