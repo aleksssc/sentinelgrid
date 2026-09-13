@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 import {
   canCreateResource,
@@ -134,12 +135,12 @@ function normalizePlan(
 export async function getAccountSubscription(
   ownerUserId: string
 ): Promise<AccountSubscription> {
-  const supabase = await createClient();
+  const admin = createAdminClient();
 
   const {
     data,
     error,
-  } = await supabase
+  } = await admin
     .from("account_subscriptions")
     .select(`
       user_id,
