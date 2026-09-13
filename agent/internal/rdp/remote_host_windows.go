@@ -126,8 +126,10 @@ func RunRemoteHost(ctx context.Context) error {
 	if err := sendScreenInfo(ws); err != nil {
 		return err
 	}
+	log.Print("[RDP] REMOTE_CAPTURE_START")
 	inputDone := make(chan error, 1)
 	go readRemoteInput(ctx, ws, inputDone)
+	firstFrame := true
 	ticker := time.NewTicker(125 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -142,7 +144,12 @@ func RunRemoteHost(ctx context.Context) error {
 		case <-ticker.C:
 			jpg, err := capturePrimaryJPEG()
 			if err != nil {
+				log.Printf("[RDP] REMOTE_CAPTURE_FAILED %s", captureFailureReason(err))
 				return err
+			}
+			if firstFrame {
+				log.Print("[RDP] REMOTE_CAPTURE_FIRST_FRAME_OK")
+				firstFrame = false
 			}
 			data, err := packet(PacketFrame, jpg)
 			if err != nil {
@@ -155,6 +162,23 @@ func RunRemoteHost(ctx context.Context) error {
 	}
 }
 
+func captureFailureReason(err error) string {
+	switch {
+	case strings.Contains(err.Error(), "primary display"):
+		return "display_unavailable"
+	case strings.Contains(err.Error(), "BitBlt"):
+		return "bitblt"
+	case strings.Contains(err.Error(), "GetDIBits"):
+		return "getdibits"
+	case strings.Contains(err.Error(), "restore"):
+		return "restore"
+	case strings.Contains(err.Error(), "frame exceeds"):
+		return "frame_too_large"
+	default:
+		return "capture"
+	}
+}
+
 func sendScreenInfo(ws *websocket.Conn) error {
 	width, height := screenSize()
 	data, err := infoPacket(ScreenInfo{Type: "screen_info", Width: width, Height: height})
@@ -163,6 +187,7 @@ func sendScreenInfo(ws *websocket.Conn) error {
 	}
 	return writePacket(ws, data)
 }
+
 func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- error) {
 	for {
 		kind, data, err := ws.ReadMessage()
@@ -222,6 +247,7 @@ func screenSize() (int, int) {
 	h, _, _ := getSystemMetrics.Call(1)
 	return int(w), int(h)
 }
+
 func capturePrimaryJPEG() ([]byte, error) {
 	width, height := screenSize()
 	if width < 1 || height < 1 {
@@ -242,15 +268,46 @@ func capturePrimaryJPEG() ([]byte, error) {
 		return nil, fmt.Errorf("desktop capture unavailable")
 	}
 	defer deleteObject.Call(bitmap)
+
+	var order captureOrder
 	old, _, _ := selectObject.Call(memory, bitmap)
-	defer selectObject.Call(memory, old)
-	if ok, _, _ := bitBlt.Call(memory, 0, 0, uintptr(width), uintptr(height), dc, 0, 0, 0x00CC0020); ok == 0 {
-		return nil, fmt.Errorf("desktop capture failed")
+	if old == 0 || old == ^uintptr(0) {
+		return nil, fmt.Errorf("desktop bitmap selection failed")
 	}
+	if err := order.selected(); err != nil {
+		return nil, err
+	}
+	restored := false
+	restore := func() error {
+		if restored {
+			return nil
+		}
+		previous, _, _ := selectObject.Call(memory, old)
+		if previous == 0 || previous == ^uintptr(0) {
+			return fmt.Errorf("desktop bitmap restore failed")
+		}
+		restored = true
+		return order.restored()
+	}
+	defer func() { _ = restore() }()
+
+	if ok, _, _ := bitBlt.Call(memory, 0, 0, uintptr(width), uintptr(height), dc, 0, 0, 0x00CC0020); ok == 0 {
+		return nil, fmt.Errorf("desktop BitBlt failed")
+	}
+	if err := order.copied(); err != nil {
+		return nil, err
+	}
+	if err := restore(); err != nil {
+		return nil, err
+	}
+
 	pixels := make([]byte, width*height*4)
 	info := bitmapInfo{Header: bitmapInfoHeader{Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(width), Height: -int32(height), Planes: 1, BitCount: 32}}
+	if err := order.read(); err != nil {
+		return nil, err
+	}
 	if lines, _, _ := getDIBits.Call(memory, bitmap, 0, uintptr(height), uintptr(unsafe.Pointer(&pixels[0])), uintptr(unsafe.Pointer(&info)), 0); lines != uintptr(height) {
-		return nil, fmt.Errorf("desktop pixels unavailable")
+		return nil, fmt.Errorf("desktop GetDIBits failed")
 	}
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	for i := 0; i < len(pixels); i += 4 {
