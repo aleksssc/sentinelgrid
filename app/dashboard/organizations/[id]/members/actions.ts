@@ -13,9 +13,11 @@ import {
 } from "@/lib/supabase/admin";
 
 import {
-  PLAN_LIMITS,
-  type PlanName,
-} from "@/lib/plans";
+  accessCanCreateResource,
+  accessHasPermission,
+  getAccessResourceLimit,
+  getOrganizationAccess,
+} from "@/lib/organization-access";
 
 
 export type InviteMemberState = {
@@ -114,9 +116,22 @@ export async function inviteMemberAction(
   }
 
 
+  /* =========================
+     ACCESS + SUBSCRIPTION
+  ========================= */
+
+  const access =
+    await getOrganizationAccess(
+      organizationId
+    );
+
+
   if (
-    organization.owner_id !==
-    user.id
+    !access ||
+    !accessHasPermission(
+      access,
+      "members.manage"
+    )
   ) {
     return {
       error:
@@ -125,34 +140,15 @@ export async function inviteMemberAction(
   }
 
 
-  /* =========================
-     SUBSCRIPTION
-  ========================= */
-
-  const {
-    data: subscription,
-  } = await supabase
-    .from(
-      "organization_subscriptions"
-    )
-    .select("plan")
-    .eq(
-      "organization_id",
-      organizationId
-    )
-    .maybeSingle();
-
-
   const plan =
-    (
-      subscription?.plan ??
-      "free"
-    ) as PlanName;
+    access.subscription.plan;
 
 
   const memberLimit =
-    PLAN_LIMITS[plan]?.members ??
-    1;
+    getAccessResourceLimit(
+      access,
+      "members"
+    );
 
 
   /* =========================
@@ -249,11 +245,25 @@ export async function inviteMemberAction(
 
 
   if (
-    Number.isFinite(
-      memberLimit
-    ) &&
-    usedSeats >= memberLimit
+    !accessCanCreateResource(
+      access,
+      "members",
+      usedSeats
+    )
   ) {
+    if (
+      access.subscription.status ===
+        "restricted" ||
+      access.subscription.status ===
+        "canceled"
+    ) {
+      return {
+        error:
+          "Your subscription is restricted. Update billing to invite new members.",
+      };
+    }
+
+
     return {
       error:
         `Your ${plan} plan supports up to ${memberLimit} team members.`,
