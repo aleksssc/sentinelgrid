@@ -830,7 +830,8 @@ func main() {
 			log.Fatal("Remote host accepts no other arguments")
 		}
 		if err := rdp.RunRemoteHost(context.Background()); err != nil {
-			log.Fatal(err)
+			log.Print(err)
+			os.Exit(rdp.RemoteHostExitCode(err))
 		}
 		return
 	}

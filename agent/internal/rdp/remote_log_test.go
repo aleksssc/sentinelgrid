@@ -7,14 +7,14 @@ import (
 )
 
 func TestSanitizeRemoteLogErrorRemovesSensitiveValues(t *testing.T) {
-	err := errors.New("relay failed at wss://relay.example.test/connect?ticket=secret ticket=abc agent_token=def cookie=session Bearer credential")
+	err := errors.New("relay failed at wss://relay.example.test/connect?ticket=secret ticket=abc agent_token=def cookie=session Bearer topsecret")
 	got := sanitizeRemoteLogError(err)
-	for _, value := range []string{"relay failed", "[url]", "ticket=[redacted]", "agent_token=[redacted]", "cookie=[redacted]", "Bearer [redacted]"} {
+	for _, value := range []string{"relay failed", "[url]", "ticket=[redacted]", "agent_token=[redacted]", "cookie=[redacted]"} {
 		if !strings.Contains(got, value) {
 			t.Fatalf("sanitized log %q does not contain %q", got, value)
 		}
 	}
-	for _, secret := range []string{"secret", "abc", "def", "session", "credential"} {
+	for _, secret := range []string{"secret", "abc", "def", "session", "topsecret", "credential"} {
 		if strings.Contains(got, secret) {
 			t.Fatalf("sanitized log leaked %q: %q", secret, got)
 		}

@@ -22,14 +22,15 @@ import (
 const createUnicodeEnvironment = 0x00000400
 
 func LaunchInteractive(ctx context.Context, connection Connection) (launchErr error) {
+	var logger *remoteLogger
 	if err := provisionRemoteLog(); err != nil {
-		return fmt.Errorf("could not prepare remote diagnostics log: %w", err)
+		log.Printf("[RDP] remote diagnostic log provisioning failed: %s", sanitizeRemoteLogError(err))
+	} else if opened, err := openRemoteLogger(); err != nil {
+		log.Printf("[RDP] remote diagnostic log unavailable: %s", sanitizeRemoteLogError(err))
+	} else {
+		logger = opened
+		defer logger.close()
 	}
-	logger, err := openRemoteLogger()
-	if err != nil {
-		return fmt.Errorf("could not open remote diagnostics log: %w", err)
-	}
-	defer logger.close()
 	logger.event("REMOTE_LAUNCH_START")
 	defer func() {
 		if launchErr != nil {
@@ -51,6 +52,11 @@ func LaunchInteractive(ctx context.Context, connection Connection) (launchErr er
 	}
 	defer token.Close()
 	logger.event("REMOTE_USER_TOKEN_OK")
+	if err := verifyRemoteLoggerAccess(token); err != nil {
+		logger.event("REMOTE_CHILD_LOGGER_ACCESS_FAILED " + sanitizeRemoteLogError(err))
+	} else {
+		logger.event("REMOTE_CHILD_LOGGER_ACCESS_OK")
+	}
 
 	exe, err := os.Executable()
 	if err != nil {
@@ -101,7 +107,7 @@ func LaunchInteractive(ctx context.Context, connection Connection) (launchErr er
 			if err := windows.GetExitCodeProcess(process.Process, &code); err != nil {
 				return err
 			}
-			logger.event(fmt.Sprintf("REMOTE_PROCESS_EXIT %d", code))
+			logger.event(fmt.Sprintf("REMOTE_PROCESS_EXIT %d %s", code, remoteHostExitReason(code)))
 			if code != 0 {
 				return fmt.Errorf("remote host exited with code %d", code)
 			}
@@ -137,13 +143,19 @@ func remoteEnvironment(c Connection) ([]uint16, error) {
 }
 
 func RunRemoteHost(ctx context.Context) (runErr error) {
-	logger, err := openRemoteLogger()
-	if err != nil {
-		return err
+	logger, loggerErr := openRemoteLogger()
+	if loggerErr != nil {
+		// Diagnostics must not prevent an authorized remote session.
+		log.Printf("[RDP] remote diagnostic log unavailable: %s", sanitizeRemoteLogError(loggerErr))
+	} else {
+		defer logger.close()
+		logger.event("REMOTE_HOST_START")
 	}
-	defer logger.close()
-	logger.event("REMOTE_HOST_START")
-	defer func() { logger.event("REMOTE_HOST_EXIT " + sanitizeRemoteLogError(runErr)) }()
+	defer func() {
+		if logger != nil {
+			logger.event("REMOTE_HOST_EXIT " + sanitizeRemoteLogError(runErr))
+		}
+	}()
 	return runRemoteHost(ctx, logger)
 }
 
@@ -153,14 +165,17 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 		connection.ExpiresAt = value
 	}
 	if err := connection.Validate(); err != nil {
-		return err
+		return remoteHostFailure("environment", err)
 	}
 	logger.event("REMOTE_ENV_VALID")
 	logger.event("REMOTE_RELAY_CONNECTING")
 	log.Print("[RDP] remote host connecting")
 	ws, err := Dial(ctx, connection)
 	if err != nil {
-		return err
+		if strings.Contains(err.Error(), "pairing") {
+			return remoteHostFailure("pairing", err)
+		}
+		return remoteHostFailure("relay", err)
 	}
 	defer ws.Close()
 	logger.event("REMOTE_RELAY_CONNECTED")
@@ -168,7 +183,7 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	logger.event("REMOTE_PAIRED")
 	log.Print("[RDP] remote host paired")
 	if err := sendScreenInfo(ws); err != nil {
-		return err
+		return remoteHostFailure("screen-info", err)
 	}
 	logger.event("REMOTE_CAPTURE_START")
 	log.Print("[RDP] REMOTE_CAPTURE_START")
@@ -191,7 +206,7 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 			if err != nil {
 				logger.event("REMOTE_CAPTURE_FAILED " + sanitizeRemoteLogError(err))
 				log.Printf("[RDP] REMOTE_CAPTURE_FAILED %s", captureFailureReason(err))
-				return err
+				return remoteHostFailure(remoteCaptureStage(err), err)
 			}
 			if firstFrame {
 				logger.event("REMOTE_CAPTURE_FIRST_FRAME_OK")
@@ -203,7 +218,7 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 				return err
 			}
 			if err := writePacket(ws, data); err != nil {
-				return err
+				return remoteHostFailure("frame-send", err)
 			}
 		}
 	}
@@ -297,75 +312,108 @@ func screenSize() (int, int) {
 
 func capturePrimaryJPEG() ([]byte, error) {
 	width, height := screenSize()
-	if width < 1 || height < 1 {
-		return nil, fmt.Errorf("primary display unavailable")
+	pixelSize, err := capturePixelBufferSize(width, height)
+	if err != nil {
+		return nil, err
 	}
-	dc, _, _ := getDC.Call(0)
+
+	dc, _, callErr := getDC.Call(0)
 	if dc == 0 {
-		return nil, fmt.Errorf("desktop capture unavailable")
+		return nil, captureAPIError("CAPTURE_GETDC_FAILED", width, height, dc, callErr)
 	}
-	defer releaseDC.Call(0, dc)
-	memory, _, _ := createCompatibleDC.Call(dc)
+	defer func() {
+		if released, _, releaseErr := releaseDC.Call(0, dc); released == 0 {
+			log.Printf("[RDP] %s", captureAPIError("CAPTURE_RELEASE_DC_FAILED", width, height, released, releaseErr))
+		}
+	}()
+
+	memory, _, callErr := createCompatibleDC.Call(dc)
 	if memory == 0 {
-		return nil, fmt.Errorf("desktop capture unavailable")
+		return nil, captureAPIError("CAPTURE_CREATE_DC_FAILED", width, height, memory, callErr)
 	}
-	defer deleteDC.Call(memory)
-	bitmap, _, _ := createCompatibleBitmap.Call(dc, uintptr(width), uintptr(height))
+	defer func() {
+		if deleted, _, deleteErr := deleteDC.Call(memory); deleted == 0 {
+			log.Printf("[RDP] %s", captureAPIError("CAPTURE_DELETE_DC_FAILED", width, height, deleted, deleteErr))
+		}
+	}()
+
+	bitmap, _, callErr := createCompatibleBitmap.Call(dc, uintptr(width), uintptr(height))
 	if bitmap == 0 {
-		return nil, fmt.Errorf("desktop capture unavailable")
+		return nil, captureAPIError("CAPTURE_BITMAP_FAILED", width, height, bitmap, callErr)
 	}
-	defer deleteObject.Call(bitmap)
+	defer func() {
+		if deleted, _, deleteErr := deleteObject.Call(bitmap); deleted == 0 {
+			log.Printf("[RDP] %s", captureAPIError("CAPTURE_DELETE_BITMAP_FAILED", width, height, deleted, deleteErr))
+		}
+	}()
 
 	var order captureOrder
-	old, _, _ := selectObject.Call(memory, bitmap)
+	old, _, callErr := selectObject.Call(memory, bitmap)
 	if old == 0 || old == ^uintptr(0) {
-		return nil, fmt.Errorf("desktop bitmap selection failed")
+		return nil, captureAPIError("CAPTURE_SELECT_FAILED", width, height, old, callErr)
 	}
 	if err := order.selected(); err != nil {
 		return nil, err
 	}
+
 	restored := false
 	restore := func() error {
 		if restored {
 			return nil
 		}
-		previous, _, _ := selectObject.Call(memory, old)
+		previous, _, restoreErr := selectObject.Call(memory, old)
 		if previous == 0 || previous == ^uintptr(0) {
-			return fmt.Errorf("desktop bitmap restore failed")
+			return captureAPIError("CAPTURE_RESTORE_FAILED", width, height, previous, restoreErr)
 		}
 		restored = true
 		return order.restored()
 	}
-	defer func() { _ = restore() }()
+	defer func() {
+		if err := restore(); err != nil {
+			log.Printf("[RDP] %s", err)
+		}
+	}()
 
-	if ok, _, _ := bitBlt.Call(memory, 0, 0, uintptr(width), uintptr(height), dc, 0, 0, 0x00CC0020); ok == 0 {
-		return nil, fmt.Errorf("desktop BitBlt failed")
+	const srccopyCaptureBlt = 0x00CC0020 | 0x40000000
+	copied, _, callErr := bitBlt.Call(memory, 0, 0, uintptr(width), uintptr(height), dc, 0, 0, srccopyCaptureBlt)
+	if copied == 0 {
+		return nil, captureAPIError("CAPTURE_BITBLT_FAILED", width, height, copied, callErr)
 	}
 	if err := order.copied(); err != nil {
 		return nil, err
 	}
+	// GetDIBits requires that bitmap is not selected into any device context.
 	if err := restore(); err != nil {
 		return nil, err
 	}
 
-	pixels := make([]byte, width*height*4)
-	info := bitmapInfo{Header: bitmapInfoHeader{Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(width), Height: -int32(height), Planes: 1, BitCount: 32}}
+	pixels := make([]byte, pixelSize)
+	info := bitmapInfo{Header: bitmapInfoHeader{
+		Size:        uint32(unsafe.Sizeof(bitmapInfoHeader{})),
+		Width:       int32(width),
+		Height:      -int32(height),
+		Planes:      1,
+		BitCount:    32,
+		Compression: 0,
+	}}
 	if err := order.read(); err != nil {
 		return nil, err
 	}
-	if lines, _, _ := getDIBits.Call(memory, bitmap, 0, uintptr(height), uintptr(unsafe.Pointer(&pixels[0])), uintptr(unsafe.Pointer(&info)), 0); lines != uintptr(height) {
-		return nil, fmt.Errorf("desktop GetDIBits failed")
+	lines, _, callErr := getDIBits.Call(memory, bitmap, 0, uintptr(height), uintptr(unsafe.Pointer(&pixels[0])), uintptr(unsafe.Pointer(&info)), 0)
+	if lines != uintptr(height) {
+		return nil, captureAPIError("CAPTURE_GETDIBITS_FAILED", width, height, lines, callErr)
 	}
+
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	for i := 0; i < len(pixels); i += 4 {
+	for i := 0; i < len(pixels); i += captureBytesPerPixel {
 		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = pixels[i+2], pixels[i+1], pixels[i], 0xff
 	}
 	var out bytes.Buffer
 	if err := jpeg.Encode(&out, img, &jpeg.Options{Quality: 65}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("CAPTURE_JPEG_FAILED width=%d height=%d: %w", width, height, err)
 	}
 	if out.Len() > maxRemotePacket-1 {
-		return nil, fmt.Errorf("captured frame exceeds limit")
+		return nil, fmt.Errorf("CAPTURE_JPEG_FAILED width=%d height=%d reason=frame_exceeds_limit", width, height)
 	}
 	return out.Bytes(), nil
 }

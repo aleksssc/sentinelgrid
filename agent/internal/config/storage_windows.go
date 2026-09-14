@@ -13,6 +13,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// SentinelGridDirectorySDDL is the protected root DACL used by both
+// configuration persistence and the Remote Host diagnostic hierarchy.
+const SentinelGridDirectorySDDL = "O:BAG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x00100020;;;AU)"
+
 func prepareDirectory(dir string) error {
 	if !windows.GetCurrentProcessToken().IsElevated() {
 		return fmt.Errorf("configuration writes require Administrator or SYSTEM")
@@ -45,7 +49,7 @@ func prepareDirectory(dir string) error {
 			break
 		}
 	}
-	descriptor, err := windows.SecurityDescriptorFromString("O:BAG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+	descriptor, err := windows.SecurityDescriptorFromString(SentinelGridDirectorySDDL)
 	if err != nil {
 		return err
 	}
