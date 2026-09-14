@@ -15,7 +15,7 @@ func TestRGBAToBGRAKeepsColorChannels(t *testing.T) {
 		source.SetRGBA(x, 0, value)
 	}
 	frame := rgbaToBGRA(source)
-	if frame.width != 6 || frame.height != 1 || len(frame.pixels) != 24 {
+	if frame.width != 6 || frame.height != 1 || frame.stride != 24 || len(frame.pixels) != 24 || !frame.valid() {
 		t.Fatalf("unexpected frame geometry: %+v", frame)
 	}
 	for x, want := range colors {
@@ -23,6 +23,26 @@ func TestRGBAToBGRAKeepsColorChannels(t *testing.T) {
 		got := color.RGBA{R: frame.pixels[offset+2], G: frame.pixels[offset+1], B: frame.pixels[offset], A: 255}
 		if got != want {
 			t.Fatalf("pixel %d = %#v, want %#v", x, got, want)
+		}
+	}
+}
+
+func TestViewerFrameValidationAndPixelSummary(t *testing.T) {
+	valid := viewerFrame{pixels: []byte{0, 0, 0, 0, 1, 2, 3, 0}, width: 2, height: 1, stride: 8}
+	if !valid.valid() {
+		t.Fatal("valid packed BGRA frame rejected")
+	}
+	nonZero, variation := valid.pixelSummary()
+	if !nonZero || !variation {
+		t.Fatalf("pixel summary = nonzero:%t variation:%t, want true:true", nonZero, variation)
+	}
+	for _, invalid := range []viewerFrame{
+		{pixels: make([]byte, 8), width: 2, height: 1, stride: 7},
+		{pixels: make([]byte, 7), width: 2, height: 1, stride: 8},
+		{pixels: make([]byte, 8), width: 0, height: 1, stride: 8},
+	} {
+		if invalid.valid() {
+			t.Fatalf("invalid frame accepted: %+v", invalid)
 		}
 	}
 }
@@ -43,7 +63,7 @@ func TestJPEGDecodeConvertsDirectlyToBGRA(t *testing.T) {
 		t.Fatalf("jpeg.Decode type = %T, want *image.YCbCr", decoded)
 	}
 	frame := imageToBGRA(decoded)
-	if frame.width != 2 || frame.height != 1 || len(frame.pixels) != 8 {
+	if frame.width != 2 || frame.height != 1 || frame.stride != 8 || len(frame.pixels) != 8 || !frame.valid() {
 		t.Fatalf("unexpected converted frame: %+v", frame)
 	}
 }

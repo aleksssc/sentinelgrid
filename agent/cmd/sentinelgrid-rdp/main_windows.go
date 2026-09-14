@@ -72,6 +72,7 @@ type viewer struct {
 	lastStatsSocket, lastStatsDecoded, lastStatsPainted uint64
 	notification                                        frameNotificationState
 	paintState                                          framePaintState
+	paintLogged, paintFailureLogged                     bool
 	decodeMetrics                                       durationWindow
 	conversionMetrics                                   durationWindow
 	bufferCopyMetrics                                   durationWindow
@@ -426,6 +427,10 @@ func (v *viewer) decodeFrames() {
 			conversionStarted := time.Now()
 			frame := imageToBGRA(decoded)
 			conversionDuration := time.Since(conversionStarted)
+			if !frame.valid() {
+				v.logger.event(fmt.Sprintf("VIEWER_FRAME_BUFFER_INVALID width=%d height=%d stride=%d length=%d", frame.width, frame.height, frame.stride, len(frame.pixels)))
+				continue
+			}
 			// The converted frame is the display buffer; no additional full-frame copy is made.
 			bufferCopyDuration := time.Duration(0)
 			v.mu.Lock()
@@ -446,9 +451,10 @@ func (v *viewer) decodeFrames() {
 			now := time.Now()
 			hwnd := v.hwnd
 			notify := hwnd != 0 && v.notification.schedule()
-			v.status = ""
 			v.mu.Unlock()
 			if first {
+				nonZero, variation := frame.pixelSummary()
+				v.logger.event(fmt.Sprintf("VIEWER_FRAME_PIXELS width=%d height=%d stride=%d length=%d nonzero=%t variation=%t", frame.width, frame.height, frame.stride, len(frame.pixels), nonZero, variation))
 				v.logger.event(fmt.Sprintf("VIEWER_FIRST_FRAME bytes=%d", len(compressed.data)))
 			}
 			if decodedCount%120 == 0 {
@@ -662,6 +668,10 @@ func (v *viewer) mapMouse(hwnd uintptr, x, y int) (int, int, bool) {
 func (v *viewer) paint(hwnd uintptr) {
 	var paint paintStruct
 	hdc, _, _ := beginPaint.Call(hwnd, uintptr(unsafe.Pointer(&paint)))
+	if hdc == 0 {
+		v.recordPaintResult(-2, 0, 0, 0, 0, 0)
+		return
+	}
 	defer endPaint.Call(hwnd, uintptr(unsafe.Pointer(&paint)))
 	var client rect
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
@@ -673,15 +683,21 @@ func (v *viewer) paint(hwnd uintptr) {
 	}
 
 	v.mu.RLock()
-	frame, status := v.frame, v.status
+	frame, generation := v.frame, v.frameGeneration
+	status := v.status
 	v.mu.RUnlock()
-	if len(frame.pixels) == 0 {
+	if !frame.valid() {
 		fill(client)
-		v.paintStatus(hdc, client, status)
+		if len(frame.pixels) == 0 {
+			v.paintStatus(hdc, client, status)
+		} else {
+			v.recordPaintResult(0, frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
+		}
 		return
 	}
 	display, ok := fittedImageRect(int(client.Right), int(client.Bottom), frame.width, frame.height)
 	if !ok {
+		v.recordPaintResult(0, frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
 		return
 	}
 	// Preserve the displayed frame and repaint only the areas not covered by it.
@@ -690,14 +706,39 @@ func (v *viewer) paint(hwnd uintptr) {
 	fill(rect{Left: client.Left, Top: int32(display.y), Right: int32(display.x), Bottom: int32(display.y + display.height)})
 	fill(rect{Left: int32(display.x + display.width), Top: int32(display.y), Right: client.Right, Bottom: int32(display.y + display.height)})
 	info := bitmapInfo{Header: bitmapInfoHeader{Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(frame.width), Height: -int32(frame.height), Planes: 1, BitCount: 32, Compression: biRGB}}
-	if copied, _, _ := stretchDIBits.Call(hdc, uintptr(display.x), uintptr(display.y), uintptr(display.width), uintptr(display.height), 0, 0, uintptr(frame.width), uintptr(frame.height), uintptr(unsafe.Pointer(&frame.pixels[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020); copied != ^uintptr(0) {
-		v.mu.Lock()
-		unique := v.paintState.record(v.frameGeneration)
+	copied, _, _ := stretchDIBits.Call(hdc, uintptr(display.x), uintptr(display.y), uintptr(display.width), uintptr(display.height), 0, 0, uintptr(frame.width), uintptr(frame.height), uintptr(unsafe.Pointer(&frame.pixels[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020)
+	v.recordPaintResult(int32(copied), frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
+}
+
+func (v *viewer) recordPaintResult(result int32, width, height, clientWidth, clientHeight int, generation uint64) {
+	success := result > 0
+	v.mu.Lock()
+	logResult := false
+	if success {
+		unique := v.paintState.record(generation)
 		paintEvents, uniquePainted := v.paintState.paintEvents, v.paintState.uniqueFramesPainted
+		if !v.paintLogged {
+			v.paintLogged = true
+			logResult = true
+		}
+		v.paintFailureLogged = false
+		v.status = ""
 		v.mu.Unlock()
+		if logResult {
+			v.logger.event(fmt.Sprintf("VIEWER_PAINT_RESULT result=%d width=%d height=%d client_width=%d client_height=%d frame_generation=%d", result, width, height, clientWidth, clientHeight, generation))
+		}
 		if unique && uniquePainted%120 == 0 {
 			v.logger.event(fmt.Sprintf("VIEWER_PAINT_STATS paint_events=%d unique_frames_painted=%d", paintEvents, uniquePainted))
 		}
+		return
+	}
+	if !v.paintFailureLogged {
+		v.paintFailureLogged = true
+		logResult = true
+	}
+	v.mu.Unlock()
+	if logResult {
+		v.logger.event(fmt.Sprintf("VIEWER_PAINT_RESULT result=%d width=%d height=%d client_width=%d client_height=%d frame_generation=%d", result, width, height, clientWidth, clientHeight, generation))
 	}
 }
 func (v *viewer) paintStatus(hdc uintptr, client rect, status string) {

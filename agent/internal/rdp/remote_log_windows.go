@@ -25,7 +25,6 @@ const remoteLogTraverseAccess = 0x00100020 // SYNCHRONIZE | FILE_TRAVERSE
 
 var remoteLogRootSDDL = config.SentinelGridDirectorySDDL
 var remoteLogDirectorySDDL = "O:BAG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x00100020;;;AU)"
-var remoteLogFileSDDL = "O:BAG:SYD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;0x00100004;;;AU)"
 
 var advapi32 = windows.NewLazySystemDLL("advapi32.dll")
 var impersonateLoggedOnUser = advapi32.NewProc("ImpersonateLoggedOnUser")
@@ -44,7 +43,30 @@ func remoteLogPath() (string, error) {
 	return filepath.Join(programData, "SentinelGrid", remoteLogDirectoryName, remoteLogFileName), nil
 }
 
-func provisionRemoteLog() error {
+func remoteLogFileSDDLForUser(userSID string) (string, error) {
+	if userSID == "" {
+		return "", fmt.Errorf("interactive user SID is unavailable")
+	}
+	return "O:BAG:SYD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;0x00100004;;;" + userSID + ")", nil
+}
+
+func interactiveUserSID(token windows.Token) (string, error) {
+	user, err := token.GetTokenUser()
+	if err != nil || user == nil || user.User.Sid == nil {
+		return "", fmt.Errorf("read interactive user SID: %w", err)
+	}
+	return user.User.Sid.String(), nil
+}
+
+func provisionRemoteLog(token windows.Token) error {
+	userSID, err := interactiveUserSID(token)
+	if err != nil {
+		return err
+	}
+	fileSDDL, err := remoteLogFileSDDLForUser(userSID)
+	if err != nil {
+		return err
+	}
 	path, err := remoteLogPath()
 	if err != nil {
 		return err
@@ -64,7 +86,7 @@ func provisionRemoteLog() error {
 	if err := createProtectedDirectory(dir, remoteLogDirectorySDDL); err != nil {
 		return fmt.Errorf("prepare remote log directory: %w", err)
 	}
-	return createProtectedRemoteLog(path)
+	return createProtectedRemoteLog(path, fileSDDL)
 }
 
 func protectExistingDirectory(path, sddl string) error {
@@ -106,8 +128,8 @@ func setProtectedDACL(path, sddl string) error {
 	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
 }
 
-func createProtectedRemoteLog(path string) error {
-	descriptor, err := windows.SecurityDescriptorFromString(remoteLogFileSDDL)
+func createProtectedRemoteLog(path, sddl string) error {
+	descriptor, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {
 		return err
 	}
@@ -121,7 +143,7 @@ func createProtectedRemoteLog(path string) error {
 		return err
 	}
 	defer windows.CloseHandle(handle)
-	return setProtectedDACL(path, remoteLogFileSDDL)
+	return setProtectedDACL(path, sddl)
 }
 
 func openRemoteLogFile(path *uint16, security *windows.SecurityAttributes, disposition uint32) (windows.Handle, error) {

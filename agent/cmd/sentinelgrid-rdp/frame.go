@@ -6,8 +6,37 @@ import (
 )
 
 type viewerFrame struct {
-	pixels        []byte // BGRA for a top-down 32bpp BI_RGB DIB.
-	width, height int
+	pixels                []byte // BGRA for a top-down 32bpp BI_RGB DIB.
+	width, height, stride int
+}
+
+func (f viewerFrame) valid() bool {
+	if f.width <= 0 || f.height <= 0 || f.stride <= 0 || f.width > f.stride/4 {
+		return false
+	}
+	return f.height <= len(f.pixels)/f.stride
+}
+
+func (f viewerFrame) pixelSummary() (nonZero, variation bool) {
+	if !f.valid() {
+		return false, false
+	}
+	first := f.pixels[:3]
+	for y := 0; y < f.height; y++ {
+		for x := 0; x < f.width; x++ {
+			pixel := f.pixels[y*f.stride+x*4 : y*f.stride+x*4+3]
+			if pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0 {
+				nonZero = true
+			}
+			if pixel[0] != first[0] || pixel[1] != first[1] || pixel[2] != first[2] {
+				variation = true
+			}
+			if nonZero && variation {
+				return true, true
+			}
+		}
+	}
+	return nonZero, variation
 }
 
 // imageToBGRA converts directly into the format consumed by StretchDIBits.
@@ -15,27 +44,28 @@ type viewerFrame struct {
 func imageToBGRA(source image.Image) viewerFrame {
 	bounds := source.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
-	pixels := make([]byte, width*height*4)
+	stride := width * 4
+	pixels := make([]byte, height*stride)
 	if ycbcr, ok := source.(*image.YCbCr); ok && ycbcr.Rect == bounds {
 		for y := 0; y < height; y++ {
 			for x := 0; x < width; x++ {
-				offset := y*width*4 + x*4
+				offset := y*stride + x*4
 				index := ycbcr.YOffset(x+bounds.Min.X, y+bounds.Min.Y)
 				chroma := ycbcr.COffset(x+bounds.Min.X, y+bounds.Min.Y)
 				r, g, b := color.YCbCrToRGB(ycbcr.Y[index], ycbcr.Cb[chroma], ycbcr.Cr[chroma])
 				pixels[offset], pixels[offset+1], pixels[offset+2], pixels[offset+3] = b, g, r, 0
 			}
 		}
-		return viewerFrame{pixels: pixels, width: width, height: height}
+		return viewerFrame{pixels: pixels, width: width, height: height, stride: stride}
 	}
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			r, g, b, _ := source.At(x, y).RGBA()
-			offset := ((y-bounds.Min.Y)*width + x - bounds.Min.X) * 4
+			offset := (y-bounds.Min.Y)*stride + (x-bounds.Min.X)*4
 			pixels[offset], pixels[offset+1], pixels[offset+2], pixels[offset+3] = byte(b>>8), byte(g>>8), byte(r>>8), 0
 		}
 	}
-	return viewerFrame{pixels: pixels, width: width, height: height}
+	return viewerFrame{pixels: pixels, width: width, height: height, stride: stride}
 }
 
 func rgbaToBGRA(source *image.RGBA) viewerFrame { return imageToBGRA(source) }

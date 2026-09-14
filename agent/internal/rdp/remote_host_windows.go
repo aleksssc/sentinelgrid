@@ -22,8 +22,21 @@ import (
 const createUnicodeEnvironment = 0x00000400
 
 func LaunchInteractive(ctx context.Context, connection Connection) (launchErr error) {
+	log.Print("[RDP] session received")
+	session := windows.WTSGetActiveConsoleSessionId()
+	if session == 0xffffffff {
+		return fmt.Errorf("no active interactive Windows session")
+	}
+	log.Print("[RDP] interactive session detected")
+
+	var token windows.Token
+	if err := windows.WTSQueryUserToken(session, &token); err != nil {
+		return fmt.Errorf("interactive user token unavailable: %w", err)
+	}
+	defer token.Close()
+
 	var logger *remoteLogger
-	if err := provisionRemoteLog(); err != nil {
+	if err := provisionRemoteLog(token); err != nil {
 		log.Printf("[RDP] remote diagnostic log provisioning failed: %s", sanitizeRemoteLogError(err))
 	} else if opened, err := openRemoteLogger(); err != nil {
 		log.Printf("[RDP] remote diagnostic log unavailable: %s", sanitizeRemoteLogError(err))
@@ -37,20 +50,7 @@ func LaunchInteractive(ctx context.Context, connection Connection) (launchErr er
 			logger.event("REMOTE_LAUNCH_FAILED " + sanitizeRemoteLogError(launchErr))
 		}
 	}()
-
-	log.Print("[RDP] session received")
-	session := windows.WTSGetActiveConsoleSessionId()
-	if session == 0xffffffff {
-		return fmt.Errorf("no active interactive Windows session")
-	}
 	logger.event(fmt.Sprintf("REMOTE_ACTIVE_SESSION %d", session))
-	log.Print("[RDP] interactive session detected")
-
-	var token windows.Token
-	if err := windows.WTSQueryUserToken(session, &token); err != nil {
-		return fmt.Errorf("interactive user token unavailable: %w", err)
-	}
-	defer token.Close()
 	logger.event("REMOTE_USER_TOKEN_OK")
 	if err := verifyRemoteLoggerAccess(token); err != nil {
 		logger.event("REMOTE_CHILD_LOGGER_ACCESS_FAILED " + sanitizeRemoteLogError(err))
