@@ -27,6 +27,7 @@ import (
 const (
 	wmDestroy          = 0x0002
 	wmPaint            = 0x000f
+	wmEraseBkgnd       = 0x0014
 	wmSetFocus         = 0x0007
 	wmClose            = 0x0010
 	wmMouseMove        = 0x0200
@@ -59,6 +60,7 @@ type viewer struct {
 	status                        string
 	logger                        *viewerLogger
 	framesReceived, framesPainted uint64
+	frameNotificationPending      bool
 }
 type viewerLogger struct {
 	mu   sync.Mutex
@@ -273,6 +275,10 @@ func (v *viewer) receive() {
 			v.framesReceived++
 			received := v.framesReceived
 			hwnd := v.hwnd
+			notify := hwnd != 0 && !v.frameNotificationPending
+			if notify {
+				v.frameNotificationPending = true
+			}
 			v.status = ""
 			v.mu.Unlock()
 			if first {
@@ -281,8 +287,12 @@ func (v *viewer) receive() {
 			if received%120 == 0 {
 				v.logger.event(fmt.Sprintf("VIEWER_FRAME_STATS received=%d", received))
 			}
-			if hwnd != 0 {
-				postMessage.Call(hwnd, wmFrameReady, 0, 0)
+			if notify {
+				if result, _, _ := postMessage.Call(hwnd, wmFrameReady, 0, 0); result == 0 {
+					v.mu.Lock()
+					v.frameNotificationPending = false
+					v.mu.Unlock()
+				}
 			}
 		}
 	}
@@ -365,10 +375,17 @@ func (v *viewer) window() error {
 	v.logger.event("VIEWER_WINDOW_CREATED")
 	v.mu.Lock()
 	v.hwnd = hwnd
+	notify := len(v.frame.pixels) != 0 && !v.frameNotificationPending
+	if notify {
+		v.frameNotificationPending = true
+	}
 	v.mu.Unlock()
 	viewerUser32.NewProc("ShowWindow").Call(hwnd, swShow)
 	viewerUser32.NewProc("UpdateWindow").Call(hwnd)
 	v.logger.event("VIEWER_WINDOW_SHOWN")
+	if notify {
+		postMessage.Call(hwnd, wmFrameReady, 0, 0)
+	}
 	var message msg
 	for {
 		result, _, err := getMessage.Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0)
@@ -399,7 +416,20 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		return 0
 	case wmSetFocus:
 		setFocus.Call(hwnd)
-	case wmFrameReady, wmStateChanged:
+	case wmEraseBkgnd:
+		v.mu.RLock()
+		hasFrame := len(v.frame.pixels) != 0
+		v.mu.RUnlock()
+		if hasFrame {
+			return 1
+		}
+	case wmFrameReady:
+		v.mu.Lock()
+		v.frameNotificationPending = false
+		v.mu.Unlock()
+		invalidateRect.Call(hwnd, 0, 0, 0)
+		return 0
+	case wmStateChanged:
 		invalidateRect.Call(hwnd, 0, 0, 0)
 		return 0
 	case wmPaint:
@@ -450,11 +480,18 @@ func (v *viewer) paint(hwnd uintptr) {
 	defer endPaint.Call(hwnd, uintptr(unsafe.Pointer(&paint)))
 	var client rect
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
-	fillRect.Call(hdc, uintptr(unsafe.Pointer(&client)), getStockObjectValue(blackBrush))
+	black := getStockObjectValue(blackBrush)
+	fill := func(area rect) {
+		if area.Right > area.Left && area.Bottom > area.Top {
+			fillRect.Call(hdc, uintptr(unsafe.Pointer(&area)), black)
+		}
+	}
+
 	v.mu.RLock()
 	frame, status := v.frame, v.status
 	v.mu.RUnlock()
 	if len(frame.pixels) == 0 {
+		fill(client)
 		v.paintStatus(hdc, client, status)
 		return
 	}
@@ -462,6 +499,11 @@ func (v *viewer) paint(hwnd uintptr) {
 	if !ok {
 		return
 	}
+	// Preserve the displayed frame and repaint only the areas not covered by it.
+	fill(rect{Left: client.Left, Top: client.Top, Right: client.Right, Bottom: int32(display.y)})
+	fill(rect{Left: client.Left, Top: int32(display.y + display.height), Right: client.Right, Bottom: client.Bottom})
+	fill(rect{Left: client.Left, Top: int32(display.y), Right: int32(display.x), Bottom: int32(display.y + display.height)})
+	fill(rect{Left: int32(display.x + display.width), Top: int32(display.y), Right: client.Right, Bottom: int32(display.y + display.height)})
 	info := bitmapInfo{Header: bitmapInfoHeader{Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(frame.width), Height: -int32(frame.height), Planes: 1, BitCount: 32, Compression: biRGB}}
 	if copied, _, _ := stretchDIBits.Call(hdc, uintptr(display.x), uintptr(display.y), uintptr(display.width), uintptr(display.height), 0, 0, uintptr(frame.width), uintptr(frame.height), uintptr(unsafe.Pointer(&frame.pixels[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020); copied != ^uintptr(0) {
 		v.mu.Lock()
