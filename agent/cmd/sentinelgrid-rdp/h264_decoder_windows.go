@@ -26,6 +26,7 @@ type nativeH264Decoder struct {
 	mu                                 sync.Mutex
 	dll                                *windows.DLL
 	destroy, decode, stats, info, last *windows.Proc
+	lastStage                          *windows.Proc
 	handle                             uintptr
 	width, height                      int
 }
@@ -74,7 +75,11 @@ func newNativeH264Decoder(width, height int) (*nativeH264Decoder, error) {
 	if err != nil {
 		return nil, err
 	}
-	decoder := &nativeH264Decoder{dll: dll, destroy: destroy, decode: decode, stats: stats, info: info, last: last, width: width, height: height}
+	lastStage, err := find("SGVideo_GetH264DecoderLastErrorStage")
+	if err != nil {
+		return nil, err
+	}
+	decoder := &nativeH264Decoder{dll: dll, destroy: destroy, decode: decode, stats: stats, info: info, last: last, lastStage: lastStage, width: width, height: height}
 	result, _, _ := create.Call(uintptr(width), uintptr(height), 30, uintptr(unsafe.Pointer(&decoder.handle)))
 	if err := nativeRendererHRESULT(result); err != nil {
 		_ = dll.Release()
@@ -96,12 +101,26 @@ func (d *nativeH264Decoder) decodeAU(payload []byte, sequence uint64) (viewerFra
 		return viewerFrame{}, false, nil
 	}
 	if err := nativeRendererHRESULT(result); err != nil {
-		return viewerFrame{}, false, err
+		return viewerFrame{}, false, fmt.Errorf("stage=%s hr=0x%08x: %w", d.lastErrorStage(), uint32(result), err)
 	}
 	if decoded.Width == 0 || decoded.Height == 0 || decoded.Width > uint32(d.width) || decoded.Height > uint32(d.height) || decoded.Stride < decoded.Width*4 {
 		return viewerFrame{}, false, fmt.Errorf("decoder returned invalid frame metadata")
 	}
 	return viewerFrame{pixels: pixels, width: int(decoded.Width), height: int(decoded.Height), stride: int(decoded.Stride)}, true, nil
+}
+
+func (d *nativeH264Decoder) lastErrorStage() string {
+	var stage [64]byte
+	result, _, _ := d.lastStage.Call(d.handle, uintptr(unsafe.Pointer(&stage[0])), uintptr(len(stage)))
+	if nativeRendererHRESULT(result) != nil {
+		return "unknown"
+	}
+	for i, b := range stage {
+		if b == 0 {
+			return string(stage[:i])
+		}
+	}
+	return string(stage[:])
 }
 
 func (d *nativeH264Decoder) description() (string, bool) {

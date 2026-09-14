@@ -97,7 +97,7 @@ func (v *viewer) handleH264AccessUnit(data []byte) {
 	started := time.Now()
 	frame, decoded, err := decoder.decodeAU(annexB, metadata.Sequence)
 	if err != nil {
-		v.logger.event("VIEWER_H264_DECODE_FAILED")
+		v.logger.event("VIEWER_H264_DECODE_FAILED " + err.Error())
 		v.requestH264Keyframe("decode_failure")
 		return
 	}
