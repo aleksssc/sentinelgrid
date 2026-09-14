@@ -42,6 +42,8 @@ const (
 	wmFrameReady       = 0x8001
 	wmStateChanged     = 0x8002
 	wsOverlappedWindow = 0x00cf0000
+	csHRedraw          = 0x0002
+	csVRedraw          = 0x0001
 	swShow             = 5
 	biRGB              = 0
 	blackBrush         = 4
@@ -97,6 +99,7 @@ func (l *viewerLogger) close() {
 var activeViewer *viewer
 var viewerUser32 = syscall.NewLazyDLL("user32.dll")
 var viewerGDI32 = syscall.NewLazyDLL("gdi32.dll")
+var viewerKernel32 = syscall.NewLazyDLL("kernel32.dll")
 var registerClassEx = viewerUser32.NewProc("RegisterClassExW")
 var createWindowEx = viewerUser32.NewProc("CreateWindowExW")
 var defWindowProc = viewerUser32.NewProc("DefWindowProcW")
@@ -112,6 +115,7 @@ var getClientRect = viewerUser32.NewProc("GetClientRect")
 var setFocus = viewerUser32.NewProc("SetFocus")
 var fillRect = viewerUser32.NewProc("FillRect")
 var drawText = viewerUser32.NewProc("DrawTextW")
+var getModuleHandle = viewerKernel32.NewProc("GetModuleHandleW")
 var getStockObject = viewerGDI32.NewProc("GetStockObject")
 var setTextColor = viewerGDI32.NewProc("SetTextColor")
 var setBkMode = viewerGDI32.NewProc("SetBkMode")
@@ -133,13 +137,16 @@ type paintStruct struct {
 	Restore, IncUpdate int32
 	RGB                [32]byte
 }
+
+// wndClassEx matches WNDCLASSEXW exactly on Windows amd64.
 type wndClassEx struct {
 	Size                               uint32
-	Style                              uintptr
+	Style                              uint32
 	WndProc                            uintptr
 	ClsExtra, WndExtra                 int32
 	Instance, Icon, Cursor, Background uintptr
 	MenuName, ClassName                *uint16
+	IconSmall                          uintptr
 }
 type bitmapInfoHeader struct {
 	Size                         uint32
@@ -320,31 +327,54 @@ func (v *viewer) send(input rdp.Input) {
 		v.logger.event("VIEWER_INPUT_SEND_FAILED")
 	}
 }
+func win32Error(err error) string {
+	if errno, ok := err.(syscall.Errno); ok && errno != 0 {
+		return fmt.Sprintf("win32_%d", errno)
+	}
+	return "unknown"
+}
 func (v *viewer) window() error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	class, _ := syscall.UTF16PtrFromString("SentinelGridRemoteViewer")
 	title, _ := syscall.UTF16PtrFromString("SentinelGrid Remote")
+	instance, _, instanceErr := getModuleHandle.Call(0)
+	if instance == 0 {
+		v.logger.event(fmt.Sprintf("VIEWER_WINDOW_FAILED stage=register_class error=%s", win32Error(instanceErr)))
+		return fmt.Errorf("could not get viewer module handle: %s", win32Error(instanceErr))
+	}
 	callback := syscall.NewCallback(viewerProc)
-	wc := wndClassEx{Size: uint32(unsafe.Sizeof(wndClassEx{})), WndProc: callback, ClassName: class, Background: getStockObjectValue(blackBrush)}
+	wc := wndClassEx{
+		Size:       uint32(unsafe.Sizeof(wndClassEx{})),
+		Style:      csHRedraw | csVRedraw,
+		WndProc:    callback,
+		Instance:   instance,
+		ClassName:  class,
+		Background: getStockObjectValue(blackBrush),
+	}
 	if atom, _, err := registerClassEx.Call(uintptr(unsafe.Pointer(&wc))); atom == 0 {
-		return fmt.Errorf("could not register viewer window: %v", err)
+		v.logger.event(fmt.Sprintf("VIEWER_WINDOW_FAILED stage=register_class error=%s", win32Error(err)))
+		return fmt.Errorf("could not register viewer window: %s", win32Error(err))
 	}
-	hwnd, _, err := createWindowEx.Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), wsOverlappedWindow, 100, 100, 1280, 800, 0, 0, 0, 0)
+	v.logger.event("VIEWER_REGISTER_CLASS_OK")
+	hwnd, _, err := createWindowEx.Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), wsOverlappedWindow, 100, 100, 1280, 800, 0, 0, instance, 0)
 	if hwnd == 0 {
-		return fmt.Errorf("could not create viewer window: %v", err)
+		v.logger.event(fmt.Sprintf("VIEWER_WINDOW_FAILED stage=create_window error=%s", win32Error(err)))
+		return fmt.Errorf("could not create viewer window: %s", win32Error(err))
 	}
+	v.logger.event("VIEWER_WINDOW_CREATED")
 	v.mu.Lock()
 	v.hwnd = hwnd
 	v.mu.Unlock()
 	viewerUser32.NewProc("ShowWindow").Call(hwnd, swShow)
 	viewerUser32.NewProc("UpdateWindow").Call(hwnd)
+	v.logger.event("VIEWER_WINDOW_SHOWN")
 	var message msg
 	for {
 		result, _, err := getMessage.Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0)
 		if int32(result) <= 0 {
 			if result == ^uintptr(0) {
-				return fmt.Errorf("viewer message error: %v", err)
+				return fmt.Errorf("viewer message error: %s", win32Error(err))
 			}
 			return nil
 		}
