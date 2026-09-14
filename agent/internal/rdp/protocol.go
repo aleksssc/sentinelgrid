@@ -45,6 +45,10 @@ func infoPacket(info ScreenInfo) ([]byte, error) {
 	return packet(PacketInfo, data)
 }
 
+func validMouseCoordinates(input Input) bool {
+	return input.X >= 0 && input.Y >= 0 && input.X <= 16384 && input.Y <= 16384
+}
+
 func parseInput(data []byte) (Input, error) {
 	var input Input
 	if len(data) < 2 || len(data) > 1024 || data[0] != PacketInput || json.Unmarshal(data[1:], &input) != nil {
@@ -52,11 +56,11 @@ func parseInput(data []byte) (Input, error) {
 	}
 	switch input.Type {
 	case "mouse_move":
-		if input.X < 0 || input.Y < 0 || input.X > 16384 || input.Y > 16384 {
+		if !validMouseCoordinates(input) {
 			return Input{}, fmt.Errorf("invalid mouse coordinates")
 		}
 	case "mouse_down", "mouse_up":
-		if input.Button != "left" && input.Button != "right" && input.Button != "middle" {
+		if !validMouseCoordinates(input) || (input.Button != "left" && input.Button != "right" && input.Button != "middle") {
 			return Input{}, fmt.Errorf("invalid mouse button")
 		}
 	case "mouse_wheel":

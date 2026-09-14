@@ -4,42 +4,27 @@ package main
 
 import (
 	"context"
-	"log"
-	"os"
+	"fmt"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"sentinelgrid/agent/internal/rdp"
 )
 
-func init() {
-	if len(os.Args) != 3 || os.Args[1] != "-uri" {
-		return
-	}
-	token, err := rdp.ParseLaunchURI(os.Args[2])
-	if err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		defer cancel()
-		var connection rdp.Connection
-		connection, err = rdp.RedeemLaunch(ctx, rdp.DefaultRemoteServer, token)
-		if err == nil {
-			ws, dialErr := rdp.Dial(ctx, connection)
-			if dialErr != nil {
-				err = dialErr
-			} else {
-				defer ws.Close()
-				err = runViewer(ws)
-			}
-		}
-	}
+// runURI opens the responsive viewer before redeeming the one-use URI token, so
+// users see connection progress rather than an unpainted native window.
+func runURI(rawURI string) error {
+	token, err := rdp.ParseLaunchURI(rawURI)
 	if err != nil {
-		log.Print("SentinelGrid Remote could not start: ", err)
+		return fmt.Errorf("invalid SentinelGrid Remote link")
 	}
-	os.Exit(boolExitCode(err != nil))
-}
-
-func boolExitCode(failed bool) int {
-	if failed {
-		return 1
-	}
-	return 0
+	return runViewerConnecting(func(ctx context.Context) (*websocket.Conn, error) {
+		redeemCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		connection, err := rdp.RedeemLaunch(redeemCtx, rdp.DefaultRemoteServer, token)
+		if err != nil {
+			return nil, err
+		}
+		return rdp.Dial(redeemCtx, connection)
+	})
 }

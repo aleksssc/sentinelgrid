@@ -392,13 +392,18 @@ func capturePrimaryJPEG() ([]byte, error) {
 		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = pixels[i+2], pixels[i+1], pixels[i], 0xff
 	}
 	var out bytes.Buffer
-	if err := jpeg.Encode(&out, img, &jpeg.Options{Quality: 65}); err != nil {
-		return nil, fmt.Errorf("CAPTURE_JPEG_FAILED width=%d height=%d: %w", width, height, err)
+	// Prefer readable desktop text, but retry at lower quality rather than ever
+	// placing an oversized JPEG on the relay connection.
+	for _, quality := range []int{75, 65, 55} {
+		out.Reset()
+		if err := jpeg.Encode(&out, img, &jpeg.Options{Quality: quality}); err != nil {
+			return nil, fmt.Errorf("CAPTURE_JPEG_FAILED width=%d height=%d: %w", width, height, err)
+		}
+		if out.Len() <= maxRemotePacket-1 {
+			return out.Bytes(), nil
+		}
 	}
-	if out.Len() > maxRemotePacket-1 {
-		return nil, fmt.Errorf("CAPTURE_JPEG_FAILED width=%d height=%d reason=frame_exceeds_limit", width, height)
-	}
-	return out.Bytes(), nil
+	return nil, fmt.Errorf("CAPTURE_JPEG_FAILED width=%d height=%d reason=frame_exceeds_limit", width, height)
 }
 
 type mouseInput struct {
@@ -432,11 +437,16 @@ func injectInput(input Input) error {
 		record.Data.Mouse.MouseData = uint32(int32(input.Delta))
 		record.Data.Mouse.Flags = 0x0800
 	case "mouse_down", "mouse_up":
+		w, h := screenSize()
+		record.Data.Mouse.DX = int32(input.X * 65535 / max(1, w-1))
+		record.Data.Mouse.DY = int32(input.Y * 65535 / max(1, h-1))
 		flags := map[string]uint32{"left": 0x0002, "right": 0x0008, "middle": 0x0020}
 		if input.Type == "mouse_up" {
 			flags = map[string]uint32{"left": 0x0004, "right": 0x0010, "middle": 0x0040}
 		}
-		record.Data.Mouse.Flags = flags[input.Button]
+		// Button events carry their own absolute point so a dropped move cannot
+		// make a click land at an earlier cursor position.
+		record.Data.Mouse.Flags = 0x8001 | flags[input.Button]
 	case "key_down", "key_up":
 		record.Type = 1
 		*(*keyInput)(unsafe.Pointer(&record.Data)) = keyInput{VK: input.VK}

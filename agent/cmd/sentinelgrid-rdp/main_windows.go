@@ -12,7 +12,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -41,21 +40,24 @@ const (
 	wmKeyDown          = 0x0100
 	wmKeyUp            = 0x0101
 	wmFrameReady       = 0x8001
+	wmStateChanged     = 0x8002
 	wsOverlappedWindow = 0x00cf0000
 	swShow             = 5
 	biRGB              = 0
+	blackBrush         = 4
+	transparent        = 1
 )
 
 type viewer struct {
-	ws            *websocket.Conn
-	mu            sync.RWMutex
-	writeMu       sync.Mutex
-	image         *image.RGBA
-	width, height int
-	hwnd          uintptr
-	logger        *viewerLogger
+	mu                            sync.RWMutex
+	writeMu                       sync.Mutex
+	ws                            *websocket.Conn
+	frame                         viewerFrame
+	hwnd                          uintptr
+	status                        string
+	logger                        *viewerLogger
+	framesReceived, framesPainted uint64
 }
-
 type viewerLogger struct {
 	mu   sync.Mutex
 	file *os.File
@@ -67,7 +69,7 @@ func openViewerLogger() *viewerLogger {
 		return nil
 	}
 	directory := filepath.Join(programData, "SentinelGrid", "logs")
-	if err := os.MkdirAll(directory, 0755); err != nil {
+	if os.MkdirAll(directory, 0755) != nil {
 		return nil
 	}
 	file, err := os.OpenFile(filepath.Join(directory, "viewer.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -76,7 +78,6 @@ func openViewerLogger() *viewerLogger {
 	}
 	return &viewerLogger{file: file}
 }
-
 func (l *viewerLogger) event(event string) {
 	if l == nil {
 		return
@@ -85,14 +86,12 @@ func (l *viewerLogger) event(event string) {
 	defer l.mu.Unlock()
 	_, _ = fmt.Fprintf(l.file, "%s %s\n", time.Now().UTC().Format(time.RFC3339), event)
 }
-
 func (l *viewerLogger) close() {
-	if l == nil {
-		return
+	if l != nil {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		_ = l.file.Close()
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	_ = l.file.Close()
 }
 
 var activeViewer *viewer
@@ -111,6 +110,11 @@ var endPaint = viewerUser32.NewProc("EndPaint")
 var invalidateRect = viewerUser32.NewProc("InvalidateRect")
 var getClientRect = viewerUser32.NewProc("GetClientRect")
 var setFocus = viewerUser32.NewProc("SetFocus")
+var fillRect = viewerUser32.NewProc("FillRect")
+var drawText = viewerUser32.NewProc("DrawTextW")
+var getStockObject = viewerGDI32.NewProc("GetStockObject")
+var setTextColor = viewerGDI32.NewProc("SetTextColor")
+var setBkMode = viewerGDI32.NewProc("SetBkMode")
 var stretchDIBits = viewerGDI32.NewProc("StretchDIBits")
 
 type point struct{ X, Y int32 }
@@ -131,12 +135,11 @@ type paintStruct struct {
 }
 type wndClassEx struct {
 	Size                               uint32
-	Style                              uint32
+	Style                              uintptr
 	WndProc                            uintptr
 	ClsExtra, WndExtra                 int32
 	Instance, Icon, Cursor, Background uintptr
 	MenuName, ClassName                *uint16
-	IconSmall                          uintptr
 }
 type bitmapInfoHeader struct {
 	Size                         uint32
@@ -171,33 +174,72 @@ func run(path string) error {
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("could not remove consumed one-time connection file")
 	}
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-	ws, err := rdp.Dial(ctx, connection)
-	if err != nil {
-		return err
-	}
-	defer ws.Close()
-	return runViewer(ws)
+	return runViewerConnecting(func(ctx context.Context) (*websocket.Conn, error) { return rdp.Dial(ctx, connection) })
 }
 
 func runViewer(ws *websocket.Conn) error {
+	return runViewerConnecting(func(context.Context) (*websocket.Conn, error) { return ws, nil })
+}
+func runViewerConnecting(connect func(context.Context) (*websocket.Conn, error)) error {
 	logger := openViewerLogger()
 	defer logger.close()
 	logger.event("VIEWER_START")
-	v := &viewer{ws: ws, logger: logger}
+	v := &viewer{logger: logger, status: "Connecting to remote device..."}
 	activeViewer = v
-	go v.receive()
-	return v.window()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		v.setStatus("Establishing secure session...")
+		ws, err := connect(ctx)
+		if err != nil {
+			v.fail("Unable to start remote session")
+			return
+		}
+		v.mu.Lock()
+		v.ws = ws
+		v.mu.Unlock()
+		v.logger.event("VIEWER_RELAY_CONNECTED")
+		v.setStatus("Starting video...")
+		v.receive()
+	}()
+	windowErr := v.window()
+	v.mu.RLock()
+	ws := v.ws
+	v.mu.RUnlock()
+	if ws != nil {
+		_ = ws.Close()
+	}
+	return windowErr
 }
-
+func (v *viewer) setStatus(status string) {
+	v.mu.Lock()
+	v.status = status
+	hwnd := v.hwnd
+	v.mu.Unlock()
+	if hwnd != 0 {
+		postMessage.Call(hwnd, wmStateChanged, 0, 0)
+	}
+}
+func (v *viewer) fail(status string) { v.logger.event("VIEWER_SESSION_FAILED"); v.setStatus(status) }
 func (v *viewer) receive() {
 	for {
-		kind, data, err := v.ws.ReadMessage()
+		v.mu.RLock()
+		ws := v.ws
+		v.mu.RUnlock()
+		if ws == nil {
+			return
+		}
+		kind, data, err := ws.ReadMessage()
 		if err != nil {
 			v.logger.event("VIEWER_RELAY_CLOSED")
-			if hwnd := v.windowHandle(); hwnd != 0 {
-				postMessage.Call(hwnd, wmClose, 0, 0)
+			v.mu.RLock()
+			hasFrame, hwnd := len(v.frame.pixels) != 0, v.hwnd
+			v.mu.RUnlock()
+			if !hasFrame {
+				v.fail("Remote session ended")
+			}
+			if hwnd != 0 {
+				postMessage.Call(hwnd, wmStateChanged, 0, 0)
 			}
 			return
 		}
@@ -208,36 +250,35 @@ func (v *viewer) receive() {
 		case rdp.PacketInfo:
 			var info rdp.ScreenInfo
 			if json.Unmarshal(data[1:], &info) == nil && info.Width > 0 && info.Height > 0 {
-				v.mu.Lock()
-				v.width, v.height = info.Width, info.Height
-				v.mu.Unlock()
 				v.logger.event(fmt.Sprintf("VIEWER_SCREEN_INFO width=%d height=%d", info.Width, info.Height))
 			}
 		case rdp.PacketFrame:
-			v.logger.event(fmt.Sprintf("VIEWER_FRAME_RECEIVED bytes=%d", len(data)-1))
 			decoded, err := jpeg.Decode(bytesReader(data[1:]))
 			if err != nil {
 				v.logger.event("VIEWER_JPEG_DECODE_FAILED")
 				continue
 			}
 			rgba := toRGBA(decoded)
+			frame := rgbaToBGRA(rgba)
 			v.mu.Lock()
-			v.image = rgba
-			v.width, v.height = rgba.Bounds().Dx(), rgba.Bounds().Dy()
+			first := len(v.frame.pixels) == 0
+			v.frame = frame
+			v.framesReceived++
+			received := v.framesReceived
 			hwnd := v.hwnd
+			v.status = ""
 			v.mu.Unlock()
-			v.logger.event(fmt.Sprintf("VIEWER_JPEG_DECODE_OK width=%d height=%d", rgba.Bounds().Dx(), rgba.Bounds().Dy()))
+			if first {
+				v.logger.event("VIEWER_FIRST_FRAME")
+			}
+			if received%120 == 0 {
+				v.logger.event(fmt.Sprintf("VIEWER_FRAME_STATS received=%d", received))
+			}
 			if hwnd != 0 {
 				postMessage.Call(hwnd, wmFrameReady, 0, 0)
 			}
 		}
 	}
-}
-
-func (v *viewer) windowHandle() uintptr {
-	v.mu.RLock()
-	defer v.mu.RUnlock()
-	return v.hwnd
 }
 
 type byteReader []byte
@@ -267,36 +308,37 @@ func (v *viewer) send(input rdp.Input) {
 		return
 	}
 	packet := append([]byte{rdp.PacketInput}, data...)
+	v.mu.RLock()
+	ws := v.ws
+	v.mu.RUnlock()
+	if ws == nil {
+		return
+	}
 	v.writeMu.Lock()
 	defer v.writeMu.Unlock()
-	if err := v.ws.WriteMessage(websocket.BinaryMessage, packet); err != nil {
+	if err := ws.WriteMessage(websocket.BinaryMessage, packet); err != nil {
 		v.logger.event("VIEWER_INPUT_SEND_FAILED")
 	}
 }
 func (v *viewer) window() error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	instance := uintptr(0)
 	class, _ := syscall.UTF16PtrFromString("SentinelGridRemoteViewer")
 	title, _ := syscall.UTF16PtrFromString("SentinelGrid Remote")
 	callback := syscall.NewCallback(viewerProc)
-	wc := wndClassEx{Size: uint32(unsafe.Sizeof(wndClassEx{})), WndProc: callback, Instance: instance, ClassName: class}
+	wc := wndClassEx{Size: uint32(unsafe.Sizeof(wndClassEx{})), WndProc: callback, ClassName: class, Background: getStockObjectValue(blackBrush)}
 	if atom, _, err := registerClassEx.Call(uintptr(unsafe.Pointer(&wc))); atom == 0 {
 		return fmt.Errorf("could not register viewer window: %v", err)
 	}
-	hwnd, _, err := createWindowEx.Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), wsOverlappedWindow, 100, 100, 1280, 800, 0, 0, instance, 0)
+	hwnd, _, err := createWindowEx.Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), wsOverlappedWindow, 100, 100, 1280, 800, 0, 0, 0, 0)
 	if hwnd == 0 {
 		return fmt.Errorf("could not create viewer window: %v", err)
 	}
 	v.mu.Lock()
 	v.hwnd = hwnd
-	hasImage := v.image != nil
 	v.mu.Unlock()
 	viewerUser32.NewProc("ShowWindow").Call(hwnd, swShow)
 	viewerUser32.NewProc("UpdateWindow").Call(hwnd)
-	if hasImage {
-		postMessage.Call(hwnd, wmFrameReady, 0, 0)
-	}
 	var message msg
 	for {
 		result, _, err := getMessage.Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0)
@@ -310,6 +352,10 @@ func (v *viewer) window() error {
 		dispatchMessage.Call(uintptr(unsafe.Pointer(&message)))
 	}
 }
+func getStockObjectValue(which int) uintptr {
+	value, _, _ := getStockObject.Call(uintptr(which))
+	return value
+}
 func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 	v := activeViewer
 	if v == nil {
@@ -318,32 +364,31 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 	}
 	switch message {
 	case wmDestroy:
+		v.logger.event("VIEWER_CLOSE")
 		postQuitMessage.Call(0)
 		return 0
 	case wmSetFocus:
 		setFocus.Call(hwnd)
-	case wmFrameReady:
-		v.logger.event("VIEWER_INVALIDATE")
+	case wmFrameReady, wmStateChanged:
 		invalidateRect.Call(hwnd, 0, 0, 0)
 		return 0
 	case wmPaint:
 		v.paint(hwnd)
 		return 0
 	case wmMouseMove:
-		x, y := v.mapMouse(hwnd, int(int16(lparam)), int(int16(lparam>>16)))
-		v.send(rdp.Input{Type: "mouse_move", X: x, Y: y})
+		v.sendMouse(hwnd, "mouse_move", "", 0, lparam)
 	case wmLButtonDown:
-		v.send(rdp.Input{Type: "mouse_down", Button: "left"})
+		v.sendMouse(hwnd, "mouse_down", "left", 0, lparam)
 	case wmLButtonUp:
-		v.send(rdp.Input{Type: "mouse_up", Button: "left"})
+		v.sendMouse(hwnd, "mouse_up", "left", 0, lparam)
 	case wmRButtonDown:
-		v.send(rdp.Input{Type: "mouse_down", Button: "right"})
+		v.sendMouse(hwnd, "mouse_down", "right", 0, lparam)
 	case wmRButtonUp:
-		v.send(rdp.Input{Type: "mouse_up", Button: "right"})
+		v.sendMouse(hwnd, "mouse_up", "right", 0, lparam)
 	case wmMButtonDown:
-		v.send(rdp.Input{Type: "mouse_down", Button: "middle"})
+		v.sendMouse(hwnd, "mouse_down", "middle", 0, lparam)
 	case wmMButtonUp:
-		v.send(rdp.Input{Type: "mouse_up", Button: "middle"})
+		v.sendMouse(hwnd, "mouse_up", "middle", 0, lparam)
 	case wmMouseWheel:
 		v.send(rdp.Input{Type: "mouse_wheel", Delta: int(int16(wparam >> 16))})
 	case wmKeyDown:
@@ -354,55 +399,71 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 	value, _, _ := defWindowProc.Call(hwnd, uintptr(message), wparam, lparam)
 	return value
 }
-func (v *viewer) mapMouse(hwnd uintptr, x, y int) (int, int) {
+func (v *viewer) sendMouse(hwnd uintptr, kind, button string, delta int, lparam uintptr) {
+	x, y, ok := v.mapMouse(hwnd, int(int16(lparam)), int(int16(lparam>>16)))
+	if !ok {
+		return
+	}
+	v.send(rdp.Input{Type: kind, X: x, Y: y, Button: button, Delta: delta})
+}
+func (v *viewer) mapMouse(hwnd uintptr, x, y int) (int, int, bool) {
 	v.mu.RLock()
-	iw, ih := v.width, v.height
+	frame := v.frame
 	v.mu.RUnlock()
 	var client rect
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
-	cw, ch := int(client.Right), int(client.Bottom)
-	if iw < 1 || ih < 1 || cw < 1 || ch < 1 {
-		return 0, 0
-	}
-	dw, dh := cw, cw*ih/iw
-	if dh > ch {
-		dh = ch
-		dw = ch * iw / ih
-	}
-	offX, offY := (cw-dw)/2, (ch-dh)/2
-	x = min(max(x-offX, 0), dw-1)
-	y = min(max(y-offY, 0), dh-1)
-	return x * iw / max(1, dw-1), y * ih / max(1, dh-1)
+	return mapClientPoint(int(client.Right), int(client.Bottom), frame.width, frame.height, x, y)
 }
-
 func (v *viewer) paint(hwnd uintptr) {
 	var paint paintStruct
 	hdc, _, _ := beginPaint.Call(hwnd, uintptr(unsafe.Pointer(&paint)))
 	defer endPaint.Call(hwnd, uintptr(unsafe.Pointer(&paint)))
-	v.mu.RLock()
-	defer v.mu.RUnlock()
-	if v.image == nil {
-		return
-	}
 	var client rect
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
-	cw, ch := int(client.Right), int(client.Bottom)
-	iw, ih := v.image.Bounds().Dx(), v.image.Bounds().Dy()
-	if cw < 1 || ch < 1 || iw < 1 || ih < 1 || len(v.image.Pix) == 0 {
+	fillRect.Call(hdc, uintptr(unsafe.Pointer(&client)), getStockObjectValue(blackBrush))
+	v.mu.RLock()
+	frame, status := v.frame, v.status
+	v.mu.RUnlock()
+	if len(frame.pixels) == 0 {
+		v.paintStatus(hdc, client, status)
 		return
 	}
-	dw, dh := cw, cw*ih/iw
-	if dh > ch {
-		dh = ch
-		dw = ch * iw / ih
+	display, ok := fittedImageRect(int(client.Right), int(client.Bottom), frame.width, frame.height)
+	if !ok {
+		return
 	}
-	x, y := (cw-dw)/2, (ch-dh)/2
-	info := bitmapInfo{Header: bitmapInfoHeader{Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(iw), Height: -int32(ih), Planes: 1, BitCount: 32, Compression: biRGB}}
-	if copied, _, _ := stretchDIBits.Call(hdc, uintptr(x), uintptr(y), uintptr(dw), uintptr(dh), 0, 0, uintptr(iw), uintptr(ih), uintptr(unsafe.Pointer(&v.image.Pix[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020); copied != ^uintptr(0) {
-		v.logger.event("VIEWER_PAINT_OK")
+	info := bitmapInfo{Header: bitmapInfoHeader{Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(frame.width), Height: -int32(frame.height), Planes: 1, BitCount: 32, Compression: biRGB}}
+	if copied, _, _ := stretchDIBits.Call(hdc, uintptr(display.x), uintptr(display.y), uintptr(display.width), uintptr(display.height), 0, 0, uintptr(frame.width), uintptr(frame.height), uintptr(unsafe.Pointer(&frame.pixels[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020); copied != ^uintptr(0) {
+		v.mu.Lock()
+		v.framesPainted++
+		painted := v.framesPainted
+		v.mu.Unlock()
+		if painted%120 == 0 {
+			v.logger.event(fmt.Sprintf("VIEWER_PAINT_STATS painted=%d", painted))
+		}
 	}
 }
+func (v *viewer) paintStatus(hdc uintptr, client rect, status string) {
+	if status == "" {
+		status = "Connecting to remote device..."
+	}
+	title, _ := syscall.UTF16PtrFromString("SentinelGrid Remote")
+	message, _ := syscall.UTF16PtrFromString(status)
+	setBkMode.Call(hdc, transparent)
+	setTextColor.Call(hdc, 0x00FFFFFF)
+	titleRect := rect{Left: 40, Top: 40, Right: client.Right - 40, Bottom: 90}
+	messageRect := rect{Left: 40, Top: 95, Right: client.Right - 40, Bottom: 145}
+	drawText.Call(hdc, uintptr(unsafe.Pointer(title)), ^uintptr(0), uintptr(unsafe.Pointer(&titleRect)), 0)
+	setTextColor.Call(hdc, 0x00C0C0C0)
+	drawText.Call(hdc, uintptr(unsafe.Pointer(message)), ^uintptr(0), uintptr(unsafe.Pointer(&messageRect)), 0)
+}
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "-uri" {
+		if err := runURI(os.Args[2]); err != nil {
+			log.Print("SentinelGrid Remote could not start: ", err)
+		}
+		return
+	}
 	version := flag.Bool("version", false, "Show RDP product version")
 	channel := flag.Bool("release-channel", false, "Show embedded release channel")
 	path := flag.String("connection", "", "One-time .sgrdp connection file")
