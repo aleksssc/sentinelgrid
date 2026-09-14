@@ -17,7 +17,7 @@ export default function InterfaceFixture({ terminalInput }: { terminalInput: str
   return <AppearanceProvider>
     <div className="sg-dashboard relative flex h-dvh overflow-hidden">
       <DashboardBackground />
-      <DashboardSidebar />
+      <DashboardSidebar organizationId="organization-fixture" />
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         <header className="sg-topbar flex h-[72px] shrink-0 items-center border-b border-surface-edge px-6">Workspace</header>
         <main id="dashboard-content" className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden">

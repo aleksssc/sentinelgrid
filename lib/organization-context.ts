@@ -1,139 +1,58 @@
 import "server-only";
 
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 
-export async function getOrganizationContext() {
+export const getOrganizationContext = cache(async () => {
   const supabase = await createClient();
-
-  // =========================
-  // USER
-  // =========================
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
-    return {
-      user: null,
-      organization: null,
-      ownedOrganization: null,
-    };
+    return { user: null, organization: null, ownedOrganization: null };
   }
 
-  // =========================
-  // OWNED ORGANIZATION
-  // =========================
-
-  const {
-    data: ownedOrganization,
-    error: ownedOrganizationError,
-  } = await supabase
+  const { data: ownedOrganization, error: ownedOrganizationError } = await supabase
     .from("organizations")
-    .select(`
-      id,
-      name,
-      owner_id,
-      setup_completed
-    `)
+    .select("id, name, owner_id, setup_completed")
     .eq("owner_id", user.id)
     .limit(1)
     .maybeSingle();
 
   if (ownedOrganizationError) {
-    console.error(
-      "Owned organization context error:",
-      ownedOrganizationError
-    );
+    console.error("Owned organization context error:", ownedOrganizationError);
   }
 
-  // =========================
-  // OWNER + SETUP COMPLETE
-  // =========================
-
-  if (
-    ownedOrganization &&
-    ownedOrganization.setup_completed
-  ) {
-    return {
-      user,
-      organization: ownedOrganization,
-      ownedOrganization,
-    };
+  if (ownedOrganization?.setup_completed) {
+    return { user, organization: ownedOrganization, ownedOrganization };
   }
 
-  // =========================
-  // MEMBERSHIP
-  // =========================
-
-  const {
-    data: membership,
-    error: membershipError,
-  } = await supabase
+  const { data: membership, error: membershipError } = await supabase
     .from("organization_members")
-    .select(`
-      organization_id
-    `)
+    .select("organization_id")
     .eq("user_id", user.id)
     .limit(1)
     .maybeSingle();
 
   if (membershipError) {
-    console.error(
-      "Organization membership context error:",
-      membershipError
-    );
+    console.error("Organization membership context error:", membershipError);
   }
 
-  // =========================
-  // MEMBER ORGANIZATION
-  // =========================
-
   if (membership?.organization_id) {
-    const {
-      data: memberOrganization,
-      error: memberOrganizationError,
-    } = await supabase
+    const { data: memberOrganization, error: memberOrganizationError } = await supabase
       .from("organizations")
-      .select(`
-        id,
-        name,
-        owner_id,
-        setup_completed
-      `)
-      .eq(
-        "id",
-        membership.organization_id
-      )
-      .eq(
-        "setup_completed",
-        true
-      )
+      .select("id, name, owner_id, setup_completed")
+      .eq("id", membership.organization_id)
+      .eq("setup_completed", true)
       .maybeSingle();
 
     if (memberOrganizationError) {
-      console.error(
-        "Member organization context error:",
-        memberOrganizationError
-      );
+      console.error("Member organization context error:", memberOrganizationError);
     }
 
     if (memberOrganization) {
-      return {
-        user,
-        organization: memberOrganization,
-        ownedOrganization,
-      };
+      return { user, organization: memberOrganization, ownedOrganization };
     }
   }
 
-  // =========================
-  // NO CONFIGURED ORGANIZATION
-  // =========================
-
-  return {
-    user,
-    organization: null,
-    ownedOrganization,
-  };
-}
+  return { user, organization: null, ownedOrganization };
+});
