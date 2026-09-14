@@ -13,7 +13,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-	"sentinelgrid/agent/internal/config"
 )
 
 const remoteLogDirectoryName = "logs"
@@ -22,9 +21,7 @@ const remoteLogFileName = "remote.log"
 // The child needs only directory traversal and append-only file writes. FILE_APPEND_DATA
 // permits WriteFile at EOF without FILE_WRITE_DATA, attributes, or read access.
 const remoteLogTraverseAccess = 0x00100020 // SYNCHRONIZE | FILE_TRAVERSE
-
-var remoteLogRootSDDL = config.SentinelGridDirectorySDDL
-var remoteLogDirectorySDDL = "O:BAG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x00100020;;;AU)"
+const fileFlagBackupSemantics = 0x02000000
 
 var advapi32 = windows.NewLazySystemDLL("advapi32.dll")
 var impersonateLoggedOnUser = advapi32.NewProc("ImpersonateLoggedOnUser")
@@ -41,6 +38,13 @@ func remoteLogPath() (string, error) {
 		return "", fmt.Errorf("locate ProgramData: %w", err)
 	}
 	return filepath.Join(programData, "SentinelGrid", remoteLogDirectoryName, remoteLogFileName), nil
+}
+
+func remoteLogDirectorySDDLForUser(userSID string) (string, error) {
+	if userSID == "" {
+		return "", fmt.Errorf("interactive user SID is unavailable")
+	}
+	return "O:BAG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x00100020;;;" + userSID + ")", nil
 }
 
 func remoteLogFileSDDLForUser(userSID string) (string, error) {
@@ -63,6 +67,10 @@ func provisionRemoteLog(token windows.Token) error {
 	if err != nil {
 		return err
 	}
+	directorySDDL, err := remoteLogDirectorySDDLForUser(userSID)
+	if err != nil {
+		return err
+	}
 	fileSDDL, err := remoteLogFileSDDLForUser(userSID)
 	if err != nil {
 		return err
@@ -72,7 +80,7 @@ func provisionRemoteLog(token windows.Token) error {
 		return err
 	}
 	root := filepath.Dir(filepath.Dir(path))
-	if err := protectExistingDirectory(root, remoteLogRootSDDL); err != nil {
+	if err := protectExistingDirectory(root, directorySDDL); err != nil {
 		return fmt.Errorf("prepare remote log parent: %w", err)
 	}
 	dir := filepath.Dir(path)
@@ -83,7 +91,7 @@ func provisionRemoteLog(token windows.Token) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect remote log directory: %w", err)
 	}
-	if err := createProtectedDirectory(dir, remoteLogDirectorySDDL); err != nil {
+	if err := createProtectedDirectory(dir, directorySDDL); err != nil {
 		return fmt.Errorf("prepare remote log directory: %w", err)
 	}
 	return createProtectedRemoteLog(path, fileSDDL)
@@ -166,20 +174,50 @@ func openRemoteLogger() (*remoteLogger, error) {
 	return &remoteLogger{handle: handle}, nil
 }
 
-// verifyRemoteLoggerAccess makes exactly the same CreateFile request as the child.
-// Windows impersonation is thread-local, so keeping this goroutine locked is required.
+func openRemoteLogDirectory(path string) (windows.Handle, error) {
+	ptr, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return 0, err
+	}
+	return windows.CreateFile(ptr, remoteLogTraverseAccess, remoteLogShareMode, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL|fileFlagBackupSemantics, 0)
+}
+
+func verifyRemoteLogTraversal(path, stage string) error {
+	handle, err := openRemoteLogDirectory(path)
+	if err != nil {
+		return fmt.Errorf("remote log traversal %s: %w", stage, err)
+	}
+	return windows.CloseHandle(handle)
+}
+
+// verifyRemoteLoggerAccess verifies every hierarchy component and then makes
+// exactly the same CreateFile request as the child. Windows impersonation is
+// thread-local, so keeping this goroutine locked is required.
 func verifyRemoteLoggerAccess(token windows.Token) error {
+	path, err := remoteLogPath()
+	if err != nil {
+		return err
+	}
+	programData := filepath.Dir(filepath.Dir(filepath.Dir(path)))
+	root := filepath.Dir(filepath.Dir(path))
+	logs := filepath.Dir(path)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if result, _, err := impersonateLoggedOnUser.Call(uintptr(token)); result == 0 {
 		return fmt.Errorf("impersonate interactive user: %w", err)
 	}
 	defer func() { _, _, _ = revertToSelf.Call() }()
-	logger, err := openRemoteLogger()
-	if logger != nil {
-		logger.close()
+	for _, item := range []struct{ path, stage string }{{programData, "ProgramData"}, {root, "SentinelGrid"}, {logs, "logs"}} {
+		if err := verifyRemoteLogTraversal(item.path, item.stage); err != nil {
+			return err
+		}
 	}
-	return err
+	logger, err := openRemoteLogger()
+	if err != nil {
+		return err
+	}
+	logger.close()
+	return nil
 }
 
 func (l *remoteLogger) close() {

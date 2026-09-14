@@ -91,3 +91,14 @@ func TestMapClientPointUsesRenderedImageAndRejectsLetterbox(t *testing.T) {
 		})
 	}
 }
+
+func TestFittedImageRectUsesCurrentResizeDimensions(t *testing.T) {
+	wide, ok := fittedImageRect(1280, 800, 1920, 1080)
+	if !ok || wide.width != 1280 || wide.height != 720 || wide.y != 40 {
+		t.Fatalf("wide client layout = %#v, %t", wide, ok)
+	}
+	tall, ok := fittedImageRect(800, 1280, 1920, 1080)
+	if !ok || tall.width != 800 || tall.height != 450 || tall.y != 415 {
+		t.Fatalf("tall client layout = %#v, %t", tall, ok)
+	}
+}

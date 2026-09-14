@@ -31,6 +31,9 @@ func TestPaintResultRequiresPositiveScanlineCount(t *testing.T) {
 	if viewer.paintState.paintEvents != 1 || viewer.paintState.uniqueFramesPainted != 1 {
 		t.Fatalf("positive scanline result was not recorded: %#v", viewer.paintState)
 	}
+	if viewer.presentAttempts != 3 || viewer.successfulPresents != 1 || viewer.zeroResultPresents != 1 || viewer.gdiErrorPresents != 1 || viewer.lastSuccessfulGeneration != 1 {
+		t.Fatalf("unexpected presentation counters: %#v", viewer)
+	}
 	if viewer.status != "" {
 		t.Fatalf("status after first visible frame = %q, want empty", viewer.status)
 	}

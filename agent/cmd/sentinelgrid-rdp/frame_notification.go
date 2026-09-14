@@ -1,8 +1,11 @@
 package main
 
-// frameNotificationState coalesces UI wake-ups. The UI consumes exactly one
-// notification before it invalidates the window; painting never schedules one.
-type frameNotificationState struct{ pending bool }
+// frameNotificationState coalesces UI wake-ups while ensuring each decoded
+// generation is attempted at most once by the continuous presentation path.
+type frameNotificationState struct {
+	pending                 bool
+	lastAttemptedGeneration uint64
+}
 
 func (s *frameNotificationState) schedule() bool {
 	if s.pending {
@@ -14,6 +17,16 @@ func (s *frameNotificationState) schedule() bool {
 
 func (s *frameNotificationState) consume() { s.pending = false }
 func (s *frameNotificationState) cancel()  { s.pending = false }
+
+func (s *frameNotificationState) shouldPresent(generation uint64) bool {
+	return generation != 0 && generation > s.lastAttemptedGeneration
+}
+
+func (s *frameNotificationState) markAttempted(generation uint64) {
+	if generation > s.lastAttemptedGeneration {
+		s.lastAttemptedGeneration = generation
+	}
+}
 
 type framePaintState struct {
 	paintEvents           uint64

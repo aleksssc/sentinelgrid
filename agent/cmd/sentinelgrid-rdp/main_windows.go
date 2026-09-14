@@ -43,6 +43,9 @@ const (
 	wmKeyUp            = 0x0101
 	wmFrameReady       = 0x8001
 	wmStateChanged     = 0x8002
+	wmTimer            = 0x0113
+	framePresentTimer  = 1
+	framePresentPeriod = 16
 	wsOverlappedWindow = 0x00cf0000
 	csHRedraw          = 0x0002
 	csVRedraw          = 0x0001
@@ -73,6 +76,9 @@ type viewer struct {
 	notification                                        frameNotificationState
 	paintState                                          framePaintState
 	paintLogged, paintFailureLogged                     bool
+	presentAttempts, successfulPresents                 uint64
+	zeroResultPresents, gdiErrorPresents                uint64
+	lastSuccessfulGeneration                            uint64
 	decodeMetrics                                       durationWindow
 	conversionMetrics                                   durationWindow
 	bufferCopyMetrics                                   durationWindow
@@ -162,6 +168,10 @@ var dispatchMessage = viewerUser32.NewProc("DispatchMessageW")
 var postQuitMessage = viewerUser32.NewProc("PostQuitMessage")
 var postMessage = viewerUser32.NewProc("PostMessageW")
 var beginPaint = viewerUser32.NewProc("BeginPaint")
+var setTimer = viewerUser32.NewProc("SetTimer")
+var killTimer = viewerUser32.NewProc("KillTimer")
+var getWindowDC = viewerUser32.NewProc("GetDC")
+var releaseWindowDC = viewerUser32.NewProc("ReleaseDC")
 var endPaint = viewerUser32.NewProc("EndPaint")
 var invalidateRect = viewerUser32.NewProc("InvalidateRect")
 var getClientRect = viewerUser32.NewProc("GetClientRect")
@@ -474,13 +484,10 @@ func (v *viewer) decodeFrames() {
 				v.lastStatsSocket, v.lastStatsDecoded, v.lastStatsPainted, v.statsReported = socketCount, decodedCount, uniquePainted, now
 				v.mu.Unlock()
 				v.logger.event(fmt.Sprintf("VIEWER_FRAME_STATS compressed_received=%d decode_started=%d decode_completed=%d paint_events=%d unique_frames_painted=%d socket_received_fps=%.1f decoded_fps=%.1f unique_painted_fps=%.1f avg_bytes=%d jpeg_decode_ms=avg:%.1f/p50:%.1f/p95:%.1f/max:%.1f pixel_conversion_ms=avg:%.1f/p50:%.1f/p95:%.1f/max:%.1f display_buffer_copy_ms=avg:%.1f/p50:%.1f/p95:%.1f/max:%.1f frame_age_ms=%d compressed_dropped=%d", socketCount, decodeStartedCount, decodedCount, paintEvents, uniquePainted, socketFPS, decodedFPS, paintedFPS, bytes/decodedCount, da, dp50, dp95, dmax, ca, cp50, cp95, cmax, ba, bp50, bp95, bmax, age, v.compressed.dropCount()))
+				v.logPresentStats(decodedCount, paintedFPS)
 			}
 			if notify {
-				if result, _, _ := postMessage.Call(hwnd, wmFrameReady, 0, 0); result == 0 {
-					v.mu.Lock()
-					v.notification.cancel()
-					v.mu.Unlock()
-				}
+				v.postFrameReady(hwnd)
 			}
 		}
 	}
@@ -531,6 +538,15 @@ func win32Error(err error) string {
 	}
 	return "unknown"
 }
+func (v *viewer) postFrameReady(hwnd uintptr) {
+	if result, _, err := postMessage.Call(hwnd, wmFrameReady, 0, 0); result == 0 {
+		v.mu.Lock()
+		v.notification.cancel()
+		v.mu.Unlock()
+		v.logger.event(fmt.Sprintf("VIEWER_FRAME_READY_POST_FAILED error=%s", win32Error(err)))
+	}
+}
+
 func (v *viewer) window() error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -561,6 +577,9 @@ func (v *viewer) window() error {
 		return fmt.Errorf("could not create viewer window: %s", win32Error(err))
 	}
 	v.logger.event("VIEWER_WINDOW_CREATED")
+	if timer, _, timerErr := setTimer.Call(hwnd, framePresentTimer, framePresentPeriod, 0); timer == 0 {
+		v.logger.event(fmt.Sprintf("VIEWER_PRESENT_TIMER_FAILED error=%s", win32Error(timerErr)))
+	}
 	v.mu.Lock()
 	v.hwnd = hwnd
 	notify := len(v.frame.pixels) != 0 && v.notification.schedule()
@@ -569,7 +588,7 @@ func (v *viewer) window() error {
 	viewerUser32.NewProc("UpdateWindow").Call(hwnd)
 	v.logger.event("VIEWER_WINDOW_SHOWN")
 	if notify {
-		postMessage.Call(hwnd, wmFrameReady, 0, 0)
+		v.postFrameReady(hwnd)
 	}
 	var message msg
 	for {
@@ -599,6 +618,11 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		v.logger.event("VIEWER_CLOSE_REQUESTED")
 		v.requestClose()
 	case wmDestroy:
+		killTimer.Call(hwnd, framePresentTimer)
+		v.mu.Lock()
+		v.hwnd = 0
+		v.notification.cancel()
+		v.mu.Unlock()
 		v.logger.event("VIEWER_CLOSE")
 		postQuitMessage.Call(0)
 		return 0
@@ -617,7 +641,12 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		closed := v.sessionClosed
 		v.mu.Unlock()
 		if !closed {
-			invalidateRect.Call(hwnd, 0, 0, 0)
+			v.presentLatestFrame(hwnd)
+		}
+		return 0
+	case wmTimer:
+		if wparam == framePresentTimer {
+			v.presentLatestFrame(hwnd)
 		}
 		return 0
 	case wmStateChanged:
@@ -665,11 +694,50 @@ func (v *viewer) mapMouse(hwnd uintptr, x, y int) (int, int, bool) {
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
 	return mapClientPoint(int(client.Right), int(client.Bottom), frame.width, frame.height, x, y)
 }
+
+// presentLatestFrame is invoked only by the window procedure on the UI thread.
+// Unlike BeginPaint, GetDC is not clipped to an update region, so a new decoded
+// frame is presented even when Windows has no pending WM_PAINT invalidation.
+func (v *viewer) presentLatestFrame(hwnd uintptr) {
+	v.mu.Lock()
+	frame, generation := v.frame, v.frameGeneration
+	if !v.notification.shouldPresent(generation) {
+		v.mu.Unlock()
+		return
+	}
+	v.notification.markAttempted(generation)
+	v.mu.Unlock()
+
+	hdc, _, _ := getWindowDC.Call(hwnd)
+	if hdc == 0 {
+		v.recordPaintResult(-1, 0, 0, 0, 0, generation)
+		return
+	}
+	defer func() {
+		if released, _, err := releaseWindowDC.Call(hwnd, hdc); released == 0 {
+			v.logger.event(fmt.Sprintf("VIEWER_RELEASE_DC_FAILED error=%s", win32Error(err)))
+		}
+	}()
+	var client rect
+	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
+	if !frame.valid() {
+		v.recordPaintResult(0, frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
+		return
+	}
+	display, ok := fittedImageRect(int(client.Right), int(client.Bottom), frame.width, frame.height)
+	if !ok {
+		v.recordPaintResult(0, frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
+		return
+	}
+	info := bitmapInfo{Header: bitmapInfoHeader{Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(frame.width), Height: -int32(frame.height), Planes: 1, BitCount: 32, Compression: biRGB}}
+	copied, _, _ := stretchDIBits.Call(hdc, uintptr(display.x), uintptr(display.y), uintptr(display.width), uintptr(display.height), 0, 0, uintptr(frame.width), uintptr(frame.height), uintptr(unsafe.Pointer(&frame.pixels[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020)
+	v.recordPaintResult(int32(copied), frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
+}
 func (v *viewer) paint(hwnd uintptr) {
 	var paint paintStruct
 	hdc, _, _ := beginPaint.Call(hwnd, uintptr(unsafe.Pointer(&paint)))
 	if hdc == 0 {
-		v.recordPaintResult(-2, 0, 0, 0, 0, 0)
+		v.recordExposureResult(-2, 0, 0, 0, 0, 0)
 		return
 	}
 	defer endPaint.Call(hwnd, uintptr(unsafe.Pointer(&paint)))
@@ -691,13 +759,13 @@ func (v *viewer) paint(hwnd uintptr) {
 		if len(frame.pixels) == 0 {
 			v.paintStatus(hdc, client, status)
 		} else {
-			v.recordPaintResult(0, frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
+			v.recordExposureResult(0, frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
 		}
 		return
 	}
 	display, ok := fittedImageRect(int(client.Right), int(client.Bottom), frame.width, frame.height)
 	if !ok {
-		v.recordPaintResult(0, frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
+		v.recordExposureResult(0, frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
 		return
 	}
 	// Preserve the displayed frame and repaint only the areas not covered by it.
@@ -707,12 +775,24 @@ func (v *viewer) paint(hwnd uintptr) {
 	fill(rect{Left: int32(display.x + display.width), Top: int32(display.y), Right: client.Right, Bottom: int32(display.y + display.height)})
 	info := bitmapInfo{Header: bitmapInfoHeader{Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(frame.width), Height: -int32(frame.height), Planes: 1, BitCount: 32, Compression: biRGB}}
 	copied, _, _ := stretchDIBits.Call(hdc, uintptr(display.x), uintptr(display.y), uintptr(display.width), uintptr(display.height), 0, 0, uintptr(frame.width), uintptr(frame.height), uintptr(unsafe.Pointer(&frame.pixels[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020)
-	v.recordPaintResult(int32(copied), frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
+	v.recordExposureResult(int32(copied), frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
+}
+
+func (v *viewer) recordExposureResult(result int32, width, height, clientWidth, clientHeight int, generation uint64) {
 }
 
 func (v *viewer) recordPaintResult(result int32, width, height, clientWidth, clientHeight int, generation uint64) {
 	success := result > 0
 	v.mu.Lock()
+	v.presentAttempts++
+	if success {
+		v.successfulPresents++
+		v.lastSuccessfulGeneration = generation
+	} else if result < 0 {
+		v.gdiErrorPresents++
+	} else {
+		v.zeroResultPresents++
+	}
 	logResult := false
 	if success {
 		unique := v.paintState.record(generation)
@@ -740,6 +820,13 @@ func (v *viewer) recordPaintResult(result int32, width, height, clientWidth, cli
 	if logResult {
 		v.logger.event(fmt.Sprintf("VIEWER_PAINT_RESULT result=%d width=%d height=%d client_width=%d client_height=%d frame_generation=%d", result, width, height, clientWidth, clientHeight, generation))
 	}
+}
+func (v *viewer) logPresentStats(decodedGeneration uint64, presentedFPS float64) {
+	v.mu.RLock()
+	attempts, successful := v.presentAttempts, v.successfulPresents
+	zero, gdiError, lastSuccessful := v.zeroResultPresents, v.gdiErrorPresents, v.lastSuccessfulGeneration
+	v.mu.RUnlock()
+	v.logger.event(fmt.Sprintf("VIEWER_PRESENT_STATS decoded_generation=%d present_attempts=%d successful_presents=%d zero_result_presents=%d gdi_error_presents=%d last_successful_generation=%d presented_fps=%.1f", decodedGeneration, attempts, successful, zero, gdiError, lastSuccessful, presentedFPS))
 }
 func (v *viewer) paintStatus(hdc uintptr, client rect, status string) {
 	if status == "" {
