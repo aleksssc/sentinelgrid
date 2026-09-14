@@ -3,6 +3,7 @@ package rdp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -19,6 +20,23 @@ type Connection struct {
 	Relay     string    `json:"relay"`
 	Ticket    string    `json:"ticket"`
 	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// PairingError classifies connection setup without exposing ticket or relay data.
+type PairingError struct {
+	Category string
+	err      error
+}
+
+func (e *PairingError) Error() string { return e.err.Error() }
+func (e *PairingError) Unwrap() error { return e.err }
+
+func pairingCategory(err error) string {
+	var pairing *PairingError
+	if errors.As(err, &pairing) {
+		return pairing.Category
+	}
+	return "unknown"
 }
 
 func (c Connection) Validate() error {
@@ -39,10 +57,16 @@ func Dial(ctx context.Context, c Connection) (*websocket.Conn, error) {
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	conn, response, err := dialer.DialContext(ctx, c.Relay, http.Header{"Authorization": {"Bearer " + c.Ticket}})
 	if err != nil {
+		category := "handshake"
+		if ctx.Err() != nil {
+			category = "cancelled"
+		} else if response != nil {
+			category = "rejected"
+		}
 		if response != nil && response.Body != nil {
 			response.Body.Close()
 		}
-		return nil, fmt.Errorf("RDP relay connection failed")
+		return nil, &PairingError{Category: category, err: fmt.Errorf("RDP relay connection failed")}
 	}
 	conn.SetReadLimit(maxRemotePacket)
 	conn.SetReadDeadline(time.Now().Add(65 * time.Second))
@@ -52,7 +76,13 @@ func Dial(ctx context.Context, c Connection) (*websocket.Conn, error) {
 	}
 	if err != nil || kind != websocket.TextMessage || json.Unmarshal(data, &ready) != nil || ready.Type != "ready" {
 		conn.Close()
-		return nil, fmt.Errorf("RDP relay pairing failed")
+		category := "ready_timeout"
+		if err != nil {
+			category = "ready_read"
+		} else if kind != websocket.TextMessage || ready.Type != "ready" {
+			category = "ready_invalid"
+		}
+		return nil, &PairingError{Category: category, err: fmt.Errorf("RDP relay pairing failed")}
 	}
 	conn.SetReadDeadline(c.ExpiresAt)
 	return conn, nil

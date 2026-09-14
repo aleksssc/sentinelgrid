@@ -179,6 +179,17 @@
             Type="string" />
 
         </Component>
+        <Component
+          Id="SentinelGridVideoComponent"
+          Guid="*">
+
+          <File
+            Id="SentinelGridVideoDll"
+            Source="$(var.VideoSource)"
+            KeyPath="yes" />
+
+        </Component>
+
 
       </Directory>
 
@@ -295,6 +306,7 @@
       <ComponentRef Id="SentinelGridAgentComponent" />
       <ComponentRef Id="SentinelGridUpdaterComponent" />
       <ComponentRef Id="SentinelGridRDPComponent" />
+      <ComponentRef Id="SentinelGridVideoComponent" />
 
     </Feature>
 

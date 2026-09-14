@@ -122,6 +122,9 @@ try {
     $output = Join-Path $distRoot $Version
     if (Test-Path -LiteralPath $output) { throw "Artifact directory already exists: $output. Use a new version or deliberately archive the previous build; releases are never overwritten." }
     New-Item -ItemType Directory -Path $output | Out-Null
+    $nativeVideoDll = Join-Path $output 'SentinelGridVideo.dll'
+    & (Join-Path $root 'native\video\SentinelGridVideo\build.ps1') -OutputDirectory $output
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $nativeVideoDll)) { throw 'Native video DLL build failed.' }
     Set-Location -LiteralPath $agent
     $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:CGO_ENABLED = '0'
     $sources = @(Get-ChildItem -LiteralPath $agent -Recurse -Filter '*.go' -File | ForEach-Object { $_.FullName })
@@ -161,6 +164,7 @@ try {
     }
     Sign-Artifact $updaterExe 'Updater signing'
     Sign-Artifact $rdpExe 'RDP client signing'
+    Sign-Artifact $nativeVideoDll 'Native video DLL signing'
     foreach ($executable in @($agentExe, $updaterExe)) {
         $trustOutput = & $executable -update-build-info
         if ($LASTEXITCODE -ne 0) { throw 'Built executable failed its update trust probe.' }
@@ -173,7 +177,7 @@ try {
     if (-not $SkipMSI) {
         # MSI database creation can materialize only the 8.3 alias on some hosts.
         $wixOutput = Join-Path $output 'package.msi'
-        $msiArguments = @('build', (Join-Path $root 'installer\windows\Package.wxs'), '-arch', 'x64', '-d', "AgentVersion=$Version", '-d', "AgentChannel=$Channel", '-d', "AgentServer=$ServerURL", '-d', "AgentSource=$agentExe", '-d', "UpdaterSource=$updaterExe", '-d', "RDPSource=$rdpExe", '-d', "UpdateDevelopment=$($DevSign.IsPresent.ToString().ToLowerInvariant())", '-d', "UpdateSigners=$(if ($TrustedSignerSHA256) { $TrustedSignerSHA256 } else { 'UNQUALIFIED' })", '-o', $wixOutput)
+        $msiArguments = @('build', (Join-Path $root 'installer\windows\Package.wxs'), '-arch', 'x64', '-d', "AgentVersion=$Version", '-d', "AgentChannel=$Channel", '-d', "AgentServer=$ServerURL", '-d', "AgentSource=$agentExe", '-d', "UpdaterSource=$updaterExe", '-d', "RDPSource=$rdpExe", '-d', "VideoSource=$nativeVideoDll", '-d', "UpdateDevelopment=$($DevSign.IsPresent.ToString().ToLowerInvariant())", '-d', "UpdateSigners=$(if ($TrustedSignerSHA256) { $TrustedSignerSHA256 } else { 'UNQUALIFIED' })", '-o', $wixOutput)
         if ($DevRepairProductCode -ne [guid]::Empty) {
             $installer = New-Object -ComObject WindowsInstaller.Installer
             try {
@@ -200,7 +204,7 @@ try {
         development_repair_package = ($DevRepairProductCode -ne [guid]::Empty)
     }
     $checksums = [Collections.Generic.List[string]]::new()
-    $artifacts = [ordered]@{ agent = $agentExe; updater = $updaterExe; rdp_client = $rdpExe }
+    $artifacts = [ordered]@{ agent = $agentExe; updater = $updaterExe; rdp_client = $rdpExe; native_video = $nativeVideoDll }
     if (-not $SkipMSI) { $artifacts['msi'] = $msi }
     foreach ($entry in $artifacts.GetEnumerator()) {
         $file = Get-Item -LiteralPath $entry.Value

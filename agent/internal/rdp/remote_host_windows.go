@@ -168,9 +168,12 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 		return remoteHostFailure("environment", err)
 	}
 	logger.event("REMOTE_ENV_VALID")
+	logger.event("REMOTE_PAIR_START")
 	logger.event("REMOTE_RELAY_CONNECTING")
+	logger.event("REMOTE_WAITING_FOR_VIEWER")
 	ws, err := Dial(ctx, connection)
 	if err != nil {
+		logger.event("REMOTE_PAIR_FAILED category=" + pairingCategory(err))
 		if strings.Contains(err.Error(), "pairing") {
 			return remoteHostFailure("pairing", err)
 		}
@@ -179,6 +182,12 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	defer ws.Close()
 	logger.event("REMOTE_RELAY_CONNECTED")
 	logger.event("REMOTE_PAIRED")
+	backend, backendDescription, err := newPreferredCaptureBackendWithDiagnostics(ctx, logger.event)
+	if err != nil {
+		return remoteHostFailure("capture-backend", err)
+	}
+	defer backend.Close()
+	logger.event("REMOTE_VIDEO_BACKEND backend=" + backendDescription)
 	if err := sendScreenInfo(ws); err != nil {
 		return remoteHostFailure("screen-info", err)
 	}
@@ -190,6 +199,7 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	controller := remoteSessionController{ws: ws, writer: writer, cancelCapture: cancelCapture, inputDone: inputDone}
 	defer controller.stop()
 	captureMetrics, conversionMetrics, encodeMetrics := newFrameMetrics(120), newFrameMetrics(120), newFrameMetrics(120)
+	dxgiAcquireMetrics, dxgiCopyMetrics, cpuReadbackMetrics := newFrameMetrics(120), newFrameMetrics(120), newFrameMetrics(120)
 	packetMetrics, writeMetrics, totalMetrics := newFrameMetrics(120), newFrameMetrics(120), newFrameMetrics(120)
 	var sequence uint64
 	frames := uint64(0)
@@ -222,7 +232,15 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 			return nil
 		}
 		started := time.Now()
-		jpg, timings, err := capturePrimaryJPEGTimed()
+		frame, changed, err := backend.Capture(captureCtx)
+		if err != nil {
+			logger.event("REMOTE_CAPTURE_FAILED " + sanitizeRemoteLogError(err))
+			return remoteHostFailure(remoteCaptureStage(err), err)
+		}
+		if !changed {
+			continue
+		}
+		jpg, timings, err := encodeCaptureFrame(frame)
 		if err != nil {
 			logger.event("REMOTE_CAPTURE_FAILED " + sanitizeRemoteLogError(err))
 			return remoteHostFailure(remoteCaptureStage(err), err)
@@ -238,6 +256,9 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 			return remoteHostFailure("frame-size", err)
 		}
 		captureMetrics.add(timings.capture)
+		dxgiAcquireMetrics.add(frame.Acquire)
+		dxgiCopyMetrics.add(frame.Copy)
+		cpuReadbackMetrics.add(frame.Readback)
 		conversionMetrics.add(timings.pixelConversion)
 		encodeMetrics.add(timings.jpegEncode)
 		packetMetrics.add(time.Since(packetStarted))
@@ -253,7 +274,7 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 				x := m.snapshot()
 				return fmt.Sprintf("avg=%.1f p50=%.1f p95=%.1f max=%.1f", float64(x.Avg.Microseconds())/1000, float64(x.P50.Microseconds())/1000, float64(x.P95.Microseconds())/1000, float64(x.Max.Microseconds())/1000)
 			}
-			logger.event(fmt.Sprintf("REMOTE_FRAME_STATS frames=%d capture_ms=%s pixel_conversion_ms=%s jpeg_encode_ms=%s packet_build_ms=%s websocket_write_ms=%s frame_total_ms=%s dropped=%d", frames, format(captureMetrics), format(conversionMetrics), format(encodeMetrics), format(packetMetrics), format(writeMetrics), format(totalMetrics), writer.dropCount()))
+			logger.event(fmt.Sprintf("REMOTE_FRAME_STATS backend=%s frames=%d dxgi_acquire_ms=%s dxgi_copy_ms=%s cpu_readback_ms=%s capture_ms=%s pixel_conversion_ms=%s jpeg_encode_ms=%s packet_build_ms=%s websocket_write_ms=%s frame_total_ms=%s dropped=%d", backendDescription, frames, format(dxgiAcquireMetrics), format(dxgiCopyMetrics), format(cpuReadbackMetrics), format(captureMetrics), format(conversionMetrics), format(encodeMetrics), format(packetMetrics), format(writeMetrics), format(totalMetrics), writer.dropCount()))
 		}
 	}
 }
