@@ -5,6 +5,7 @@ package rdp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -215,7 +216,7 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 			}
 			data, err := packet(PacketFrame, jpg)
 			if err != nil {
-				return err
+				return remoteHostFailure("frame-size", err)
 			}
 			if err := writePacket(ws, data); err != nil {
 				return remoteHostFailure("frame-send", err)
@@ -230,8 +231,8 @@ func captureFailureReason(err error) string {
 		return "display_unavailable"
 	case strings.Contains(err.Error(), "BitBlt"):
 		return "bitblt"
-	case strings.Contains(err.Error(), "GetDIBits"):
-		return "getdibits"
+	case strings.Contains(err.Error(), "DIB_SECTION"):
+		return "dib_section"
 	case strings.Contains(err.Error(), "restore"):
 		return "restore"
 	case strings.Contains(err.Error(), "frame exceeds"):
@@ -254,20 +255,25 @@ func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- error)
 	for {
 		kind, data, err := ws.ReadMessage()
 		if err != nil {
-			done <- err
+			var closeErr *websocket.CloseError
+			if errors.As(err, &closeErr) && (closeErr.Code == websocket.CloseNormalClosure || closeErr.Code == websocket.CloseGoingAway) {
+				done <- nil
+			} else {
+				done <- remoteHostFailure("input-read", fmt.Errorf("remote input connection closed: %w", err))
+			}
 			return
 		}
 		if kind != websocket.BinaryMessage {
-			done <- fmt.Errorf("non-binary remote input")
+			done <- remoteHostFailure("input-invalid", fmt.Errorf("non-binary remote input"))
 			return
 		}
 		input, err := parseInput(data)
 		if err != nil {
-			done <- err
+			done <- remoteHostFailure("input-invalid", err)
 			return
 		}
 		if err = injectInput(input); err != nil {
-			done <- err
+			done <- remoteHostFailure("input-inject", err)
 			return
 		}
 		if ctx.Err() != nil {
@@ -284,25 +290,11 @@ var releaseDC = user32.NewProc("ReleaseDC")
 var getSystemMetrics = user32.NewProc("GetSystemMetrics")
 var sendInput = user32.NewProc("SendInput")
 var createCompatibleDC = gdi32.NewProc("CreateCompatibleDC")
-var createCompatibleBitmap = gdi32.NewProc("CreateCompatibleBitmap")
 var selectObject = gdi32.NewProc("SelectObject")
 var deleteObject = gdi32.NewProc("DeleteObject")
 var deleteDC = gdi32.NewProc("DeleteDC")
 var bitBlt = gdi32.NewProc("BitBlt")
-var getDIBits = gdi32.NewProc("GetDIBits")
-
-type bitmapInfoHeader struct {
-	Size                         uint32
-	Width, Height                int32
-	Planes, BitCount             uint16
-	Compression, SizeImage       uint32
-	XPelsPerMeter, YPelsPerMeter int32
-	ClrUsed, ClrImportant        uint32
-}
-type bitmapInfo struct {
-	Header bitmapInfoHeader
-	Colors [1]uint32
-}
+var createDIBSection = gdi32.NewProc("CreateDIBSection")
 
 func screenSize() (int, int) {
 	w, _, _ := getSystemMetrics.Call(0)
@@ -312,7 +304,7 @@ func screenSize() (int, int) {
 
 func capturePrimaryJPEG() ([]byte, error) {
 	width, height := screenSize()
-	pixelSize, err := capturePixelBufferSize(width, height)
+	info, pixelSize, err := newCaptureDIBInfo(width, height)
 	if err != nil {
 		return nil, err
 	}
@@ -337,15 +329,19 @@ func capturePrimaryJPEG() ([]byte, error) {
 		}
 	}()
 
-	bitmap, _, callErr := createCompatibleBitmap.Call(dc, uintptr(width), uintptr(height))
+	var bits unsafe.Pointer
+	bitmap, _, callErr := createDIBSection.Call(dc, uintptr(unsafe.Pointer(&info)), dibRGBColors, uintptr(unsafe.Pointer(&bits)), 0, 0)
 	if bitmap == 0 {
-		return nil, captureAPIError("CAPTURE_BITMAP_FAILED", width, height, bitmap, callErr)
+		return nil, captureAPIError("CAPTURE_DIB_SECTION_FAILED", width, height, bitmap, callErr)
 	}
 	defer func() {
 		if deleted, _, deleteErr := deleteObject.Call(bitmap); deleted == 0 {
 			log.Printf("[RDP] %s", captureAPIError("CAPTURE_DELETE_BITMAP_FAILED", width, height, deleted, deleteErr))
 		}
 	}()
+	if bits == nil {
+		return nil, captureAPIError("CAPTURE_DIB_SECTION_FAILED", width, height, 0, nil)
+	}
 
 	var order captureOrder
 	old, _, callErr := selectObject.Call(memory, bitmap)
@@ -362,7 +358,7 @@ func capturePrimaryJPEG() ([]byte, error) {
 			return nil
 		}
 		previous, _, restoreErr := selectObject.Call(memory, old)
-		if previous == 0 || previous == ^uintptr(0) {
+		if previous == 0 || previous == ^uintptr(0) || previous != bitmap {
 			return captureAPIError("CAPTURE_RESTORE_FAILED", width, height, previous, restoreErr)
 		}
 		restored = true
@@ -382,28 +378,14 @@ func capturePrimaryJPEG() ([]byte, error) {
 	if err := order.copied(); err != nil {
 		return nil, err
 	}
-	// GetDIBits requires that bitmap is not selected into any device context.
 	if err := restore(); err != nil {
 		return nil, err
 	}
-
-	pixels := make([]byte, pixelSize)
-	info := bitmapInfo{Header: bitmapInfoHeader{
-		Size:        uint32(unsafe.Sizeof(bitmapInfoHeader{})),
-		Width:       int32(width),
-		Height:      -int32(height),
-		Planes:      1,
-		BitCount:    32,
-		Compression: 0,
-	}}
-	if err := order.read(); err != nil {
+	if err := order.pixelsReady(); err != nil {
 		return nil, err
 	}
-	lines, _, callErr := getDIBits.Call(memory, bitmap, 0, uintptr(height), uintptr(unsafe.Pointer(&pixels[0])), uintptr(unsafe.Pointer(&info)), 0)
-	if lines != uintptr(height) {
-		return nil, captureAPIError("CAPTURE_GETDIBITS_FAILED", width, height, lines, callErr)
-	}
 
+	pixels := unsafe.Slice((*byte)(bits), pixelSize)
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	for i := 0; i < len(pixels); i += captureBytesPerPixel {
 		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = pixels[i+2], pixels[i+1], pixels[i], 0xff

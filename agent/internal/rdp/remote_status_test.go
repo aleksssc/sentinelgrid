@@ -14,6 +14,7 @@ func TestRemoteHostExitCode(t *testing.T) {
 		"screen-info":       25,
 		"capture":           26,
 		"frame-send":        27,
+		"capture-bitmap":    33,
 		"capture-getdibits": 37,
 		"capture-jpeg":      38,
 	} {
@@ -28,10 +29,11 @@ func TestRemoteHostExitCode(t *testing.T) {
 
 func TestRemoteCaptureStage(t *testing.T) {
 	for message, want := range map[string]string{
-		"CAPTURE_GETDC_FAILED width=1 height=1 result=0x0 last_error=5":  "capture-getdc",
-		"CAPTURE_BITBLT_FAILED width=1 height=1 result=0x0 last_error=5": "capture-bitblt",
-		"CAPTURE_JPEG_FAILED width=1 height=1":                           "capture-jpeg",
-		"unrelated capture failure":                                      "capture",
+		"CAPTURE_GETDC_FAILED width=1 height=1 result=0x0 last_error=5":       "capture-getdc",
+		"CAPTURE_DIB_SECTION_FAILED width=1 height=1 result=0x0 last_error=5": "capture-bitmap",
+		"CAPTURE_BITBLT_FAILED width=1 height=1 result=0x0 last_error=5":      "capture-bitblt",
+		"CAPTURE_JPEG_FAILED width=1 height=1":                                "capture-jpeg",
+		"unrelated capture failure":                                           "capture",
 	} {
 		if got := remoteCaptureStage(errors.New(message)); got != want {
 			t.Fatalf("stage for %q = %q, want %q", message, got, want)

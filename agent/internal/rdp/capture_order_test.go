@@ -2,7 +2,7 @@ package rdp
 
 import "testing"
 
-func TestCaptureOrderRequiresBitmapRestoreBeforeRead(t *testing.T) {
+func TestCaptureOrderRequiresBitmapRestoreBeforePixels(t *testing.T) {
 	var order captureOrder
 	if err := order.selected(); err != nil {
 		t.Fatal(err)
@@ -10,14 +10,21 @@ func TestCaptureOrderRequiresBitmapRestoreBeforeRead(t *testing.T) {
 	if err := order.copied(); err != nil {
 		t.Fatal(err)
 	}
-	if err := order.read(); err == nil {
-		t.Fatal("GetDIBits was allowed while bitmap remained selected")
+	if err := order.pixelsReady(); err == nil {
+		t.Fatal("DIB pixels were allowed while bitmap remained selected")
 	}
 	if err := order.restored(); err != nil {
 		t.Fatal(err)
 	}
-	if err := order.read(); err != nil {
+	if err := order.pixelsReady(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCaptureOrderRestoresAfterBitBltFailure(t *testing.T) {
+	order := captureOrder{phase: captureSelected}
+	if err := order.restored(); err != nil {
+		t.Fatalf("selected bitmap was not restorable: %v", err)
 	}
 }
 

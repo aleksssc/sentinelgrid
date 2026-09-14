@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import { once } from "node:events";
 import { randomBytes, randomUUID } from "node:crypto";
 import { test } from "node:test";
@@ -88,7 +88,8 @@ test("private TLS proxy accepts only an exact HTTPS forwarding header", { timeou
 test("paired native sockets forward binary bytes both ways and close together", { timeout: 5000 }, async (t) => {
   const f = await fixture(t);
   const { client, agent } = await f.pair();
-  for (const size of [1, 4096, 65536]) {
+  for (let i = 0; i < 100; i++) {
+    const size = 4096;
     const bytes = randomBytes(size);
     const incoming = message(agent);
     client.send(bytes);

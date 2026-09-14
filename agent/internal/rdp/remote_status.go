@@ -25,14 +25,15 @@ func remoteCaptureStage(err error) string {
 		return "capture"
 	}
 	for prefix, stage := range map[string]string{
-		"CAPTURE_GETDC_FAILED":     "capture-getdc",
-		"CAPTURE_CREATE_DC_FAILED": "capture-create-dc",
-		"CAPTURE_BITMAP_FAILED":    "capture-bitmap",
-		"CAPTURE_SELECT_FAILED":    "capture-select",
-		"CAPTURE_BITBLT_FAILED":    "capture-bitblt",
-		"CAPTURE_RESTORE_FAILED":   "capture-restore",
-		"CAPTURE_GETDIBITS_FAILED": "capture-getdibits",
-		"CAPTURE_JPEG_FAILED":      "capture-jpeg",
+		"CAPTURE_GETDC_FAILED":       "capture-getdc",
+		"CAPTURE_CREATE_DC_FAILED":   "capture-create-dc",
+		"CAPTURE_BITMAP_FAILED":      "capture-bitmap",
+		"CAPTURE_DIB_SECTION_FAILED": "capture-bitmap",
+		"CAPTURE_SELECT_FAILED":      "capture-select",
+		"CAPTURE_BITBLT_FAILED":      "capture-bitblt",
+		"CAPTURE_RESTORE_FAILED":     "capture-restore",
+		"CAPTURE_GETDIBITS_FAILED":   "capture-getdibits",
+		"CAPTURE_JPEG_FAILED":        "capture-jpeg",
 	} {
 		if strings.HasPrefix(err.Error(), prefix) {
 			return stage
@@ -61,6 +62,12 @@ func RemoteHostExitCode(err error) int {
 		return 26
 	case "frame-send":
 		return 27
+	case "input-read":
+		return 28
+	case "input-invalid":
+		return 29
+	case "input-inject":
+		return 30
 	case "capture-getdc":
 		return 31
 	case "capture-create-dc":
@@ -77,6 +84,8 @@ func RemoteHostExitCode(err error) int {
 		return 37
 	case "capture-jpeg":
 		return 38
+	case "frame-size":
+		return 39
 	default:
 		return 1
 	}
@@ -99,7 +108,13 @@ func remoteHostExitReason(code uint32) string {
 	case 26:
 		return "capture"
 	case 27:
-		return "first_frame_send"
+		return "frame_send"
+	case 28:
+		return "input_read"
+	case 29:
+		return "input_invalid"
+	case 30:
+		return "input_inject"
 	case 31:
 		return "capture_getdc"
 	case 32:
@@ -116,6 +131,8 @@ func remoteHostExitReason(code uint32) string {
 		return "capture_getdibits"
 	case 38:
 		return "capture_jpeg"
+	case 39:
+		return "frame_size"
 	default:
 		return "unclassified"
 	}

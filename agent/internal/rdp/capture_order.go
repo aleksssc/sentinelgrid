@@ -9,11 +9,11 @@ const (
 	captureSelected
 	captureCopied
 	captureRestored
-	captureRead
+	capturePixelsReady
 )
 
-// captureOrder makes the required GDI bitmap lifetime explicit: GetDIBits may
-// only run after the bitmap has been deselected from the memory device context.
+// captureOrder makes the bitmap lifetime explicit: it is restored to the
+// memory DC before its DIB-section pixels are read or the bitmap is deleted.
 type captureOrder struct {
 	phase capturePhase
 }
@@ -35,17 +35,17 @@ func (o *captureOrder) copied() error {
 }
 
 func (o *captureOrder) restored() error {
-	if o.phase != captureCopied {
-		return fmt.Errorf("bitmap restore requires completed BitBlt")
+	if o.phase != captureSelected && o.phase != captureCopied {
+		return fmt.Errorf("bitmap restore requires selected bitmap")
 	}
 	o.phase = captureRestored
 	return nil
 }
 
-func (o *captureOrder) read() error {
+func (o *captureOrder) pixelsReady() error {
 	if o.phase != captureRestored {
-		return fmt.Errorf("GetDIBits requires restored bitmap")
+		return fmt.Errorf("DIB pixels require restored bitmap")
 	}
-	o.phase = captureRead
+	o.phase = capturePixelsReady
 	return nil
 }

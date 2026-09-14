@@ -1,4 +1,4 @@
-import { createServer as createHTTPServer } from "node:http";
+﻿import { createServer as createHTTPServer } from "node:http";
 import { createServer as createHTTPSServer } from "node:https";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -102,7 +102,13 @@ export function createRDPRelay({ authorize, tls, trustProxy = false, maxSessions
     ws.on("close", () => finish(session, false));
     ws.on("message", (data, binary) => {
       const other = identity.role === "client" ? session.agent : session.client;
-      if (!session.active || !binary || !other || other.readyState !== WebSocket.OPEN || other.bufferedAmount > 1024 * 1024) {
+      if (!session.active || !binary || !other || other.readyState !== WebSocket.OPEN) {
+        finish(session, true); return;
+      }
+      // A newer JPEG supersedes a congested older frame. Closing the entire
+      // session here made slow viewers disconnect while capture was healthy.
+      if (other.bufferedAmount > 1024 * 1024 && identity.role === "agent" && data[0] === 1) return;
+      if (other.bufferedAmount > 8 * 1024 * 1024) {
         finish(session, true); return;
       }
       ws.pause();
