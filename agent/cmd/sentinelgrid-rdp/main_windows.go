@@ -28,8 +28,8 @@ import (
 const (
 	wmDestroy          = 0x0002
 	wmPaint            = 0x000f
-	wmSize             = 0x0005
 	wmSetFocus         = 0x0007
+	wmClose            = 0x0010
 	wmMouseMove        = 0x0200
 	wmLButtonDown      = 0x0201
 	wmLButtonUp        = 0x0202
@@ -40,6 +40,7 @@ const (
 	wmMouseWheel       = 0x020a
 	wmKeyDown          = 0x0100
 	wmKeyUp            = 0x0101
+	wmFrameReady       = 0x8001
 	wsOverlappedWindow = 0x00cf0000
 	swShow             = 5
 	biRGB              = 0
@@ -48,9 +49,50 @@ const (
 type viewer struct {
 	ws            *websocket.Conn
 	mu            sync.RWMutex
+	writeMu       sync.Mutex
 	image         *image.RGBA
 	width, height int
 	hwnd          uintptr
+	logger        *viewerLogger
+}
+
+type viewerLogger struct {
+	mu   sync.Mutex
+	file *os.File
+}
+
+func openViewerLogger() *viewerLogger {
+	programData := os.Getenv("ProgramData")
+	if programData == "" {
+		return nil
+	}
+	directory := filepath.Join(programData, "SentinelGrid", "logs")
+	if err := os.MkdirAll(directory, 0755); err != nil {
+		return nil
+	}
+	file, err := os.OpenFile(filepath.Join(directory, "viewer.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil
+	}
+	return &viewerLogger{file: file}
+}
+
+func (l *viewerLogger) event(event string) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_, _ = fmt.Fprintf(l.file, "%s %s\n", time.Now().UTC().Format(time.RFC3339), event)
+}
+
+func (l *viewerLogger) close() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_ = l.file.Close()
 }
 
 var activeViewer *viewer
@@ -63,6 +105,7 @@ var getMessage = viewerUser32.NewProc("GetMessageW")
 var translateMessage = viewerUser32.NewProc("TranslateMessage")
 var dispatchMessage = viewerUser32.NewProc("DispatchMessageW")
 var postQuitMessage = viewerUser32.NewProc("PostQuitMessage")
+var postMessage = viewerUser32.NewProc("PostMessageW")
 var beginPaint = viewerUser32.NewProc("BeginPaint")
 var endPaint = viewerUser32.NewProc("EndPaint")
 var invalidateRect = viewerUser32.NewProc("InvalidateRect")
@@ -135,17 +178,26 @@ func run(path string) error {
 		return err
 	}
 	defer ws.Close()
-	v := &viewer{ws: ws}
+	return runViewer(ws)
+}
+
+func runViewer(ws *websocket.Conn) error {
+	logger := openViewerLogger()
+	defer logger.close()
+	logger.event("VIEWER_START")
+	v := &viewer{ws: ws, logger: logger}
 	activeViewer = v
 	go v.receive()
 	return v.window()
 }
+
 func (v *viewer) receive() {
 	for {
 		kind, data, err := v.ws.ReadMessage()
 		if err != nil {
-			if v.hwnd != 0 {
-				postQuitMessage.Call(0)
+			v.logger.event("VIEWER_RELAY_CLOSED")
+			if hwnd := v.windowHandle(); hwnd != 0 {
+				postMessage.Call(hwnd, wmClose, 0, 0)
 			}
 			return
 		}
@@ -155,26 +207,37 @@ func (v *viewer) receive() {
 		switch data[0] {
 		case rdp.PacketInfo:
 			var info rdp.ScreenInfo
-			if json.Unmarshal(data[1:], &info) == nil {
+			if json.Unmarshal(data[1:], &info) == nil && info.Width > 0 && info.Height > 0 {
 				v.mu.Lock()
 				v.width, v.height = info.Width, info.Height
 				v.mu.Unlock()
+				v.logger.event(fmt.Sprintf("VIEWER_SCREEN_INFO width=%d height=%d", info.Width, info.Height))
 			}
 		case rdp.PacketFrame:
+			v.logger.event(fmt.Sprintf("VIEWER_FRAME_RECEIVED bytes=%d", len(data)-1))
 			decoded, err := jpeg.Decode(bytesReader(data[1:]))
 			if err != nil {
+				v.logger.event("VIEWER_JPEG_DECODE_FAILED")
 				continue
 			}
 			rgba := toRGBA(decoded)
 			v.mu.Lock()
 			v.image = rgba
 			v.width, v.height = rgba.Bounds().Dx(), rgba.Bounds().Dy()
+			hwnd := v.hwnd
 			v.mu.Unlock()
-			if v.hwnd != 0 {
-				invalidateRect.Call(v.hwnd, 0, 0)
+			v.logger.event(fmt.Sprintf("VIEWER_JPEG_DECODE_OK width=%d height=%d", rgba.Bounds().Dx(), rgba.Bounds().Dy()))
+			if hwnd != 0 {
+				postMessage.Call(hwnd, wmFrameReady, 0, 0)
 			}
 		}
 	}
+}
+
+func (v *viewer) windowHandle() uintptr {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.hwnd
 }
 
 type byteReader []byte
@@ -204,7 +267,11 @@ func (v *viewer) send(input rdp.Input) {
 		return
 	}
 	packet := append([]byte{rdp.PacketInput}, data...)
-	_ = v.ws.WriteMessage(websocket.BinaryMessage, packet)
+	v.writeMu.Lock()
+	defer v.writeMu.Unlock()
+	if err := v.ws.WriteMessage(websocket.BinaryMessage, packet); err != nil {
+		v.logger.event("VIEWER_INPUT_SEND_FAILED")
+	}
 }
 func (v *viewer) window() error {
 	runtime.LockOSThread()
@@ -221,9 +288,15 @@ func (v *viewer) window() error {
 	if hwnd == 0 {
 		return fmt.Errorf("could not create viewer window: %v", err)
 	}
+	v.mu.Lock()
 	v.hwnd = hwnd
+	hasImage := v.image != nil
+	v.mu.Unlock()
 	viewerUser32.NewProc("ShowWindow").Call(hwnd, swShow)
 	viewerUser32.NewProc("UpdateWindow").Call(hwnd)
+	if hasImage {
+		postMessage.Call(hwnd, wmFrameReady, 0, 0)
+	}
 	var message msg
 	for {
 		result, _, err := getMessage.Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0)
@@ -249,6 +322,10 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		return 0
 	case wmSetFocus:
 		setFocus.Call(hwnd)
+	case wmFrameReady:
+		v.logger.event("VIEWER_INVALIDATE")
+		invalidateRect.Call(hwnd, 0, 0, 0)
+		return 0
 	case wmPaint:
 		v.paint(hwnd)
 		return 0
@@ -310,8 +387,8 @@ func (v *viewer) paint(hwnd uintptr) {
 	var client rect
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
 	cw, ch := int(client.Right), int(client.Bottom)
-	iw, ih := v.width, v.height
-	if cw < 1 || ch < 1 || iw < 1 || ih < 1 {
+	iw, ih := v.image.Bounds().Dx(), v.image.Bounds().Dy()
+	if cw < 1 || ch < 1 || iw < 1 || ih < 1 || len(v.image.Pix) == 0 {
 		return
 	}
 	dw, dh := cw, cw*ih/iw
@@ -321,7 +398,9 @@ func (v *viewer) paint(hwnd uintptr) {
 	}
 	x, y := (cw-dw)/2, (ch-dh)/2
 	info := bitmapInfo{Header: bitmapInfoHeader{Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(iw), Height: -int32(ih), Planes: 1, BitCount: 32, Compression: biRGB}}
-	stretchDIBits.Call(hdc, uintptr(x), uintptr(y), uintptr(dw), uintptr(dh), 0, 0, uintptr(iw), uintptr(ih), uintptr(unsafe.Pointer(&v.image.Pix[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020)
+	if copied, _, _ := stretchDIBits.Call(hdc, uintptr(x), uintptr(y), uintptr(dw), uintptr(dh), 0, 0, uintptr(iw), uintptr(ih), uintptr(unsafe.Pointer(&v.image.Pix[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020); copied != ^uintptr(0) {
+		v.logger.event("VIEWER_PAINT_OK")
+	}
 }
 func main() {
 	version := flag.Bool("version", false, "Show RDP product version")

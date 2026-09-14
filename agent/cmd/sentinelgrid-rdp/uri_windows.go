@@ -27,10 +27,7 @@ func init() {
 				err = dialErr
 			} else {
 				defer ws.Close()
-				v := &viewer{ws: ws}
-				activeViewer = v
-				go v.receive()
-				err = v.window()
+				err = runViewer(ws)
 			}
 		}
 	}
@@ -39,6 +36,7 @@ func init() {
 	}
 	os.Exit(boolExitCode(err != nil))
 }
+
 func boolExitCode(failed bool) int {
 	if failed {
 		return 1

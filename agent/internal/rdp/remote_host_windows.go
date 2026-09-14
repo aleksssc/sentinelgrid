@@ -273,8 +273,9 @@ func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- error)
 			return
 		}
 		if err = injectInput(input); err != nil {
-			done <- remoteHostFailure("input-inject", err)
-			return
+			// Input is best-effort: UIPI or a transient desktop restriction must not stop video.
+			log.Printf("[RDP] remote input rejected: %s", sanitizeRemoteLogError(err))
+			continue
 		}
 		if ctx.Err() != nil {
 			done <- nil
@@ -412,7 +413,6 @@ type keyInput struct {
 }
 type inputUnion struct {
 	Mouse mouseInput
-	Pad   [8]byte
 }
 type inputRecord struct {
 	Type uint32
@@ -446,8 +446,11 @@ func injectInput(input Input) error {
 	default:
 		return fmt.Errorf("unsupported remote input")
 	}
+	if unsafe.Sizeof(record) != 40 {
+		return fmt.Errorf("invalid Windows INPUT layout: %d bytes", unsafe.Sizeof(record))
+	}
 	if count, _, err := sendInput.Call(1, uintptr(unsafe.Pointer(&record)), unsafe.Sizeof(record)); count != 1 {
-		return fmt.Errorf("Windows rejected remote input: %v", err)
+		return fmt.Errorf("Windows rejected remote input (sent=%d): %v", count, err)
 	}
 	return nil
 }
