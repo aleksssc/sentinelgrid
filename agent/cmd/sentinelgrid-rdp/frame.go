@@ -1,28 +1,44 @@
 package main
 
-import "image"
+import (
+	"image"
+	"image/color"
+)
 
 type viewerFrame struct {
 	pixels        []byte // BGRA for a top-down 32bpp BI_RGB DIB.
 	width, height int
 }
 
-func rgbaToBGRA(source *image.RGBA) viewerFrame {
+// imageToBGRA converts directly into the format consumed by StretchDIBits.
+// JPEG normally decodes to YCbCr, avoiding the previous intermediate RGBA image.
+func imageToBGRA(source image.Image) viewerFrame {
 	bounds := source.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 	pixels := make([]byte, width*height*4)
-	for y := 0; y < height; y++ {
-		sourceOffset := source.PixOffset(bounds.Min.X, bounds.Min.Y+y)
-		destinationOffset := y * width * 4
-		for x := 0; x < width; x++ {
-			r, g, b := source.Pix[sourceOffset], source.Pix[sourceOffset+1], source.Pix[sourceOffset+2]
-			pixels[destinationOffset], pixels[destinationOffset+1], pixels[destinationOffset+2], pixels[destinationOffset+3] = b, g, r, 0
-			sourceOffset += 4
-			destinationOffset += 4
+	if ycbcr, ok := source.(*image.YCbCr); ok && ycbcr.Rect == bounds {
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				offset := y*width*4 + x*4
+				index := ycbcr.YOffset(x+bounds.Min.X, y+bounds.Min.Y)
+				chroma := ycbcr.COffset(x+bounds.Min.X, y+bounds.Min.Y)
+				r, g, b := color.YCbCrToRGB(ycbcr.Y[index], ycbcr.Cb[chroma], ycbcr.Cr[chroma])
+				pixels[offset], pixels[offset+1], pixels[offset+2], pixels[offset+3] = b, g, r, 0
+			}
+		}
+		return viewerFrame{pixels: pixels, width: width, height: height}
+	}
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, _ := source.At(x, y).RGBA()
+			offset := ((y-bounds.Min.Y)*width + x - bounds.Min.X) * 4
+			pixels[offset], pixels[offset+1], pixels[offset+2], pixels[offset+3] = byte(b>>8), byte(g>>8), byte(r>>8), 0
 		}
 	}
 	return viewerFrame{pixels: pixels, width: width, height: height}
 }
+
+func rgbaToBGRA(source *image.RGBA) viewerFrame { return imageToBGRA(source) }
 
 type imageRect struct{ x, y, width, height int }
 

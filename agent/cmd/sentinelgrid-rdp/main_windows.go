@@ -8,7 +8,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"image"
 	"image/jpeg"
 	"io"
 	"log"
@@ -54,20 +53,28 @@ const (
 )
 
 type viewer struct {
-	mu                            sync.RWMutex
-	writeMu                       sync.Mutex
-	ws                            *websocket.Conn
-	frame                         viewerFrame
-	hwnd                          uintptr
-	status                        string
-	logger                        *viewerLogger
-	framesReceived, framesPainted uint64
-	frameBytes                    uint64
-	statsStarted                  time.Time
-	frameNotificationPending      bool
-	compressed                    *latestCompressedFrame
-	closeRequested                bool
-	done                          chan struct{}
+	mu              sync.RWMutex
+	writeMu         sync.Mutex
+	ws              *websocket.Conn
+	frame           viewerFrame
+	frameGeneration uint64
+	hwnd            uintptr
+	status          string
+	logger          *viewerLogger
+	compressed      *latestCompressedFrame
+	closeRequested  bool
+	sessionClosed   bool
+	done            chan struct{}
+
+	socketReceived, decodeStarted, decodedCompleted     uint64
+	frameBytes                                          uint64
+	statsStarted, statsReported                         time.Time
+	lastStatsSocket, lastStatsDecoded, lastStatsPainted uint64
+	notification                                        frameNotificationState
+	paintState                                          framePaintState
+	decodeMetrics                                       durationWindow
+	conversionMetrics                                   durationWindow
+	bufferCopyMetrics                                   durationWindow
 }
 type viewerLogger struct {
 	mu   sync.Mutex
@@ -245,7 +252,8 @@ func runViewerConnecting(connect viewerConnect) error {
 	}
 	defer logger.close()
 	logger.event("VIEWER_START")
-	v := &viewer{logger: logger, status: "Connecting to remote device...", done: make(chan struct{}), statsStarted: time.Now(), compressed: newLatestCompressedFrame()}
+	started := time.Now()
+	v := &viewer{logger: logger, status: "Connecting to remote device...", done: make(chan struct{}), statsStarted: started, statsReported: started, compressed: newLatestCompressedFrame(), decodeMetrics: newDurationWindow(120), conversionMetrics: newDurationWindow(120), bufferCopyMetrics: newDurationWindow(120)}
 	activeViewer = v
 	sessionCtx, cancelSession := context.WithCancel(context.Background())
 	go func() {
@@ -346,8 +354,9 @@ func (v *viewer) receive() {
 	for {
 		v.mu.RLock()
 		ws := v.ws
+		closed := v.sessionClosed
 		v.mu.RUnlock()
-		if ws == nil {
+		if ws == nil || closed {
 			return
 		}
 		kind, data, err := ws.ReadMessage()
@@ -357,13 +366,15 @@ func (v *viewer) receive() {
 			} else {
 				v.logger.event(fmt.Sprintf("VIEWER_RELAY_CLOSED category=%s", relayCloseCategory(err)))
 			}
-			v.mu.RLock()
+			v.mu.Lock()
+			v.sessionClosed = true
 			hasFrame, hwnd := len(v.frame.pixels) != 0, v.hwnd
-			v.mu.RUnlock()
+			v.notification.cancel()
+			v.mu.Unlock()
+			v.compressed.close()
 			if !hasFrame {
 				v.fail("Remote session ended")
-			}
-			if hwnd != 0 {
+			} else if hwnd != 0 {
 				postMessage.Call(hwnd, wmStateChanged, 0, 0)
 			}
 			return
@@ -383,54 +394,85 @@ func (v *viewer) receive() {
 				v.logger.event("VIEWER_FRAME_INVALID")
 				continue
 			}
+			v.mu.Lock()
+			v.socketReceived++
+			v.mu.Unlock()
 			v.compressed.replace(compressedFrame{data: jpegData, metadata: metadata})
 		}
 	}
 }
-
 func (v *viewer) decodeFrames() {
-	for range v.compressed.ready {
+	for {
+		select {
+		case <-v.compressed.done:
+			return
+		case <-v.compressed.ready:
+		}
 		for {
 			compressed, ok := v.compressed.take()
 			if !ok {
 				break
 			}
-			started := time.Now()
+			v.mu.Lock()
+			v.decodeStarted++
+			v.mu.Unlock()
+			decodeStarted := time.Now()
 			decoded, err := jpeg.Decode(bytesReader(compressed.data))
+			decodeDuration := time.Since(decodeStarted)
 			if err != nil {
 				v.logger.event("VIEWER_JPEG_DECODE_FAILED")
 				continue
 			}
-			frame := rgbaToBGRA(toRGBA(decoded))
-			decode := time.Since(started)
+			conversionStarted := time.Now()
+			frame := imageToBGRA(decoded)
+			conversionDuration := time.Since(conversionStarted)
+			// The converted frame is the display buffer; no additional full-frame copy is made.
+			bufferCopyDuration := time.Duration(0)
 			v.mu.Lock()
+			if v.sessionClosed {
+				v.mu.Unlock()
+				return
+			}
 			first := len(v.frame.pixels) == 0
 			v.frame = frame
-			v.framesReceived++
+			v.frameGeneration++
+			v.decodedCompleted++
 			v.frameBytes += uint64(len(compressed.data))
-			received, painted, bytes := v.framesReceived, v.framesPainted, v.frameBytes
-			elapsed := time.Since(v.statsStarted).Seconds()
+			v.decodeMetrics.add(decodeDuration)
+			v.conversionMetrics.add(conversionDuration)
+			v.bufferCopyMetrics.add(bufferCopyDuration)
+			decodedCount, decodeStartedCount, socketCount, bytes := v.decodedCompleted, v.decodeStarted, v.socketReceived, v.frameBytes
+			paintEvents, uniquePainted := v.paintState.paintEvents, v.paintState.uniqueFramesPainted
+			now := time.Now()
 			hwnd := v.hwnd
-			notify := hwnd != 0 && !v.frameNotificationPending
-			if notify {
-				v.frameNotificationPending = true
-			}
+			notify := hwnd != 0 && v.notification.schedule()
 			v.status = ""
 			v.mu.Unlock()
 			if first {
 				v.logger.event(fmt.Sprintf("VIEWER_FIRST_FRAME bytes=%d", len(compressed.data)))
 			}
-			if received%120 == 0 {
+			if decodedCount%120 == 0 {
+				decodeStats, conversionStats, copyStats := v.decodeMetrics.snapshot(), v.conversionMetrics.snapshot(), v.bufferCopyMetrics.snapshot()
+				da, dp50, dp95, dmax := milliseconds(decodeStats)
+				ca, cp50, cp95, cmax := milliseconds(conversionStats)
+				ba, bp50, bp95, bmax := milliseconds(copyStats)
 				age := int64(0)
 				if !compressed.metadata.CaptureTimestamp.IsZero() {
 					age = time.Since(compressed.metadata.CaptureTimestamp).Milliseconds()
 				}
-				v.logger.event(fmt.Sprintf("VIEWER_FRAME_STATS received=%d painted=%d received_fps=%.1f avg_bytes=%d jpeg_decode_ms=%.1f frame_age_ms=%d stale_dropped=%d", received, painted, float64(received)/maxFloat(elapsed, 0.001), bytes/received, float64(decode.Microseconds())/1000, age, v.compressed.dropCount()))
+				v.mu.Lock()
+				interval := maxFloat(now.Sub(v.statsReported).Seconds(), .001)
+				socketFPS := float64(socketCount-v.lastStatsSocket) / interval
+				decodedFPS := float64(decodedCount-v.lastStatsDecoded) / interval
+				paintedFPS := float64(uniquePainted-v.lastStatsPainted) / interval
+				v.lastStatsSocket, v.lastStatsDecoded, v.lastStatsPainted, v.statsReported = socketCount, decodedCount, uniquePainted, now
+				v.mu.Unlock()
+				v.logger.event(fmt.Sprintf("VIEWER_FRAME_STATS compressed_received=%d decode_started=%d decode_completed=%d paint_events=%d unique_frames_painted=%d socket_received_fps=%.1f decoded_fps=%.1f unique_painted_fps=%.1f avg_bytes=%d jpeg_decode_ms=avg:%.1f/p50:%.1f/p95:%.1f/max:%.1f pixel_conversion_ms=avg:%.1f/p50:%.1f/p95:%.1f/max:%.1f display_buffer_copy_ms=avg:%.1f/p50:%.1f/p95:%.1f/max:%.1f frame_age_ms=%d compressed_dropped=%d", socketCount, decodeStartedCount, decodedCount, paintEvents, uniquePainted, socketFPS, decodedFPS, paintedFPS, bytes/decodedCount, da, dp50, dp95, dmax, ca, cp50, cp95, cmax, ba, bp50, bp95, bmax, age, v.compressed.dropCount()))
 			}
 			if notify {
 				if result, _, _ := postMessage.Call(hwnd, wmFrameReady, 0, 0); result == 0 {
 					v.mu.Lock()
-					v.frameNotificationPending = false
+					v.notification.cancel()
 					v.mu.Unlock()
 				}
 			}
@@ -449,30 +491,30 @@ func (r *byteReader) Read(p []byte) (int, error) {
 	*r = (*r)[n:]
 	return n, nil
 }
-func toRGBA(source image.Image) *image.RGBA {
-	bounds := source.Bounds()
-	value := image.NewRGBA(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			value.Set(x, y, source.At(x, y))
-		}
-	}
-	return value
+func (v *viewer) inputEnabled() bool {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.ws != nil && !v.sessionClosed
 }
+
 func (v *viewer) send(input rdp.Input) {
+	if !v.inputEnabled() {
+		return
+	}
 	data, err := json.Marshal(input)
 	if err != nil {
 		return
 	}
 	packet := append([]byte{rdp.PacketInput}, data...)
-	v.mu.RLock()
-	ws := v.ws
-	v.mu.RUnlock()
-	if ws == nil {
-		return
-	}
 	v.writeMu.Lock()
 	defer v.writeMu.Unlock()
+	v.mu.RLock()
+	ws := v.ws
+	closed := v.sessionClosed
+	v.mu.RUnlock()
+	if ws == nil || closed {
+		return
+	}
 	if err := ws.WriteMessage(websocket.BinaryMessage, packet); err != nil {
 		v.logger.event("VIEWER_INPUT_SEND_FAILED")
 	}
@@ -515,10 +557,7 @@ func (v *viewer) window() error {
 	v.logger.event("VIEWER_WINDOW_CREATED")
 	v.mu.Lock()
 	v.hwnd = hwnd
-	notify := len(v.frame.pixels) != 0 && !v.frameNotificationPending
-	if notify {
-		v.frameNotificationPending = true
-	}
+	notify := len(v.frame.pixels) != 0 && v.notification.schedule()
 	v.mu.Unlock()
 	viewerUser32.NewProc("ShowWindow").Call(hwnd, swShow)
 	viewerUser32.NewProc("UpdateWindow").Call(hwnd)
@@ -568,9 +607,12 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		}
 	case wmFrameReady:
 		v.mu.Lock()
-		v.frameNotificationPending = false
+		v.notification.consume()
+		closed := v.sessionClosed
 		v.mu.Unlock()
-		invalidateRect.Call(hwnd, 0, 0, 0)
+		if !closed {
+			invalidateRect.Call(hwnd, 0, 0, 0)
+		}
 		return 0
 	case wmStateChanged:
 		invalidateRect.Call(hwnd, 0, 0, 0)
@@ -650,11 +692,11 @@ func (v *viewer) paint(hwnd uintptr) {
 	info := bitmapInfo{Header: bitmapInfoHeader{Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(frame.width), Height: -int32(frame.height), Planes: 1, BitCount: 32, Compression: biRGB}}
 	if copied, _, _ := stretchDIBits.Call(hdc, uintptr(display.x), uintptr(display.y), uintptr(display.width), uintptr(display.height), 0, 0, uintptr(frame.width), uintptr(frame.height), uintptr(unsafe.Pointer(&frame.pixels[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020); copied != ^uintptr(0) {
 		v.mu.Lock()
-		v.framesPainted++
-		painted := v.framesPainted
+		unique := v.paintState.record(v.frameGeneration)
+		paintEvents, uniquePainted := v.paintState.paintEvents, v.paintState.uniqueFramesPainted
 		v.mu.Unlock()
-		if painted%120 == 0 {
-			v.logger.event(fmt.Sprintf("VIEWER_PAINT_STATS painted=%d", painted))
+		if unique && uniquePainted%120 == 0 {
+			v.logger.event(fmt.Sprintf("VIEWER_PAINT_STATS paint_events=%d unique_frames_painted=%d", paintEvents, uniquePainted))
 		}
 	}
 }

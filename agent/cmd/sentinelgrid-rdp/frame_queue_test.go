@@ -29,3 +29,20 @@ func TestLatestCompressedFrameContinuesNotifications(t *testing.T) {
 		}
 	}
 }
+
+func TestLatestCompressedFrameCloseDropsPendingWorkAndRejectsNewFrames(t *testing.T) {
+	queue := newLatestCompressedFrame()
+	queue.replace(compressedFrame{data: []byte{1}})
+	queue.close()
+	if _, ok := queue.take(); ok {
+		t.Fatal("closed queue returned pending compressed work")
+	}
+	if queue.replace(compressedFrame{data: []byte{2}}) {
+		t.Fatal("closed queue accepted a compressed frame")
+	}
+	select {
+	case <-queue.done:
+	default:
+		t.Fatal("close did not stop decode worker")
+	}
+}

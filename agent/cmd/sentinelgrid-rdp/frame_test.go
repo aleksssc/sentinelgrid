@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"testing"
 )
 
@@ -22,6 +24,27 @@ func TestRGBAToBGRAKeepsColorChannels(t *testing.T) {
 		if got != want {
 			t.Fatalf("pixel %d = %#v, want %#v", x, got, want)
 		}
+	}
+}
+
+func TestJPEGDecodeConvertsDirectlyToBGRA(t *testing.T) {
+	source := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	source.SetRGBA(0, 0, color.RGBA{R: 255, G: 32, B: 16, A: 255})
+	source.SetRGBA(1, 0, color.RGBA{R: 16, G: 64, B: 224, A: 255})
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, source, &jpeg.Options{Quality: 100}); err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := jpeg.Decode(&encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := decoded.(*image.YCbCr); !ok {
+		t.Fatalf("jpeg.Decode type = %T, want *image.YCbCr", decoded)
+	}
+	frame := imageToBGRA(decoded)
+	if frame.width != 2 || frame.height != 1 || len(frame.pixels) != 8 {
+		t.Fatalf("unexpected converted frame: %+v", frame)
 	}
 }
 
