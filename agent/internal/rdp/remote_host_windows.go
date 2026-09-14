@@ -21,18 +21,37 @@ import (
 
 const createUnicodeEnvironment = 0x00000400
 
-func LaunchInteractive(ctx context.Context, connection Connection) error {
+func LaunchInteractive(ctx context.Context, connection Connection) (launchErr error) {
+	if err := provisionRemoteLog(); err != nil {
+		return fmt.Errorf("could not prepare remote diagnostics log: %w", err)
+	}
+	logger, err := openRemoteLogger()
+	if err != nil {
+		return fmt.Errorf("could not open remote diagnostics log: %w", err)
+	}
+	defer logger.close()
+	logger.event("REMOTE_LAUNCH_START")
+	defer func() {
+		if launchErr != nil {
+			logger.event("REMOTE_LAUNCH_FAILED " + sanitizeRemoteLogError(launchErr))
+		}
+	}()
+
 	log.Print("[RDP] session received")
 	session := windows.WTSGetActiveConsoleSessionId()
 	if session == 0xffffffff {
 		return fmt.Errorf("no active interactive Windows session")
 	}
+	logger.event(fmt.Sprintf("REMOTE_ACTIVE_SESSION %d", session))
 	log.Print("[RDP] interactive session detected")
+
 	var token windows.Token
 	if err := windows.WTSQueryUserToken(session, &token); err != nil {
 		return fmt.Errorf("interactive user token unavailable: %w", err)
 	}
 	defer token.Close()
+	logger.event("REMOTE_USER_TOKEN_OK")
+
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -45,6 +64,8 @@ func LaunchInteractive(ctx context.Context, connection Connection) error {
 	if err != nil {
 		return err
 	}
+	logger.event("REMOTE_EXECUTABLE_OK")
+
 	desktop, err := windows.UTF16PtrFromString(`winsta0\default`)
 	if err != nil {
 		return err
@@ -53,14 +74,18 @@ func LaunchInteractive(ctx context.Context, connection Connection) error {
 	if err != nil {
 		return err
 	}
-	if err := provisionRemoteLog(); err != nil {
-		return fmt.Errorf("could not prepare remote diagnostics log: %w", err)
-	}
+	logger.event("REMOTE_ENV_READY")
+	logger.event("REMOTE_LOG_PROVISIONED")
+
 	startup := windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfo{})), Desktop: desktop}
 	var process windows.ProcessInformation
+	logger.event("REMOTE_CREATE_PROCESS_START")
 	if err := windows.CreateProcessAsUser(token, app, &line[0], nil, nil, false, windows.CREATE_NO_WINDOW|createUnicodeEnvironment, &env[0], nil, &startup, &process); err != nil {
-		return fmt.Errorf("could not start remote host in interactive session: %w", err)
+		wrapped := fmt.Errorf("could not start remote host in interactive session: %w", err)
+		logger.event("REMOTE_CREATE_PROCESS_FAILED " + sanitizeRemoteLogError(wrapped))
+		return wrapped
 	}
+	logger.event(fmt.Sprintf("REMOTE_PROCESS_CREATED %d", process.ProcessId))
 	log.Print("[RDP] remote host launched")
 	defer windows.CloseHandle(process.Process)
 	defer windows.CloseHandle(process.Thread)
@@ -76,6 +101,7 @@ func LaunchInteractive(ctx context.Context, connection Connection) error {
 			if err := windows.GetExitCodeProcess(process.Process, &code); err != nil {
 				return err
 			}
+			logger.event(fmt.Sprintf("REMOTE_PROCESS_EXIT %d", code))
 			if code != 0 {
 				return fmt.Errorf("remote host exited with code %d", code)
 			}
