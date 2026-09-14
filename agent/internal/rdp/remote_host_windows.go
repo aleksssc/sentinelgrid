@@ -170,7 +170,6 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	}
 	logger.event("REMOTE_ENV_VALID")
 	logger.event("REMOTE_RELAY_CONNECTING")
-	log.Print("[RDP] remote host connecting")
 	ws, err := Dial(ctx, connection)
 	if err != nil {
 		if strings.Contains(err.Error(), "pairing") {
@@ -180,16 +179,19 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	}
 	defer ws.Close()
 	logger.event("REMOTE_RELAY_CONNECTED")
-	log.Print("[RDP] relay connected")
 	logger.event("REMOTE_PAIRED")
-	log.Print("[RDP] remote host paired")
 	if err := sendScreenInfo(ws); err != nil {
 		return remoteHostFailure("screen-info", err)
 	}
 	logger.event("REMOTE_CAPTURE_START")
-	log.Print("[RDP] REMOTE_CAPTURE_START")
 	inputDone := make(chan error, 1)
 	go readRemoteInput(ctx, ws, inputDone)
+	writer := newLatestFrameWriter(ws)
+	defer writer.close()
+	captureMetrics, conversionMetrics, encodeMetrics := newFrameMetrics(120), newFrameMetrics(120), newFrameMetrics(120)
+	packetMetrics, writeMetrics, totalMetrics := newFrameMetrics(120), newFrameMetrics(120), newFrameMetrics(120)
+	var sequence uint64
+	frames := uint64(0)
 	firstFrame := true
 	ticker := time.NewTicker(time.Second / 30)
 	defer ticker.Stop()
@@ -200,49 +202,55 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 				return err
 			}
 			return nil
+		case err := <-writer.errors:
+			select {
+			case inputErr := <-inputDone:
+				if inputErr == nil || ctx.Err() != nil {
+					return nil
+				}
+				return inputErr
+			default:
+			}
+			logger.event("REMOTE_FRAME_SEND_FAILED category=transport")
+			return remoteHostFailure("frame-send", err)
+		case write := <-writer.writes:
+			writeMetrics.add(write)
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			select {
-			case err := <-inputDone:
-				if err != nil && ctx.Err() == nil {
-					return err
-				}
-				return nil
-			default:
+		}
+		started := time.Now()
+		jpg, timings, err := capturePrimaryJPEGTimed()
+		if err != nil {
+			logger.event("REMOTE_CAPTURE_FAILED " + sanitizeRemoteLogError(err))
+			return remoteHostFailure(remoteCaptureStage(err), err)
+		}
+		sequence++
+		packetStarted := time.Now()
+		data, err := framePacket(FrameMetadata{Sequence: sequence, CaptureTimestamp: started}, jpg)
+		if err != nil {
+			return remoteHostFailure("frame-size", err)
+		}
+		captureMetrics.add(timings.capture)
+		conversionMetrics.add(timings.pixelConversion)
+		encodeMetrics.add(timings.jpegEncode)
+		packetMetrics.add(time.Since(packetStarted))
+		totalMetrics.add(time.Since(started))
+		writer.enqueue(data)
+		frames++
+		if firstFrame {
+			logger.event(fmt.Sprintf("REMOTE_CAPTURE_FIRST_FRAME_OK bytes=%d", len(jpg)))
+			firstFrame = false
+		}
+		if frames%120 == 0 {
+			format := func(m *frameMetrics) string {
+				x := m.snapshot()
+				return fmt.Sprintf("avg=%.1f p50=%.1f p95=%.1f max=%.1f", float64(x.Avg.Microseconds())/1000, float64(x.P50.Microseconds())/1000, float64(x.P95.Microseconds())/1000, float64(x.Max.Microseconds())/1000)
 			}
-			jpg, err := capturePrimaryJPEG()
-			if err != nil {
-				logger.event("REMOTE_CAPTURE_FAILED " + sanitizeRemoteLogError(err))
-				log.Printf("[RDP] REMOTE_CAPTURE_FAILED %s", captureFailureReason(err))
-				return remoteHostFailure(remoteCaptureStage(err), err)
-			}
-			if firstFrame {
-				logger.event(fmt.Sprintf("REMOTE_CAPTURE_FIRST_FRAME_OK bytes=%d", len(jpg)))
-				log.Print("[RDP] REMOTE_CAPTURE_FIRST_FRAME_OK")
-				firstFrame = false
-			}
-			data, err := packet(PacketFrame, jpg)
-			if err != nil {
-				return remoteHostFailure("frame-size", err)
-			}
-			if err := writePacket(ws, data); err != nil {
-				select {
-				case inputErr := <-inputDone:
-					if inputErr == nil || ctx.Err() != nil {
-						logger.event("REMOTE_FRAME_SEND_SKIPPED category=peer_closed")
-						return nil
-					}
-					return inputErr
-				default:
-				}
-				logger.event("REMOTE_FRAME_SEND_FAILED category=transport")
-				return remoteHostFailure("frame-send", err)
-			}
+			logger.event(fmt.Sprintf("REMOTE_FRAME_STATS frames=%d capture_ms=%s pixel_conversion_ms=%s jpeg_encode_ms=%s packet_build_ms=%s websocket_write_ms=%s frame_total_ms=%s dropped=%d", frames, format(captureMetrics), format(conversionMetrics), format(encodeMetrics), format(packetMetrics), format(writeMetrics), format(totalMetrics), writer.dropCount()))
 		}
 	}
 }
-
 func captureFailureReason(err error) string {
 	switch {
 	case strings.Contains(err.Error(), "primary display"):
@@ -321,16 +329,25 @@ func screenSize() (int, int) {
 	return int(w), int(h)
 }
 
+type captureTiming struct{ capture, pixelConversion, jpegEncode time.Duration }
+
 func capturePrimaryJPEG() ([]byte, error) {
+	frame, _, err := capturePrimaryJPEGTimed()
+	return frame, err
+}
+
+func capturePrimaryJPEGTimed() ([]byte, captureTiming, error) {
+	var timing captureTiming
+	captureStarted := time.Now()
 	width, height := screenSize()
 	info, pixelSize, err := newCaptureDIBInfo(width, height)
 	if err != nil {
-		return nil, err
+		return nil, timing, err
 	}
 
 	dc, _, callErr := getDC.Call(0)
 	if dc == 0 {
-		return nil, captureAPIError("CAPTURE_GETDC_FAILED", width, height, dc, callErr)
+		return nil, timing, captureAPIError("CAPTURE_GETDC_FAILED", width, height, dc, callErr)
 	}
 	defer func() {
 		if released, _, releaseErr := releaseDC.Call(0, dc); released == 0 {
@@ -340,7 +357,7 @@ func capturePrimaryJPEG() ([]byte, error) {
 
 	memory, _, callErr := createCompatibleDC.Call(dc)
 	if memory == 0 {
-		return nil, captureAPIError("CAPTURE_CREATE_DC_FAILED", width, height, memory, callErr)
+		return nil, timing, captureAPIError("CAPTURE_CREATE_DC_FAILED", width, height, memory, callErr)
 	}
 	defer func() {
 		if deleted, _, deleteErr := deleteDC.Call(memory); deleted == 0 {
@@ -351,7 +368,7 @@ func capturePrimaryJPEG() ([]byte, error) {
 	var bits unsafe.Pointer
 	bitmap, _, callErr := createDIBSection.Call(dc, uintptr(unsafe.Pointer(&info)), dibRGBColors, uintptr(unsafe.Pointer(&bits)), 0, 0)
 	if bitmap == 0 {
-		return nil, captureAPIError("CAPTURE_DIB_SECTION_FAILED", width, height, bitmap, callErr)
+		return nil, timing, captureAPIError("CAPTURE_DIB_SECTION_FAILED", width, height, bitmap, callErr)
 	}
 	defer func() {
 		if deleted, _, deleteErr := deleteObject.Call(bitmap); deleted == 0 {
@@ -359,16 +376,16 @@ func capturePrimaryJPEG() ([]byte, error) {
 		}
 	}()
 	if bits == nil {
-		return nil, captureAPIError("CAPTURE_DIB_SECTION_FAILED", width, height, 0, nil)
+		return nil, timing, captureAPIError("CAPTURE_DIB_SECTION_FAILED", width, height, 0, nil)
 	}
 
 	var order captureOrder
 	old, _, callErr := selectObject.Call(memory, bitmap)
 	if old == 0 || old == ^uintptr(0) {
-		return nil, captureAPIError("CAPTURE_SELECT_FAILED", width, height, old, callErr)
+		return nil, timing, captureAPIError("CAPTURE_SELECT_FAILED", width, height, old, callErr)
 	}
 	if err := order.selected(); err != nil {
-		return nil, err
+		return nil, timing, err
 	}
 
 	restored := false
@@ -392,36 +409,40 @@ func capturePrimaryJPEG() ([]byte, error) {
 	const srccopyCaptureBlt = 0x00CC0020 | 0x40000000
 	copied, _, callErr := bitBlt.Call(memory, 0, 0, uintptr(width), uintptr(height), dc, 0, 0, srccopyCaptureBlt)
 	if copied == 0 {
-		return nil, captureAPIError("CAPTURE_BITBLT_FAILED", width, height, copied, callErr)
+		return nil, timing, captureAPIError("CAPTURE_BITBLT_FAILED", width, height, copied, callErr)
 	}
 	if err := order.copied(); err != nil {
-		return nil, err
+		return nil, timing, err
 	}
 	if err := restore(); err != nil {
-		return nil, err
+		return nil, timing, err
 	}
 	if err := order.pixelsReady(); err != nil {
-		return nil, err
+		return nil, timing, err
 	}
 
+	timing.capture = time.Since(captureStarted)
+	pixelConversionStarted := time.Now()
 	pixels := unsafe.Slice((*byte)(bits), pixelSize)
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	for i := 0; i < len(pixels); i += captureBytesPerPixel {
 		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = pixels[i+2], pixels[i+1], pixels[i], 0xff
 	}
+	timing.pixelConversion = time.Since(pixelConversionStarted)
 	var out bytes.Buffer
-	// Prefer readable desktop text, but retry at lower quality rather than ever
+	encodeStarted := time.Now()
 	// placing an oversized JPEG on the relay connection.
 	for _, quality := range []int{75, 65, 55} {
 		out.Reset()
 		if err := jpeg.Encode(&out, img, &jpeg.Options{Quality: quality}); err != nil {
-			return nil, fmt.Errorf("CAPTURE_JPEG_FAILED width=%d height=%d: %w", width, height, err)
+			return nil, timing, fmt.Errorf("CAPTURE_JPEG_FAILED width=%d height=%d: %w", width, height, err)
 		}
 		if out.Len() <= maxRemotePacket-1 {
-			return out.Bytes(), nil
+			timing.jpegEncode = time.Since(encodeStarted)
+			return out.Bytes(), timing, nil
 		}
 	}
-	return nil, fmt.Errorf("CAPTURE_JPEG_FAILED width=%d height=%d reason=frame_exceeds_limit", width, height)
+	return nil, timing, fmt.Errorf("CAPTURE_JPEG_FAILED width=%d height=%d reason=frame_exceeds_limit", width, height)
 }
 
 type mouseInput struct {

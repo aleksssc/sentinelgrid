@@ -65,6 +65,7 @@ type viewer struct {
 	frameBytes                    uint64
 	statsStarted                  time.Time
 	frameNotificationPending      bool
+	compressed                    *latestCompressedFrame
 	closeRequested                bool
 	done                          chan struct{}
 }
@@ -244,7 +245,7 @@ func runViewerConnecting(connect viewerConnect) error {
 	}
 	defer logger.close()
 	logger.event("VIEWER_START")
-	v := &viewer{logger: logger, status: "Connecting to remote device...", done: make(chan struct{}), statsStarted: time.Now()}
+	v := &viewer{logger: logger, status: "Connecting to remote device...", done: make(chan struct{}), statsStarted: time.Now(), compressed: newLatestCompressedFrame()}
 	activeViewer = v
 	sessionCtx, cancelSession := context.WithCancel(context.Background())
 	go func() {
@@ -264,6 +265,7 @@ func runViewerConnecting(connect viewerConnect) error {
 		v.mu.Unlock()
 		v.logger.event("VIEWER_RELAY_CONNECTED")
 		v.setStatus("Starting video...")
+		go v.decodeFrames()
 		v.receive()
 	}()
 	windowErr := v.window()
@@ -376,18 +378,36 @@ func (v *viewer) receive() {
 				v.logger.event(fmt.Sprintf("VIEWER_SCREEN_INFO width=%d height=%d", info.Width, info.Height))
 			}
 		case rdp.PacketFrame:
-			decoded, err := jpeg.Decode(bytesReader(data[1:]))
+			metadata, jpegData, parseErr := rdp.ParseFramePacket(data)
+			if parseErr != nil {
+				v.logger.event("VIEWER_FRAME_INVALID")
+				continue
+			}
+			v.compressed.replace(compressedFrame{data: jpegData, metadata: metadata})
+		}
+	}
+}
+
+func (v *viewer) decodeFrames() {
+	for range v.compressed.ready {
+		for {
+			compressed, ok := v.compressed.take()
+			if !ok {
+				break
+			}
+			started := time.Now()
+			decoded, err := jpeg.Decode(bytesReader(compressed.data))
 			if err != nil {
 				v.logger.event("VIEWER_JPEG_DECODE_FAILED")
 				continue
 			}
-			rgba := toRGBA(decoded)
-			frame := rgbaToBGRA(rgba)
+			frame := rgbaToBGRA(toRGBA(decoded))
+			decode := time.Since(started)
 			v.mu.Lock()
 			first := len(v.frame.pixels) == 0
 			v.frame = frame
 			v.framesReceived++
-			v.frameBytes += uint64(len(data) - 1)
+			v.frameBytes += uint64(len(compressed.data))
 			received, painted, bytes := v.framesReceived, v.framesPainted, v.frameBytes
 			elapsed := time.Since(v.statsStarted).Seconds()
 			hwnd := v.hwnd
@@ -398,10 +418,14 @@ func (v *viewer) receive() {
 			v.status = ""
 			v.mu.Unlock()
 			if first {
-				v.logger.event(fmt.Sprintf("VIEWER_FIRST_FRAME bytes=%d", len(data)-1))
+				v.logger.event(fmt.Sprintf("VIEWER_FIRST_FRAME bytes=%d", len(compressed.data)))
 			}
 			if received%120 == 0 {
-				v.logger.event(fmt.Sprintf("VIEWER_FRAME_STATS received=%d painted=%d fps=%.1f avg_bytes=%d", received, painted, float64(received)/maxFloat(elapsed, 0.001), bytes/received))
+				age := int64(0)
+				if !compressed.metadata.CaptureTimestamp.IsZero() {
+					age = time.Since(compressed.metadata.CaptureTimestamp).Milliseconds()
+				}
+				v.logger.event(fmt.Sprintf("VIEWER_FRAME_STATS received=%d painted=%d received_fps=%.1f avg_bytes=%d jpeg_decode_ms=%.1f frame_age_ms=%d stale_dropped=%d", received, painted, float64(received)/maxFloat(elapsed, 0.001), bytes/received, float64(decode.Microseconds())/1000, age, v.compressed.dropCount()))
 			}
 			if notify {
 				if result, _, _ := postMessage.Call(hwnd, wmFrameReady, 0, 0); result == 0 {
