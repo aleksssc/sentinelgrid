@@ -17,7 +17,7 @@ func TestRemoteLogACLContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build remote log file ACL: %v", err)
 	}
-	if !strings.Contains(directorySDDL, "D:P") || !strings.Contains(directorySDDL, "(A;;0x00100020;;;"+userSID+")") {
+	if !strings.Contains(directorySDDL, "D:P") || !strings.Contains(directorySDDL, "(A;;0x00100021;;;"+userSID+")") {
 		t.Fatalf("directory ACL must be protected and grant the active user traversal only: %s", directorySDDL)
 	}
 	if !strings.Contains(fileSDDL, "D:P") || !strings.Contains(fileSDDL, "(A;;0x00100004;;;"+userSID+")") {

@@ -28,6 +28,7 @@ import (
 const (
 	wmDestroy          = 0x0002
 	wmPaint            = 0x000f
+	wmSize             = 0x0005
 	wmEraseBkgnd       = 0x0014
 	wmSetFocus         = 0x0007
 	wmClose            = 0x0010
@@ -56,18 +57,24 @@ const (
 )
 
 type viewer struct {
-	mu              sync.RWMutex
-	writeMu         sync.Mutex
-	ws              *websocket.Conn
-	frame           viewerFrame
-	frameGeneration uint64
-	hwnd            uintptr
-	status          string
-	logger          *viewerLogger
-	compressed      *latestCompressedFrame
-	closeRequested  bool
-	sessionClosed   bool
-	done            chan struct{}
+	mu                        sync.RWMutex
+	writeMu                   sync.Mutex
+	ws                        *websocket.Conn
+	frame                     viewerFrame
+	frameGeneration           uint64
+	hwnd                      uintptr
+	status                    string
+	logger                    *viewerLogger
+	compressed                *latestCompressedFrame
+	closeRequested            bool
+	sessionClosed             bool
+	done                      chan struct{}
+	renderer                  *nativeRenderer
+	rendererBackend           string
+	decoder                   *nativeH264Decoder
+	videoCodec                string
+	screenWidth, screenHeight int
+	lastKeyframeRequest       time.Time
 
 	socketReceived, decodeStarted, decodedCompleted     uint64
 	frameBytes                                          uint64
@@ -81,7 +88,7 @@ type viewer struct {
 	lastSuccessfulGeneration                            uint64
 	decodeMetrics                                       durationWindow
 	conversionMetrics                                   durationWindow
-	bufferCopyMetrics                                   durationWindow
+	bufferCopyMetrics, presentMetrics                   durationWindow
 }
 type viewerLogger struct {
 	mu   sync.Mutex
@@ -264,7 +271,7 @@ func runViewerConnecting(connect viewerConnect) error {
 	defer logger.close()
 	logger.event("VIEWER_START")
 	started := time.Now()
-	v := &viewer{logger: logger, status: "Connecting to remote device...", done: make(chan struct{}), statsStarted: started, statsReported: started, compressed: newLatestCompressedFrame(), decodeMetrics: newDurationWindow(120), conversionMetrics: newDurationWindow(120), bufferCopyMetrics: newDurationWindow(120)}
+	v := &viewer{logger: logger, status: "Connecting to remote device...", done: make(chan struct{}), statsStarted: started, statsReported: started, compressed: newLatestCompressedFrame(), decodeMetrics: newDurationWindow(120), conversionMetrics: newDurationWindow(120), bufferCopyMetrics: newDurationWindow(120), presentMetrics: newDurationWindow(120)}
 	activeViewer = v
 	sessionCtx, cancelSession := context.WithCancel(context.Background())
 	go func() {
@@ -398,7 +405,15 @@ func (v *viewer) receive() {
 			var info rdp.ScreenInfo
 			if json.Unmarshal(data[1:], &info) == nil && info.Width > 0 && info.Height > 0 {
 				v.logger.event(fmt.Sprintf("VIEWER_SCREEN_INFO width=%d height=%d", info.Width, info.Height))
+				v.mu.Lock()
+				v.screenWidth, v.screenHeight = info.Width, info.Height
+				v.mu.Unlock()
+				v.configureVideoCapabilities(info.Width, info.Height)
 			}
+		case rdp.PacketVideoSelected:
+			v.handleVideoSelected(data)
+		case rdp.PacketH264AccessUnit:
+			v.handleH264AccessUnit(data)
 		case rdp.PacketFrame:
 			metadata, jpegData, parseErr := rdp.ParseFramePacket(data)
 			if parseErr != nil {
@@ -577,6 +592,23 @@ func (v *viewer) window() error {
 		return fmt.Errorf("could not create viewer window: %s", win32Error(err))
 	}
 	v.logger.event("VIEWER_WINDOW_CREATED")
+	if renderer, rendererErr := newNativeRenderer(hwnd); rendererErr == nil {
+		v.mu.Lock()
+		v.renderer, v.rendererBackend = renderer, "d3d11"
+		v.mu.Unlock()
+		v.logger.event("VIEWER_RENDERER backend=d3d11")
+		v.mu.RLock()
+		screenWidth, screenHeight := v.screenWidth, v.screenHeight
+		v.mu.RUnlock()
+		if screenWidth > 0 && screenHeight > 0 {
+			v.configureVideoCapabilities(screenWidth, screenHeight)
+		}
+	} else {
+		v.mu.Lock()
+		v.rendererBackend = "gdi"
+		v.mu.Unlock()
+		v.logger.event("VIEWER_RENDERER backend=gdi reason=initialization_failed")
+	}
 	if timer, _, timerErr := setTimer.Call(hwnd, framePresentTimer, framePresentPeriod, 0); timer == 0 {
 		v.logger.event(fmt.Sprintf("VIEWER_PRESENT_TIMER_FAILED error=%s", win32Error(timerErr)))
 	}
@@ -621,10 +653,32 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		killTimer.Call(hwnd, framePresentTimer)
 		v.mu.Lock()
 		v.hwnd = 0
+		destroyRenderer := v.renderer
+		destroyDecoder := v.decoder
+		v.renderer = nil
+		v.decoder = nil
 		v.notification.cancel()
 		v.mu.Unlock()
+		if destroyRenderer != nil {
+			destroyRenderer.close()
+		}
+		if destroyDecoder != nil {
+			destroyDecoder.close()
+		}
 		v.logger.event("VIEWER_CLOSE")
 		postQuitMessage.Call(0)
+		return 0
+	case wmSize:
+		v.mu.RLock()
+		renderer := v.renderer
+		v.mu.RUnlock()
+		if renderer != nil {
+			var client rect
+			getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
+			if err := renderer.resize(int(client.Right), int(client.Bottom)); err != nil {
+				v.logger.event("VIEWER_D3D11_RESIZE_FAILED")
+			}
+		}
 		return 0
 	case wmSetFocus:
 		setFocus.Call(hwnd)
@@ -700,24 +754,28 @@ func (v *viewer) mapMouse(hwnd uintptr, x, y int) (int, int, bool) {
 // frame is presented even when Windows has no pending WM_PAINT invalidation.
 func (v *viewer) presentLatestFrame(hwnd uintptr) {
 	v.mu.Lock()
-	frame, generation := v.frame, v.frameGeneration
+	frame, generation, renderer := v.frame, v.frameGeneration, v.renderer
 	if !v.notification.shouldPresent(generation) {
 		v.mu.Unlock()
 		return
 	}
 	v.notification.markAttempted(generation)
 	v.mu.Unlock()
-
+	if renderer != nil {
+		started := time.Now()
+		err := renderer.renderFrame(frame)
+		v.recordRendererResult(err, generation, time.Since(started))
+		return
+	}
+	v.presentLatestFrameGDI(hwnd, frame, generation)
+}
+func (v *viewer) presentLatestFrameGDI(hwnd uintptr, frame viewerFrame, generation uint64) {
 	hdc, _, _ := getWindowDC.Call(hwnd)
 	if hdc == 0 {
 		v.recordPaintResult(-1, 0, 0, 0, 0, generation)
 		return
 	}
-	defer func() {
-		if released, _, err := releaseWindowDC.Call(hwnd, hdc); released == 0 {
-			v.logger.event(fmt.Sprintf("VIEWER_RELEASE_DC_FAILED error=%s", win32Error(err)))
-		}
-	}()
+	defer releaseWindowDC.Call(hwnd, hdc)
 	var client rect
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
 	if !frame.valid() {
@@ -733,51 +791,45 @@ func (v *viewer) presentLatestFrame(hwnd uintptr) {
 	copied, _, _ := stretchDIBits.Call(hdc, uintptr(display.x), uintptr(display.y), uintptr(display.width), uintptr(display.height), 0, 0, uintptr(frame.width), uintptr(frame.height), uintptr(unsafe.Pointer(&frame.pixels[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020)
 	v.recordPaintResult(int32(copied), frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
 }
+func (v *viewer) recordRendererResult(err error, generation uint64, elapsed time.Duration) {
+	v.mu.Lock()
+	v.presentAttempts++
+	if err == nil {
+		v.presentMetrics.add(elapsed)
+		v.successfulPresents++
+		v.lastSuccessfulGeneration = generation
+		v.status = ""
+	} else {
+		v.gdiErrorPresents++
+	}
+	v.mu.Unlock()
+	if err != nil {
+		v.logger.event("VIEWER_D3D11_PRESENT_FAILED")
+	}
+}
 func (v *viewer) paint(hwnd uintptr) {
 	var paint paintStruct
 	hdc, _, _ := beginPaint.Call(hwnd, uintptr(unsafe.Pointer(&paint)))
 	if hdc == 0 {
-		v.recordExposureResult(-2, 0, 0, 0, 0, 0)
 		return
 	}
 	defer endPaint.Call(hwnd, uintptr(unsafe.Pointer(&paint)))
+	v.mu.RLock()
+	renderer, status, hasFrame := v.renderer, v.status, len(v.frame.pixels) != 0
+	v.mu.RUnlock()
+	if renderer != nil && hasFrame {
+		if err := renderer.redraw(); err != nil {
+			v.logger.event("VIEWER_D3D11_REDRAW_FAILED")
+		}
+		return
+	}
 	var client rect
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
-	black := getStockObjectValue(blackBrush)
-	fill := func(area rect) {
-		if area.Right > area.Left && area.Bottom > area.Top {
-			fillRect.Call(hdc, uintptr(unsafe.Pointer(&area)), black)
-		}
+	fillRect.Call(hdc, uintptr(unsafe.Pointer(&client)), getStockObjectValue(blackBrush))
+	if !hasFrame {
+		v.paintStatus(hdc, client, status)
 	}
-
-	v.mu.RLock()
-	frame, generation := v.frame, v.frameGeneration
-	status := v.status
-	v.mu.RUnlock()
-	if !frame.valid() {
-		fill(client)
-		if len(frame.pixels) == 0 {
-			v.paintStatus(hdc, client, status)
-		} else {
-			v.recordExposureResult(0, frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
-		}
-		return
-	}
-	display, ok := fittedImageRect(int(client.Right), int(client.Bottom), frame.width, frame.height)
-	if !ok {
-		v.recordExposureResult(0, frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
-		return
-	}
-	// Preserve the displayed frame and repaint only the areas not covered by it.
-	fill(rect{Left: client.Left, Top: client.Top, Right: client.Right, Bottom: int32(display.y)})
-	fill(rect{Left: client.Left, Top: int32(display.y + display.height), Right: client.Right, Bottom: client.Bottom})
-	fill(rect{Left: client.Left, Top: int32(display.y), Right: int32(display.x), Bottom: int32(display.y + display.height)})
-	fill(rect{Left: int32(display.x + display.width), Top: int32(display.y), Right: client.Right, Bottom: int32(display.y + display.height)})
-	info := bitmapInfo{Header: bitmapInfoHeader{Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(frame.width), Height: -int32(frame.height), Planes: 1, BitCount: 32, Compression: biRGB}}
-	copied, _, _ := stretchDIBits.Call(hdc, uintptr(display.x), uintptr(display.y), uintptr(display.width), uintptr(display.height), 0, 0, uintptr(frame.width), uintptr(frame.height), uintptr(unsafe.Pointer(&frame.pixels[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020)
-	v.recordExposureResult(int32(copied), frame.width, frame.height, int(client.Right), int(client.Bottom), generation)
 }
-
 func (v *viewer) recordExposureResult(result int32, width, height, clientWidth, clientHeight int, generation uint64) {
 }
 
@@ -824,9 +876,15 @@ func (v *viewer) recordPaintResult(result int32, width, height, clientWidth, cli
 func (v *viewer) logPresentStats(decodedGeneration uint64, presentedFPS float64) {
 	v.mu.RLock()
 	attempts, successful := v.presentAttempts, v.successfulPresents
-	zero, gdiError, lastSuccessful := v.zeroResultPresents, v.gdiErrorPresents, v.lastSuccessfulGeneration
+	zero, failed, lastSuccessful := v.zeroResultPresents, v.gdiErrorPresents, v.lastSuccessfulGeneration
+	backend, renderer, present := v.rendererBackend, v.renderer, v.presentMetrics.snapshot()
 	v.mu.RUnlock()
-	v.logger.event(fmt.Sprintf("VIEWER_PRESENT_STATS decoded_generation=%d present_attempts=%d successful_presents=%d zero_result_presents=%d gdi_error_presents=%d last_successful_generation=%d presented_fps=%.1f", decodedGeneration, attempts, successful, zero, gdiError, lastSuccessful, presentedFPS))
+	rendererStats := nativeRendererStats{}
+	if renderer != nil {
+		rendererStats = renderer.snapshot()
+	}
+	avg, p50, p95, max := milliseconds(present)
+	v.logger.event(fmt.Sprintf("VIEWER_RENDER_STATS backend=%s decoded_generation=%d render_attempts=%d successful_presents=%d failed_presents=%d last_successful_generation=%d presented_fps=%.1f present_ms=avg:%.1f/p50:%.1f/p95:%.1f/max:%.1f device_resets=%d", backend, decodedGeneration, attempts, successful, zero+failed, lastSuccessful, presentedFPS, avg, p50, p95, max, rendererStats.DeviceResets))
 }
 func (v *viewer) paintStatus(hdc uintptr, client rect, status string) {
 	if status == "" {

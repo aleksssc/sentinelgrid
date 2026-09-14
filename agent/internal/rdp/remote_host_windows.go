@@ -167,116 +167,162 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	if err := connection.Validate(); err != nil {
 		return remoteHostFailure("environment", err)
 	}
-	logger.event("REMOTE_ENV_VALID")
-	logger.event("REMOTE_PAIR_START")
-	logger.event("REMOTE_RELAY_CONNECTING")
-	logger.event("REMOTE_WAITING_FOR_VIEWER")
 	ws, err := Dial(ctx, connection)
 	if err != nil {
-		logger.event("REMOTE_PAIR_FAILED category=" + pairingCategory(err))
-		if strings.Contains(err.Error(), "pairing") {
-			return remoteHostFailure("pairing", err)
-		}
 		return remoteHostFailure("relay", err)
 	}
 	defer ws.Close()
-	logger.event("REMOTE_RELAY_CONNECTED")
-	logger.event("REMOTE_PAIRED")
-	backend, backendDescription, err := newPreferredCaptureBackendWithDiagnostics(ctx, logger.event)
+	backend, description, err := newPreferredCaptureBackendWithDiagnostics(ctx, logger.event)
 	if err != nil {
 		return remoteHostFailure("capture-backend", err)
 	}
 	defer backend.Close()
-	logger.event("REMOTE_VIDEO_BACKEND backend=" + backendDescription)
+	logger.event("REMOTE_VIDEO_BACKEND backend=" + description)
+	width, height := backend.Dimensions()
 	if err := sendScreenInfo(ws); err != nil {
 		return remoteHostFailure("screen-info", err)
 	}
-	logger.event("REMOTE_CAPTURE_START")
-	captureCtx, cancelCapture := context.WithCancel(ctx)
-	writer := newLatestFrameWriter(ws)
-	inputDone := make(chan remoteInputResult, 1)
-	go readRemoteInput(captureCtx, ws, inputDone)
-	controller := remoteSessionController{ws: ws, writer: writer, cancelCapture: cancelCapture, inputDone: inputDone}
+	captureCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan remoteInputResult, 1)
+	controls := make(chan remoteControl, 8)
+	go readRemoteInput(captureCtx, ws, done, controls)
+	caps := VideoCapabilities{Version: videoProtocolVersion, Codecs: []string{"jpeg"}}
+	select {
+	case c := <-controls:
+		if c.capabilities != nil {
+			caps = *c.capabilities
+		}
+	case r := <-done:
+		cancel()
+		return r.err
+	case <-time.After(2 * time.Second):
+	}
+	source := videoSource(jpegVideoSource{})
+	reason := "viewer_no_h264"
+	if supportsH264(caps) {
+		if h, e := newH264VideoSource(width, height); e == nil {
+			source = h
+			reason = ""
+			name, hardware, _ := h.description()
+			logger.event(fmt.Sprintf("REMOTE_ENCODER name=%s hardware=%t fps=30 bitrate=8000000", name, hardware))
+			logger.event("REMOTE_ENCODER_INPUT mode=cpu_fallback")
+		} else {
+			reason = "encoder_init_failed"
+		}
+	}
+	defer source.close()
+	selected := VideoSelected{Version: videoProtocolVersion, Codec: source.codec(), Width: width, Height: height, FPS: 30, Format: "jpeg"}
+	if selected.Codec == "h264" {
+		selected.Format = "annexb"
+	}
+	p, e := videoControlPacket(PacketVideoSelected, selected)
+	if e != nil {
+		return remoteHostFailure("video-selection", e)
+	}
+	if e = writePacket(ws, p); e != nil {
+		return remoteHostFailure("video-selection", e)
+	}
+	if source.codec() == "h264" {
+		logger.event("REMOTE_VIDEO_MODE codec=h264")
+	} else {
+		logger.event("REMOTE_VIDEO_MODE codec=jpeg reason=" + reason)
+	}
+	var writer remotePacketWriter
+	var failures <-chan frameWriteResult
+	var writes <-chan time.Duration
+	var put func([]byte, uint32)
+	var drop func() uint64
+	var stats func() (uint64, uint64, uint64)
+	if h, ok := source.(*h264VideoSource); ok {
+		w := newH264Writer(ws, h.forceKeyframe)
+		writer = w
+		failures = w.failures
+		writes = w.writes
+		put = w.enqueue
+		drop = w.dropCount
+		stats = w.stats
+	} else {
+		w := newLatestFrameWriter(ws)
+		writer = w
+		failures = w.failures
+		writes = w.writes
+		put = func(p []byte, _ uint32) { w.enqueue(p) }
+		drop = w.dropCount
+		stats = func() (uint64, uint64, uint64) { return 0, 0, 0 }
+	}
+	controller := remoteSessionController{ws: ws, writer: writer, cancelCapture: cancel, inputDone: done}
 	defer controller.stop()
-	captureMetrics, conversionMetrics, encodeMetrics := newFrameMetrics(120), newFrameMetrics(120), newFrameMetrics(120)
-	dxgiAcquireMetrics, dxgiCopyMetrics, cpuReadbackMetrics := newFrameMetrics(120), newFrameMetrics(120), newFrameMetrics(120)
-	packetMetrics, writeMetrics, totalMetrics := newFrameMetrics(120), newFrameMetrics(120), newFrameMetrics(120)
-	var sequence uint64
-	frames := uint64(0)
-	firstFrame := true
-	ticker := time.NewTicker(time.Second / 30)
-	defer ticker.Stop()
+	var seq, aus, encodedBytes, keyframes, forced uint64
+	em, wm := newFrameMetrics(120), newFrameMetrics(120)
+	tick := time.NewTicker(time.Second / 30)
+	defer tick.Stop()
 	for {
 		select {
-		case result := <-inputDone:
+		case r := <-done:
 			controller.finish(true)
-			if result.normal || ctx.Err() != nil {
-				return nil
-			}
-			return result.err
-		case failure := <-writer.failures:
-			if err := controller.resolveWriteFailure(ctx, failure); err != nil {
-				logger.event("REMOTE_FRAME_SEND_FAILED category=transport")
-				return err
+			return r.err
+		case f := <-failures:
+			if e := controller.resolveWriteFailure(ctx, f); e != nil {
+				return e
 			}
 			return nil
-		case write := <-writer.writes:
-			writeMetrics.add(write)
+		case d := <-writes:
+			wm.add(d)
+		case c := <-controls:
+			if c.keyframe && source.codec() == "h264" {
+				logger.event("REMOTE_KEYFRAME_REQUEST_RECEIVED")
+				e := source.forceKeyframe()
+				logger.event(fmt.Sprintf("REMOTE_KEYFRAME_FORCED success=%t", e == nil))
+				if e == nil {
+					forced++
+				}
+			}
 		case <-ctx.Done():
-			controller.finish(false)
 			return nil
-		case <-ticker.C:
+		case <-tick.C:
 		}
-		if captureCtx.Err() != nil {
-			controller.finish(false)
-			return nil
-		}
-		started := time.Now()
-		frame, changed, err := backend.Capture(captureCtx)
-		if err != nil {
-			logger.event("REMOTE_CAPTURE_FAILED " + sanitizeRemoteLogError(err))
-			return remoteHostFailure(remoteCaptureStage(err), err)
+		frame, changed, e := backend.Capture(captureCtx)
+		if e != nil {
+			return remoteHostFailure(remoteCaptureStage(e), e)
 		}
 		if !changed {
 			continue
 		}
-		jpg, timings, err := encodeCaptureFrame(frame)
-		if err != nil {
-			logger.event("REMOTE_CAPTURE_FAILED " + sanitizeRemoteLogError(err))
-			return remoteHostFailure(remoteCaptureStage(err), err)
+		seq++
+		out, e := source.encode(frame, seq, time.Now())
+		if e != nil {
+			return remoteHostFailure("encode", e)
 		}
-		if captureCtx.Err() != nil {
-			controller.finish(false)
-			return nil
+		if len(out.packet) == 0 {
+			continue
 		}
-		sequence++
-		packetStarted := time.Now()
-		data, err := framePacket(FrameMetadata{Sequence: sequence, CaptureTimestamp: started}, jpg)
-		if err != nil {
-			return remoteHostFailure("frame-size", err)
+		put(out.packet, out.flags)
+		em.add(out.encode)
+		aus++
+		encodedBytes += uint64(out.bytes)
+		if out.flags&H264FlagKeyframe != 0 {
+			keyframes++
 		}
-		captureMetrics.add(timings.capture)
-		dxgiAcquireMetrics.add(frame.Acquire)
-		dxgiCopyMetrics.add(frame.Copy)
-		cpuReadbackMetrics.add(frame.Readback)
-		conversionMetrics.add(timings.pixelConversion)
-		encodeMetrics.add(timings.jpegEncode)
-		packetMetrics.add(time.Since(packetStarted))
-		totalMetrics.add(time.Since(started))
-		writer.enqueue(data)
-		frames++
-		if firstFrame {
-			logger.event(fmt.Sprintf("REMOTE_CAPTURE_FIRST_FRAME_OK bytes=%d", len(jpg)))
-			firstFrame = false
-		}
-		if frames%120 == 0 {
-			format := func(m *frameMetrics) string {
-				x := m.snapshot()
-				return fmt.Sprintf("avg=%.1f p50=%.1f p95=%.1f max=%.1f", float64(x.Avg.Microseconds())/1000, float64(x.P50.Microseconds())/1000, float64(x.P95.Microseconds())/1000, float64(x.Max.Microseconds())/1000)
-			}
-			logger.event(fmt.Sprintf("REMOTE_FRAME_STATS backend=%s frames=%d dxgi_acquire_ms=%s dxgi_copy_ms=%s cpu_readback_ms=%s capture_ms=%s pixel_conversion_ms=%s jpeg_encode_ms=%s packet_build_ms=%s websocket_write_ms=%s frame_total_ms=%s dropped=%d", backendDescription, frames, format(dxgiAcquireMetrics), format(dxgiCopyMetrics), format(cpuReadbackMetrics), format(captureMetrics), format(conversionMetrics), format(encodeMetrics), format(packetMetrics), format(writeMetrics), format(totalMetrics), writer.dropCount()))
+		if aus%120 == 0 {
+			g, a, f := stats()
+			logger.event(fmt.Sprintf("REMOTE_VIDEO_STATS capture_fps=30 encode_fps=30 aus_encoded=%d bytes_encoded=%d keyframes=%d forced_keyframes=%d dropped_aus=%d dropped_gops=%d encode_ms=%.1f network_write_ms=%.1f", aus, encodedBytes, keyframes, forced+f, drop()+a, g, float64(em.snapshot().Avg.Microseconds())/1000, float64(wm.snapshot().Avg.Microseconds())/1000))
 		}
 	}
+}
+
+type remoteControl struct {
+	capabilities *VideoCapabilities
+	keyframe     bool
+}
+
+func supportsH264(c VideoCapabilities) bool {
+	for _, v := range c.Codecs {
+		if v == "h264" {
+			return true
+		}
+	}
+	return false
 }
 func captureFailureReason(err error) string {
 	switch {
@@ -304,32 +350,62 @@ func sendScreenInfo(ws *websocket.Conn) error {
 	return writePacket(ws, data)
 }
 
-func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remoteInputResult) {
+func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remoteInputResult, controls ...chan<- remoteControl) {
+	var control chan<- remoteControl
+	if len(controls) != 0 {
+		control = controls[0]
+	}
+	last := time.Time{}
 	for {
 		kind, data, err := ws.ReadMessage()
 		if err != nil {
 			if isNormalWebSocketClose(err) || ctx.Err() != nil {
 				done <- remoteInputResult{normal: true}
 			} else {
-				done <- remoteInputResult{err: remoteHostFailure("input-read", fmt.Errorf("remote input connection closed: %w", err))}
+				done <- remoteInputResult{err: remoteHostFailure("input-read", err)}
 			}
 			return
 		}
-		if kind != websocket.BinaryMessage {
-			done <- remoteInputResult{err: remoteHostFailure("input-invalid", fmt.Errorf("non-binary remote input"))}
+		if kind != websocket.BinaryMessage || len(data) == 0 {
+			done <- remoteInputResult{err: remoteHostFailure("input-invalid", fmt.Errorf("invalid remote packet"))}
 			return
 		}
-		input, err := parseInput(data)
-		if err != nil {
-			done <- remoteInputResult{err: remoteHostFailure("input-invalid", err)}
-			return
-		}
-		if err = injectInput(input); err != nil {
-			log.Printf("[RDP] remote input rejected: %s", sanitizeRemoteLogError(err))
-			continue
-		}
-		if ctx.Err() != nil {
-			done <- remoteInputResult{normal: true}
+		switch data[0] {
+		case PacketVideoCapabilities:
+			c, e := parseVideoCapabilities(data)
+			if e != nil {
+				done <- remoteInputResult{err: remoteHostFailure("video-capabilities", e)}
+				return
+			}
+			select {
+			case control <- remoteControl{capabilities: &c}:
+			case <-ctx.Done():
+				return
+			}
+		case PacketVideoKeyframe:
+			if _, e := parseKeyframeRequest(data); e != nil {
+				done <- remoteInputResult{err: remoteHostFailure("video-keyframe", e)}
+				return
+			}
+			if time.Since(last) >= time.Second {
+				last = time.Now()
+				select {
+				case control <- remoteControl{keyframe: true}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		case PacketInput:
+			in, e := parseInput(data)
+			if e != nil {
+				done <- remoteInputResult{err: remoteHostFailure("input-invalid", e)}
+				return
+			}
+			if e = injectInput(in); e != nil {
+				log.Printf("[RDP] remote input rejected: %s", sanitizeRemoteLogError(e))
+			}
+		default:
+			done <- remoteInputResult{err: remoteHostFailure("input-invalid", fmt.Errorf("unsupported remote packet"))}
 			return
 		}
 	}

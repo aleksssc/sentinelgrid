@@ -20,7 +20,7 @@ const remoteLogFileName = "remote.log"
 
 // The child needs only directory traversal and append-only file writes. FILE_APPEND_DATA
 // permits WriteFile at EOF without FILE_WRITE_DATA, attributes, or read access.
-const remoteLogTraverseAccess = 0x00100020 // SYNCHRONIZE | FILE_TRAVERSE
+const remoteLogTraverseAccess = 0x00100021 // SYNCHRONIZE | FILE_TRAVERSE | FILE_LIST_DIRECTORY
 const fileFlagBackupSemantics = 0x02000000
 
 var advapi32 = windows.NewLazySystemDLL("advapi32.dll")
@@ -44,7 +44,7 @@ func remoteLogDirectorySDDLForUser(userSID string) (string, error) {
 	if userSID == "" {
 		return "", fmt.Errorf("interactive user SID is unavailable")
 	}
-	return "O:BAG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x00100020;;;" + userSID + ")", nil
+	return "O:BAG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x00100021;;;" + userSID + ")", nil
 }
 
 func remoteLogFileSDDLForUser(userSID string) (string, error) {

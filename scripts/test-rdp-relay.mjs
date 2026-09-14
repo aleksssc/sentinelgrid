@@ -185,3 +185,45 @@ test("twenty consecutive pairings accept either arrival order and delayed peers"
   }
   assert.equal(f.ended.length, 20);
 });
+
+
+test("H.264 congestion atomically drops a GOP, preserves controls, and resumes at a recovery keyframe", { timeout: 5000 }, async (t) => {
+  let blocked = true;
+  const f = await fixture(t, { maxH264Queue: 3, canDrain: () => !blocked });
+  const { client, agent } = await f.pair();
+  const clientPackets = [];
+  const agentPackets = [];
+  client.on("message", (data, binary) => { if (binary) clientPackets.push(Buffer.from(data)); });
+  agent.on("message", (data, binary) => { if (binary) agentPackets.push(Buffer.from(data)); });
+  const au = (sequence, keyframe = false) => {
+    const packet = Buffer.alloc(30);
+    packet[0] = 7;
+    packet.write("SGH1", 1);
+    packet.writeBigUInt64BE(BigInt(sequence), 5);
+    packet.writeBigUInt64BE(BigInt(Date.now() * 1000), 13);
+    packet.writeUInt32BE(keyframe ? 1 : 0, 21);
+    packet.writeUInt32BE(1, 25);
+    packet[29] = keyframe ? 0x65 : 0x41;
+    return packet;
+  };
+  agent.send(au(1, true));
+  agent.send(au(2));
+  agent.send(au(3));
+  agent.send(au(4));
+  agent.send(au(5));
+  agent.send(Buffer.from([4, 0x7b, 0x7d]));
+  agent.send(au(6, true));
+  agent.send(au(7));
+  client.send(Buffer.from([2, 0x7b, 0x7d]));
+  blocked = false;
+  agent.send(Buffer.from([5, 0x7b, 0x7d]));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(agentPackets.some((packet) => packet[0] === 8), "relay did not request a recovery keyframe");
+  assert.ok(agentPackets.some((packet) => packet[0] === 2), "input was dropped or treated as video");
+  assert.ok(clientPackets.some((packet) => packet[0] === 4), "control packet was dropped");
+  const forwarded = clientPackets.filter((packet) => packet[0] === 7).map((packet) => Number(packet.readBigUInt64BE(5)));
+  assert.ok(!forwarded.some((sequence) => sequence >= 2 && sequence <= 5), "broken dependent GOP was forwarded");
+  assert.deepEqual(forwarded.slice(-2), [6, 7], "recovery GOP was not forwarded in order");
+  client.close();
+  await once(agent, "close");
+});
