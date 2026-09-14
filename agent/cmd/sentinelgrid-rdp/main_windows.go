@@ -83,6 +83,7 @@ type viewer struct {
 	notification                                        frameNotificationState
 	paintState                                          framePaintState
 	paintLogged, paintFailureLogged                     bool
+	h264FirstFrameLogged, h264PresentationLogged        bool
 	presentAttempts, successfulPresents                 uint64
 	zeroResultPresents, gdiErrorPresents                uint64
 	lastSuccessfulGeneration                            uint64

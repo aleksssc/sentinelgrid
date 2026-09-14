@@ -110,10 +110,37 @@ func (v *viewer) handleH264AccessUnit(data []byte) {
 		v.frameGeneration++
 		v.decodedCompleted++
 		v.decodeMetrics.add(time.Since(started))
+		firstFrame := !v.h264FirstFrameLogged
+		if firstFrame {
+			v.h264FirstFrameLogged = true
+		}
+		generation, decodedCount := v.frameGeneration, v.decodedCompleted
 		hwnd := v.hwnd
 		notify := hwnd != 0 && v.notification.schedule()
+		logScheduling := !v.h264PresentationLogged
+		if logScheduling {
+			v.h264PresentationLogged = true
+		}
+		paintedFPS := 0.0
+		if decodedCount%120 == 0 {
+			now := time.Now()
+			interval := maxFloat(now.Sub(v.statsReported).Seconds(), .001)
+			paintedFPS = float64(v.paintState.uniqueFramesPainted-v.lastStatsPainted) / interval
+			v.lastStatsPainted = v.paintState.uniqueFramesPainted
+			v.statsReported = now
+		}
 		v.mu.Unlock()
+		if firstFrame {
+			nonZero, variation := frame.pixelSummary()
+			v.logger.event(fmt.Sprintf("VIEWER_H264_FIRST_FRAME width=%d height=%d stride=%d length=%d nonzero=%t variation=%t", frame.width, frame.height, frame.stride, len(frame.pixels), nonZero, variation))
+		}
+		if logScheduling {
+			v.logger.event(fmt.Sprintf("VIEWER_H264_PRESENT_SCHEDULED generation=%d notify=%t hwnd=%t", generation, notify, hwnd != 0))
+		}
 		decoder.logStats(v.logger, ausReceived)
+		if decodedCount%120 == 0 {
+			v.logPresentStats(generation, paintedFPS)
+		}
 		if notify {
 			v.postFrameReady(hwnd)
 		}
