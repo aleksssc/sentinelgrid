@@ -15,6 +15,9 @@ function Assert-Signature([string]$Path) {
     if ($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate) { throw "Authenticode is not Valid: $([IO.Path]::GetFileName($Path)) ($($signature.Status))" }
     if ((Get-SignerSHA256 $signature.SignerCertificate) -cne $ExpectedSignerSHA256.ToUpperInvariant()) { throw 'Signer SHA256 differs from the independently supplied pin.' }
 }
+function Assert-Version([string]$Actual, [string]$Expected, [string]$Message) {
+    if ([version]$Actual -ne [version]($Expected + '.0')) { throw $Message }
+}
 function Assert-MSI([string]$Path, [string]$Version, [string]$Channel) {
     $installer = New-Object -ComObject WindowsInstaller.Installer
     $db = $null; $view = $null; $summary = $null
@@ -42,9 +45,14 @@ function Assert-MSI([string]$Path, [string]$Version, [string]$Channel) {
             try { $files[$row.StringData(1)] = $row.StringData(2) }
             finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($row) }
         }
-        if ($files.Count -ne 3) { throw 'MSI must contain Agent, Updater and RDP.' }
-        foreach ($name in @('SentinelGridAgentExe','SentinelGridUpdaterExe','SentinelGridRDPExe')) {
-            if (-not $files.ContainsKey($name) -or [version]$files[$name] -ne [version]($Version + '.0')) { throw 'MSI payload file versions differ from ProductVersion.' }
+        $requiredFiles = @('SentinelGridAgentExe', 'SentinelGridUpdaterExe', 'SentinelGridRDPExe', 'SentinelGridVideoDll')
+        foreach ($name in $requiredFiles) {
+            if (-not $files.ContainsKey($name)) { throw "MSI is missing required runtime payload: $name." }
+        }
+        $unexpectedFiles = @($files.Keys | Where-Object { $_ -notin $requiredFiles })
+        if ($unexpectedFiles.Count -ne 0 -or $files.Count -ne $requiredFiles.Count) { throw 'MSI File table must contain exactly Agent, Updater, RDP, and SentinelGridVideo DLL runtime payloads.' }
+        foreach ($name in $requiredFiles) {
+            Assert-Version $files[$name] $Version "MSI payload file version differs from ProductVersion: $name."
         }
         $summary = $db.SummaryInformation(0)
         if ($summary.Property(7) -notmatch '^x64;') { throw 'MSI is not x64.' }
@@ -62,7 +70,7 @@ function Assert-PE([string]$Path) {
         $offset = $reader.ReadInt32()
         if ($offset -lt 64 -or $offset -gt $stream.Length - 6) { throw 'Invalid PE header offset.' }
         $stream.Position = $offset
-        if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne 0x8664) { throw 'Executable is not Windows amd64.' }
+        if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne 0x8664) { throw 'PE is not Windows amd64.' }
     } finally { $reader.Dispose(); $stream.Dispose() }
 }
 if ($ExpectedSignerSHA256 -notmatch '^[A-Fa-f0-9]{64}$') { throw 'An independent single SHA256 signer pin is required.' }
@@ -74,21 +82,23 @@ if ($manifest.development_update_build -and $ExpectedChannel -eq 'stable') { thr
 if (@($manifest.trusted_signer_sha256) -cnotcontains $ExpectedSignerSHA256.ToUpperInvariant()) { throw 'Manifest signer does not match the expected pin.' }
 $server = [uri]$manifest.server_url
 if (-not $server.IsAbsoluteUri -or $server.Scheme -ne 'https' -or -not $server.Host -or $server.UserInfo -or $server.Query -or $server.Fragment -or $server.AbsolutePath -ne '/') { throw 'Invalid manifest enrollment origin.' }
-$names = @{ agent='SentinelGridAgent.exe'; updater='SentinelGridUpdater.exe'; rdp_client='SentinelGridRDP.exe'; msi='SentinelGridAgent.msi' }
+$names = [ordered]@{ agent='SentinelGridAgent.exe'; updater='SentinelGridUpdater.exe'; rdp_client='SentinelGridRDP.exe'; native_video='SentinelGridVideo.dll'; msi='SentinelGridAgent.msi' }
 foreach ($key in $names.Keys) {
     $artifact = $manifest.$key
-    if ($artifact.filename -cne $names[$key] -or $artifact.version -cne $ExpectedVersion) { throw 'Invalid artifact filename/version.' }
+    if ($null -eq $artifact -or $artifact.filename -cne $names[$key] -or $artifact.version -cne $ExpectedVersion) { throw "Invalid artifact filename/version: $key." }
     $path = Join-Path $directory $artifact.filename
     $item = Get-Item -LiteralPath $path
     if ($item.Length -ne $artifact.size -or $item.Length -le 0 -or $item.Length -gt 268435456 -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine $artifact.sha256) { throw "Artifact size/SHA256 mismatch: $key" }
     Assert-Signature $path
     if ($key -eq 'msi') { Assert-MSI $path $ExpectedVersion $ExpectedChannel; continue }
     Assert-PE $path
-    if ($item.VersionInfo.FileVersion -cne $ExpectedVersion -or $item.VersionInfo.ProductVersion -cne $ExpectedVersion) { throw 'PE version does not match manifest.' }
+    if ($key -eq 'native_video') { Assert-Version $item.VersionInfo.FileVersion $ExpectedVersion 'Native video DLL FileVersion does not match manifest.'; Assert-Version $item.VersionInfo.ProductVersion $ExpectedVersion 'Native video DLL ProductVersion does not match manifest.' } elseif ($item.VersionInfo.FileVersion -cne $ExpectedVersion -or $item.VersionInfo.ProductVersion -cne $ExpectedVersion) { throw "PE version does not match manifest: $key." }
     if ($key -eq 'rdp_client') {
-        if ($item.VersionInfo.ProductName -cne 'SentinelGrid Remote' -or $item.VersionInfo.FileDescription -cne 'SentinelGrid Remote' -or $item.VersionInfo.OriginalFilename -cne 'SentinelGridRDP.exe') {
-            throw 'SentinelGrid Remote PE identity mismatch.'
-        }
+        if ($item.VersionInfo.ProductName -cne 'SentinelGrid Remote' -or $item.VersionInfo.FileDescription -cne 'SentinelGrid Remote' -or $item.VersionInfo.OriginalFilename -cne 'SentinelGridRDP.exe') { throw 'SentinelGrid Remote PE identity mismatch.' }
+        continue
+    }
+    if ($key -eq 'native_video') {
+        if ($item.VersionInfo.ProductName -cne 'SentinelGrid Native Video' -or $item.VersionInfo.FileDescription -cne 'SentinelGrid native video module' -or $item.VersionInfo.OriginalFilename -cne 'SentinelGridVideo.dll') { throw 'SentinelGrid native video PE identity mismatch.' }
         continue
     }
     $product = @{ agent='Agent'; updater='Updater' }[$key]
@@ -96,12 +106,10 @@ foreach ($key in $names.Keys) {
     if ($LASTEXITCODE -ne 0 -or $reportedVersion -cne ('SentinelGrid {0} {1}' -f $product, $ExpectedVersion)) { throw 'Component embedded version mismatch.' }
     $reportedChannel = & $path -release-channel
     if ($LASTEXITCODE -ne 0 -or $reportedChannel -cne $ExpectedChannel) { throw 'Component embedded channel mismatch.' }
-    if ($key -in @('agent', 'updater')) {
-        $trustOutput = & $path -update-build-info
-        if ($LASTEXITCODE -ne 0) { throw 'Embedded trust probe failed.' }
-        $trust = $trustOutput | ConvertFrom-Json
-        if ($trust.development -ne $manifest.development_update_build -or $trust.signer_sha256 -cne ($manifest.trusted_signer_sha256 -join ',')) { throw 'Embedded trust differs from manifest.' }
-    }
+    $trustOutput = & $path -update-build-info
+    if ($LASTEXITCODE -ne 0) { throw 'Embedded trust probe failed.' }
+    $trust = $trustOutput | ConvertFrom-Json
+    if ($trust.development -ne $manifest.development_update_build -or $trust.signer_sha256 -cne ($manifest.trusted_signer_sha256 -join ',')) { throw 'Embedded trust differs from manifest.' }
 }
 $expectedChecksums = @{}
 foreach ($key in $names.Keys) { $expectedChecksums[$names[$key]] = $manifest.$key.sha256 }
@@ -114,6 +122,7 @@ foreach ($line in $lines) {
     if (-not $expectedChecksums.ContainsKey($name) -or $expectedChecksums[$name] -cne $hash) { throw 'Checksum file differs from validated artifacts.' }
     $expectedChecksums.Remove($name)
 }
+if ($expectedChecksums.Count -ne 0) { throw 'Checksum list is incomplete.' }
 if ($WebsiteMSI) {
     $websitePath = (Resolve-Path -LiteralPath $WebsiteMSI).Path
     if ((Get-Item -LiteralPath $websitePath).Length -ne $manifest.msi.size -or (Get-FileHash -LiteralPath $websitePath -Algorithm SHA256).Hash -ine $manifest.msi.sha256) { throw 'Website MSI differs from the validated release.' }

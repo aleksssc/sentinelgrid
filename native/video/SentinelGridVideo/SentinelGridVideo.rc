@@ -1,0 +1,46 @@
+#include <winver.h>
+
+#define SG_STRINGIFY_IMPL(value) #value
+#define SG_STRINGIFY(value) SG_STRINGIFY_IMPL(value)
+
+#ifndef SG_VERSION_MAJOR
+#error SG_VERSION_MAJOR must be defined.
+#endif
+#ifndef SG_VERSION_MINOR
+#error SG_VERSION_MINOR must be defined.
+#endif
+#ifndef SG_VERSION_PATCH
+#error SG_VERSION_PATCH must be defined.
+#endif
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION SG_VERSION_MAJOR,SG_VERSION_MINOR,SG_VERSION_PATCH,0
+ PRODUCTVERSION SG_VERSION_MAJOR,SG_VERSION_MINOR,SG_VERSION_PATCH,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS VOS__WINDOWS32
+ FILETYPE VFT_DLL
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "SentinelGrid"
+            VALUE "FileDescription", "SentinelGrid native video module"
+            VALUE "FileVersion", SG_STRINGIFY(SG_VERSION_MAJOR) "." SG_STRINGIFY(SG_VERSION_MINOR) "." SG_STRINGIFY(SG_VERSION_PATCH) ".0"
+            VALUE "InternalName", "SentinelGridVideo"
+            VALUE "OriginalFilename", "SentinelGridVideo.dll"
+            VALUE "ProductName", "SentinelGrid Native Video"
+            VALUE "ProductVersion", SG_STRINGIFY(SG_VERSION_MAJOR) "." SG_STRINGIFY(SG_VERSION_MINOR) "." SG_STRINGIFY(SG_VERSION_PATCH) ".0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
