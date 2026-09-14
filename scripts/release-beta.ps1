@@ -2293,6 +2293,7 @@ if (
         "SentinelGridAgent.exe",
         "SentinelGridUpdater.exe",
         "SentinelGridRDP.exe",
+        "SentinelGridVideo.dll",
         "SentinelGridAgent.msi",
         "manifest.json",
         "checksums.txt"
@@ -2604,7 +2605,8 @@ foreach ($name in @(
     "SentinelGridAgent.exe",
     "SentinelGridUpdater.exe",
     "SentinelGridRDP.exe",
-    "SentinelGridAgent.msi",
+        "SentinelGridVideo.dll",
+        "SentinelGridAgent.msi",
     "manifest.json",
     "checksums.txt"
 )) {

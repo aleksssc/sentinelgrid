@@ -24,7 +24,13 @@ export function productArtifact(release: ProductRelease, bytes: Uint8Array) {
       !Array.isArray(manifest.trusted_signer_sha256) || !manifest.trusted_signer_sha256.includes(release.signer_sha256.toUpperCase())) {
     throw new Error("PRODUCT_MSI_BOOTSTRAP_REQUIRED");
   }
-  const names = { agent: "SentinelGridAgent.exe", updater: "SentinelGridUpdater.exe", rdp_client: "SentinelGridRDP.exe", msi: "SentinelGridAgent.msi" };
+  const names = {
+    agent: "SentinelGridAgent.exe",
+    updater: "SentinelGridUpdater.exe",
+    rdp_client: "SentinelGridRDP.exe",
+    native_video: "SentinelGridVideo.dll",
+    msi: "SentinelGridAgent.msi",
+  };
   for (const [key, filename] of Object.entries(names)) {
     const entry = manifest[key];
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("INVALID_PRODUCT_COMPONENT");

@@ -6,8 +6,14 @@ import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
-const artifactKeys = ["agent", "updater", "rdp_client", "msi"];
-const names = { agent: "SentinelGridAgent.exe", updater: "SentinelGridUpdater.exe", rdp_client: "SentinelGridRDP.exe", msi: "SentinelGridAgent.msi" };
+const artifactKeys = ["agent", "updater", "rdp_client", "native_video", "msi"];
+const names = {
+  agent: "SentinelGridAgent.exe",
+  updater: "SentinelGridUpdater.exe",
+  rdp_client: "SentinelGridRDP.exe",
+  native_video: "SentinelGridVideo.dll",
+  msi: "SentinelGridAgent.msi",
+};
 
 export function validateManifest(manifest, version, channel, signer) {
   if (!/^\d+\.\d+\.\d+$/.test(version) || !["dev", "beta", "stable"].includes(channel) ||

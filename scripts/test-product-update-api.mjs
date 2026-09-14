@@ -10,19 +10,20 @@ const artifact=load("../lib/agent/product-release.ts",(name)=>{if(name==="node:c
 class APIError extends Error{constructor(code,status){super(code);this.status=status;}}
 function fixture({compatible=true,automatic=true,capability=true}={}){
  const manifest={schema_version:1,product:"SentinelGridAgent",version:"0.1.9",channel:"beta",platform:"windows",architecture:"amd64",signed:true,development_update_build:true,installation_artifact:"msi",update_protocol:2,trusted_signer_sha256:["A".repeat(64)]};
- for(const[key,filename]of Object.entries({agent:"SentinelGridAgent.exe",updater:"SentinelGridUpdater.exe",rdp_client:"SentinelGridRDP.exe",msi:"SentinelGridAgent.msi"}))manifest[key]={filename,version:"0.1.9",sha256:"a".repeat(64),size:42};
+ for(const[key,filename]of Object.entries({agent:"SentinelGridAgent.exe",updater:"SentinelGridUpdater.exe",rdp_client:"SentinelGridRDP.exe",native_video:"SentinelGridVideo.dll",msi:"SentinelGridAgent.msi"}))manifest[key]={filename,version:"0.1.9",sha256:"a".repeat(64),size:42};
  const bytes=Buffer.from(JSON.stringify(manifest));
  const release={id:"trusted-release",version:"0.1.9",channel:"beta",platform:"windows",architecture:"amd64",storage_path:"beta/0.1.9/SentinelGridAgent.exe",sha256:"a".repeat(64),size_bytes:42,msi_sha256:"a".repeat(64),msi_size_bytes:42,manifest_sha256:createHash("sha256").update(bytes).digest("hex"),signer_sha256:"A".repeat(64)};
+ const bundle={msi_sha256:release.msi_sha256,msi_size_bytes:release.msi_size_bytes,updater_sha256:release.sha256,updater_size_bytes:release.size_bytes,manifest_sha256:release.manifest_sha256,signer_sha256:release.signer_sha256,development_build:true};
  const events=[];
  const admin={rpc:async(name,args)=>{events.push([name,args]);return{data:true};},from:(table)=>{
-  const chain={select:()=>chain,eq:(...args)=>{events.push([table,...args]);return chain;},lte:()=>chain,limit:async()=>({data:[release]}),maybeSingle:async()=>({data:{channel:"beta",automatic_updates:automatic,update_delay_hours:0}}),upsert:async()=>({error:null})};return chain;
+  const chain={select:()=>chain,eq:(...args)=>{events.push([table,...args]);return chain;},lte:()=>chain,limit:async()=>({data:[release]}),maybeSingle:async()=>({data:table==="agent_release_bundles"?bundle:{channel:"beta",automatic_updates:automatic,update_delay_hours:0}}),upsert:async()=>({error:null})};return chain;
  },storage:{from:()=>({download:async(path)=>{events.push(["manifest",path]);return{data:new Blob([bytes])};},createSignedUrl:async(path)=>{events.push(["sign",path]);return{data:{signedUrl:`https://isolated.example/${path}`}};}})}};
  const route=load("../app/api/agent/update/check/route.ts",(name)=>{
   if(name.endsWith("update-auth"))return{authenticateUpdateAgent:async()=>({admin,device:{id:"trusted-device",agent_version:"0.1.8",capabilities:{agent_update:capability}},organizationId:"trusted-org"}),UpdateAPIError:APIError,updateErrorResponse:(error)=>Response.json({error:error.message},{status:error.status??500})};
-  if(name.endsWith("update-policy"))return policy;if(name.endsWith("product-release"))return artifact;throw new Error(name);
+  if(name.endsWith("update-policy"))return policy;if(name.endsWith("product-release"))return artifact;if(name==="node:crypto")return{createHash};throw new Error(name);
  });
  const request=new Request("https://app.example/api/agent/update/check",{method:"POST",headers:compatible?{"X-SentinelGrid-Update-Protocol":"2"}:{},body:JSON.stringify({organization_id:"attacker-org",current_version:"0.0.1",download_url:"https://attacker.example/evil.msi",sha256:"b".repeat(64)})});
- return{events,route,request,release};
+ return{events,route,request,release,bundle};
 }
 async function withEnvironment(run){const oldEnabled=process.env.SENTINELGRID_AGENT_UPDATES_ENABLED,oldURL=process.env.NEXT_PUBLIC_SUPABASE_URL;process.env.SENTINELGRID_AGENT_UPDATES_ENABLED="true";process.env.NEXT_PUBLIC_SUPABASE_URL="https://isolated.example";try{await run();}finally{for(const[key,value]of[["SENTINELGRID_AGENT_UPDATES_ENABLED",oldEnabled],["NEXT_PUBLIC_SUPABASE_URL",oldURL]]){if(value===undefined)delete process.env[key];else process.env[key]=value;}}}
 test("legacy clients fail closed without generating an EXE or MSI download",()=>withEnvironment(async()=>{
@@ -33,5 +34,5 @@ test("trusted MSI API ignores client organization/version/artifact and exposes p
 }));
 test("missing capability and changed manifest cannot dispatch",()=>withEnvironment(async()=>{
  const unsupported=fixture({capability:false});const body=await(await unsupported.route.POST(unsupported.request)).json();assert.equal(body.installation_enabled,false);assert.equal(body.download_url,undefined);
- const corrupt=fixture();corrupt.release.manifest_sha256="b".repeat(64);const response=await corrupt.route.POST(corrupt.request);assert.equal(response.status,503);assert.ok(!corrupt.events.some(([key])=>key==="sign"));
+ const corrupt=fixture();corrupt.bundle.manifest_sha256="b".repeat(64);const response=await corrupt.route.POST(corrupt.request);assert.equal(response.status,503);assert.ok(!corrupt.events.some(([key])=>key==="sign"));
 }));
