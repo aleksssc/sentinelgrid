@@ -164,3 +164,24 @@ test("session expiry closes both peers and capacity still allows the matching se
   assert.equal(f.ended.length, 1);
   assert.equal(f.ended[0].failed, false);
 });
+
+
+test("twenty consecutive pairings accept either arrival order and delayed peers", { timeout: 60000 }, async (t) => {
+  const f = await fixture(t, { pairMs: 12000, lifetimeMs: 30000 });
+  for (let i = 0; i < 20; i++) {
+    const sessionId = randomUUID();
+    const firstRole = i % 2 === 0 ? "client" : "agent";
+    const secondRole = firstRole === "client" ? "agent" : "client";
+    const first = f.connect(f.issue(firstRole, sessionId));
+    await once(first, "open");
+    const firstReady = message(first);
+    await new Promise((resolve) => setTimeout(resolve, [1000, 3000, 5000, 10000, 10][Math.min(i, 4)]));
+    const second = f.connect(f.issue(secondRole, sessionId));
+    const secondReady = message(second);
+    await Promise.all([firstReady, secondReady]);
+    const closed = Promise.all([once(first, "close"), once(second, "close")]);
+    first.close();
+    await closed;
+  }
+  assert.equal(f.ended.length, 20);
+});

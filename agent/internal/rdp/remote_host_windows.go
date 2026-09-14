@@ -191,7 +191,7 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	inputDone := make(chan error, 1)
 	go readRemoteInput(ctx, ws, inputDone)
 	firstFrame := true
-	ticker := time.NewTicker(125 * time.Millisecond)
+	ticker := time.NewTicker(time.Second / 30)
 	defer ticker.Stop()
 	for {
 		select {
@@ -203,6 +203,14 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+			select {
+			case err := <-inputDone:
+				if err != nil && ctx.Err() == nil {
+					return err
+				}
+				return nil
+			default:
+			}
 			jpg, err := capturePrimaryJPEG()
 			if err != nil {
 				logger.event("REMOTE_CAPTURE_FAILED " + sanitizeRemoteLogError(err))
@@ -210,7 +218,7 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 				return remoteHostFailure(remoteCaptureStage(err), err)
 			}
 			if firstFrame {
-				logger.event("REMOTE_CAPTURE_FIRST_FRAME_OK")
+				logger.event(fmt.Sprintf("REMOTE_CAPTURE_FIRST_FRAME_OK bytes=%d", len(jpg)))
 				log.Print("[RDP] REMOTE_CAPTURE_FIRST_FRAME_OK")
 				firstFrame = false
 			}
@@ -219,6 +227,16 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 				return remoteHostFailure("frame-size", err)
 			}
 			if err := writePacket(ws, data); err != nil {
+				select {
+				case inputErr := <-inputDone:
+					if inputErr == nil || ctx.Err() != nil {
+						logger.event("REMOTE_FRAME_SEND_SKIPPED category=peer_closed")
+						return nil
+					}
+					return inputErr
+				default:
+				}
+				logger.event("REMOTE_FRAME_SEND_FAILED category=transport")
 				return remoteHostFailure("frame-send", err)
 			}
 		}

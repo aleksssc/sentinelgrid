@@ -5,12 +5,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"io"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -60,27 +62,61 @@ type viewer struct {
 	status                        string
 	logger                        *viewerLogger
 	framesReceived, framesPainted uint64
+	frameBytes                    uint64
+	statsStarted                  time.Time
 	frameNotificationPending      bool
+	closeRequested                bool
+	done                          chan struct{}
 }
 type viewerLogger struct {
 	mu   sync.Mutex
 	file *os.File
 }
 
-func openViewerLogger() *viewerLogger {
-	programData := os.Getenv("ProgramData")
-	if programData == "" {
-		return nil
+// viewerLogPaths uses locations owned by the interactive user, not ProgramData,
+// which can be intentionally unavailable to a non-elevated protocol handler.
+func viewerLogPaths() []string {
+	paths := make([]string, 0, 2)
+	if cacheDir, err := os.UserCacheDir(); err == nil && cacheDir != "" {
+		paths = append(paths, filepath.Join(cacheDir, "SentinelGrid", "logs", "viewer.log"))
 	}
-	directory := filepath.Join(programData, "SentinelGrid", "logs")
-	if os.MkdirAll(directory, 0755) != nil {
-		return nil
+	if tempDir := os.TempDir(); tempDir != "" {
+		fallback := filepath.Join(tempDir, "SentinelGrid", "logs", "viewer.log")
+		if len(paths) == 0 || !samePath(paths[0], fallback) {
+			paths = append(paths, fallback)
+		}
 	}
-	file, err := os.OpenFile(filepath.Join(directory, "viewer.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return nil
+	return paths
+}
+
+func samePath(a, b string) bool { return filepath.Clean(a) == filepath.Clean(b) }
+
+func openViewerLogger() (*viewerLogger, error) {
+	return openViewerLoggerAt(viewerLogPaths())
+}
+
+func openViewerLoggerAt(paths []string) (*viewerLogger, error) {
+	var lastErr error
+	for index, path := range paths {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			lastErr = err
+			continue
+		}
+		file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		logger := &viewerLogger{file: file}
+		if index > 0 {
+			logger.event("VIEWER_LOGGER_FALLBACK location=temp")
+		}
+		return logger, nil
 	}
-	return &viewerLogger{file: file}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no per-user log location is available")
+	}
+	return nil, fmt.Errorf("open viewer diagnostic log: %w", lastErr)
 }
 func (l *viewerLogger) event(event string) {
 	if l == nil {
@@ -88,12 +124,18 @@ func (l *viewerLogger) event(event string) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.file == nil {
+		return
+	}
 	_, _ = fmt.Fprintf(l.file, "%s %s\n", time.Now().UTC().Format(time.RFC3339), event)
 }
 func (l *viewerLogger) close() {
-	if l != nil {
-		l.mu.Lock()
-		defer l.mu.Unlock()
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file != nil {
 		_ = l.file.Close()
 	}
 }
@@ -183,24 +225,37 @@ func run(path string) error {
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("could not remove consumed one-time connection file")
 	}
-	return runViewerConnecting(func(ctx context.Context) (*websocket.Conn, error) { return rdp.Dial(ctx, connection) })
+	return runViewerConnecting(func(ctx context.Context, _ *viewerLogger) (*websocket.Conn, error) { return rdp.Dial(ctx, connection) })
 }
 
 func runViewer(ws *websocket.Conn) error {
-	return runViewerConnecting(func(context.Context) (*websocket.Conn, error) { return ws, nil })
+	return runViewerConnecting(func(context.Context, *viewerLogger) (*websocket.Conn, error) { return ws, nil })
 }
-func runViewerConnecting(connect func(context.Context) (*websocket.Conn, error)) error {
-	logger := openViewerLogger()
+
+type viewerConnect func(context.Context, *viewerLogger) (*websocket.Conn, error)
+
+func runViewerConnecting(connect viewerConnect) error {
+	logger, err := openViewerLogger()
+	if err != nil {
+		// A missing diagnostic destination must not prevent the interactive viewer
+		// from opening. The normal per-user and temporary fallbacks cover expected ACL issues.
+		log.Print("SentinelGrid viewer diagnostics unavailable")
+		logger = &viewerLogger{}
+	}
 	defer logger.close()
 	logger.event("VIEWER_START")
-	v := &viewer{logger: logger, status: "Connecting to remote device..."}
+	v := &viewer{logger: logger, status: "Connecting to remote device...", done: make(chan struct{}), statsStarted: time.Now()}
 	activeViewer = v
+	sessionCtx, cancelSession := context.WithCancel(context.Background())
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer close(v.done)
+		ctx, cancel := context.WithTimeout(sessionCtx, 30*time.Second)
 		defer cancel()
 		v.setStatus("Establishing secure session...")
-		ws, err := connect(ctx)
+		v.logger.event("VIEWER_RELAY_CONNECT_START")
+		ws, err := connect(ctx, v.logger)
 		if err != nil {
+			v.logger.event("VIEWER_RELAY_CONNECT_FAILED category=connect")
 			v.fail("Unable to start remote session")
 			return
 		}
@@ -212,12 +267,19 @@ func runViewerConnecting(connect func(context.Context) (*websocket.Conn, error))
 		v.receive()
 	}()
 	windowErr := v.window()
+	cancelSession()
 	v.mu.RLock()
 	ws := v.ws
 	v.mu.RUnlock()
 	if ws != nil {
 		_ = ws.Close()
 	}
+	select {
+	case <-v.done:
+	case <-time.After(2 * time.Second):
+		logger.event("VIEWER_RELAY_CLOSE_WAIT_TIMEOUT")
+	}
+	logger.event("VIEWER_EXIT")
 	return windowErr
 }
 func (v *viewer) setStatus(status string) {
@@ -230,6 +292,54 @@ func (v *viewer) setStatus(status string) {
 	}
 }
 func (v *viewer) fail(status string) { v.logger.event("VIEWER_SESSION_FAILED"); v.setStatus(status) }
+
+func (v *viewer) requestClose() {
+	v.mu.Lock()
+	v.closeRequested = true
+	v.mu.Unlock()
+}
+
+func (v *viewer) wasCloseRequested() bool {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.closeRequested
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func relayCloseCategory(err error) string {
+	var closeErr *websocket.CloseError
+	if errors.As(err, &closeErr) {
+		switch closeErr.Code {
+		case websocket.CloseNormalClosure:
+			return "normal"
+		case websocket.CloseGoingAway:
+			return "going_away"
+		case websocket.ClosePolicyViolation:
+			return "policy"
+		case websocket.CloseMessageTooBig:
+			return "message_too_big"
+		case websocket.CloseAbnormalClosure:
+			return "abnormal"
+		default:
+			return "websocket_close"
+		}
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) && (errno == syscall.Errno(10053) || errno == syscall.Errno(10054)) {
+		return "network_reset"
+	}
+	var networkErr net.Error
+	if errors.As(err, &networkErr) {
+		return "network_error"
+	}
+	return "abnormal"
+}
 func (v *viewer) receive() {
 	for {
 		v.mu.RLock()
@@ -240,7 +350,11 @@ func (v *viewer) receive() {
 		}
 		kind, data, err := ws.ReadMessage()
 		if err != nil {
-			v.logger.event("VIEWER_RELAY_CLOSED")
+			if v.wasCloseRequested() {
+				v.logger.event("VIEWER_RELAY_CLOSED category=client_close")
+			} else {
+				v.logger.event(fmt.Sprintf("VIEWER_RELAY_CLOSED category=%s", relayCloseCategory(err)))
+			}
 			v.mu.RLock()
 			hasFrame, hwnd := len(v.frame.pixels) != 0, v.hwnd
 			v.mu.RUnlock()
@@ -273,7 +387,9 @@ func (v *viewer) receive() {
 			first := len(v.frame.pixels) == 0
 			v.frame = frame
 			v.framesReceived++
-			received := v.framesReceived
+			v.frameBytes += uint64(len(data) - 1)
+			received, painted, bytes := v.framesReceived, v.framesPainted, v.frameBytes
+			elapsed := time.Since(v.statsStarted).Seconds()
 			hwnd := v.hwnd
 			notify := hwnd != 0 && !v.frameNotificationPending
 			if notify {
@@ -282,10 +398,10 @@ func (v *viewer) receive() {
 			v.status = ""
 			v.mu.Unlock()
 			if first {
-				v.logger.event("VIEWER_FIRST_FRAME")
+				v.logger.event(fmt.Sprintf("VIEWER_FIRST_FRAME bytes=%d", len(data)-1))
 			}
 			if received%120 == 0 {
-				v.logger.event(fmt.Sprintf("VIEWER_FRAME_STATS received=%d", received))
+				v.logger.event(fmt.Sprintf("VIEWER_FRAME_STATS received=%d painted=%d fps=%.1f avg_bytes=%d", received, painted, float64(received)/maxFloat(elapsed, 0.001), bytes/received))
 			}
 			if notify {
 				if result, _, _ := postMessage.Call(hwnd, wmFrameReady, 0, 0); result == 0 {
@@ -410,6 +526,9 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		return value
 	}
 	switch message {
+	case wmClose:
+		v.logger.event("VIEWER_CLOSE_REQUESTED")
+		v.requestClose()
 	case wmDestroy:
 		v.logger.event("VIEWER_CLOSE")
 		postQuitMessage.Call(0)

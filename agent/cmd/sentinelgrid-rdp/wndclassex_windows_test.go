@@ -3,11 +3,14 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"unsafe"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestWndClassExWindowsAMD64Layout(t *testing.T) {
@@ -40,20 +43,49 @@ func TestWndClassExWindowsAMD64Layout(t *testing.T) {
 	}
 }
 
-func TestViewerLoggerWritesWindowLifecycleEvents(t *testing.T) {
-	programData := t.TempDir()
-	t.Setenv("ProgramData", programData)
-	logger := openViewerLogger()
-	if logger == nil {
-		t.Fatal("openViewerLogger returned nil")
+func TestViewerLoggerWritesLifecycleEventsInUserOwnedDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "SentinelGrid", "logs", "viewer.log")
+	logger, err := openViewerLoggerAt([]string{path})
+	if err != nil {
+		t.Fatalf("open viewer logger: %v", err)
 	}
-	logger.event("VIEWER_WINDOW_CREATED")
+	logger.event("VIEWER_START")
+	logger.event("VIEWER_REDEEM_FAILED stage=redeem")
+	logger.event("VIEWER_EXIT")
 	logger.close()
-	data, err := os.ReadFile(filepath.Join(programData, "SentinelGrid", "logs", "viewer.log"))
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read viewer log: %v", err)
 	}
-	if !strings.Contains(string(data), "VIEWER_WINDOW_CREATED") {
-		t.Fatalf("viewer log does not contain lifecycle event: %q", data)
+	for _, event := range []string{"VIEWER_START", "VIEWER_REDEEM_FAILED stage=redeem", "VIEWER_EXIT"} {
+		if !strings.Contains(string(data), event) {
+			t.Errorf("viewer log does not contain %q: %q", event, data)
+		}
 	}
+}
+
+func TestRelayCloseCategoryIsSanitized(t *testing.T) {
+	cases := []struct {
+		code int
+		want string
+	}{
+		{websocket.CloseNormalClosure, "normal"},
+		{websocket.CloseGoingAway, "going_away"},
+		{websocket.ClosePolicyViolation, "policy"},
+		{websocket.CloseMessageTooBig, "message_too_big"},
+		{websocket.CloseAbnormalClosure, "abnormal"},
+		{1011, "websocket_close"},
+	}
+	for _, tc := range cases {
+		err := errors.New("wrapped: " + (&websocket.CloseError{Code: tc.code, Text: "sensitive details"}).Error())
+		if got := relayCloseCategory(&websocket.CloseError{Code: tc.code, Text: err.Error()}); got != tc.want {
+			t.Errorf("close code %d category = %q, want %q", tc.code, got, tc.want)
+		}
+	}
+}
+
+func TestViewerLoggerNilFileIsNonFatal(t *testing.T) {
+	logger := &viewerLogger{}
+	logger.event("VIEWER_START")
+	logger.close()
 }
