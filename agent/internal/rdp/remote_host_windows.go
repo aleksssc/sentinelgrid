@@ -257,6 +257,21 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	em, wm := newFrameMetrics(120), newFrameMetrics(120)
 	tick := time.NewTicker(time.Second / 30)
 	defer tick.Stop()
+	statsTick := time.NewTicker(4 * time.Second)
+	defer statsTick.Stop()
+	statsStarted := time.Now()
+	var statsCaptureAttempts, statsAUs uint64
+	logVideoStats := func() {
+		elapsed := time.Since(statsStarted).Seconds()
+		if elapsed <= 0 {
+			return
+		}
+		g, a, f := stats()
+		logger.event(fmt.Sprintf("REMOTE_VIDEO_STATS capture_fps=%.1f encode_fps=%.1f aus_encoded=%d bytes_encoded=%d keyframes=%d forced_keyframes=%d dropped_aus=%d dropped_gops=%d encode_ms=%.1f network_write_ms=%.1f", float64(statsCaptureAttempts)/elapsed, float64(statsAUs)/elapsed, aus, encodedBytes, keyframes, forced+f, drop()+a, g, float64(em.snapshot().Avg.Microseconds())/1000, float64(wm.snapshot().Avg.Microseconds())/1000))
+		statsStarted = time.Now()
+		statsCaptureAttempts = 0
+		statsAUs = 0
+	}
 	for {
 		select {
 		case r := <-done:
@@ -269,6 +284,7 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 			return nil
 		case d := <-writes:
 			wm.add(d)
+			continue
 		case c := <-controls:
 			if c.keyframe && source.codec() == "h264" {
 				logger.event("REMOTE_KEYFRAME_REQUEST_RECEIVED")
@@ -278,10 +294,15 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 					forced++
 				}
 			}
+			continue
+		case <-statsTick.C:
+			logVideoStats()
+			continue
 		case <-ctx.Done():
 			return nil
 		case <-tick.C:
 		}
+		statsCaptureAttempts++
 		frame, changed, e := backend.Capture(captureCtx)
 		if e != nil {
 			return remoteHostFailure(remoteCaptureStage(e), e)
@@ -304,10 +325,7 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 		if out.flags&H264FlagKeyframe != 0 {
 			keyframes++
 		}
-		if aus%120 == 0 {
-			g, a, f := stats()
-			logger.event(fmt.Sprintf("REMOTE_VIDEO_STATS capture_fps=30 encode_fps=30 aus_encoded=%d bytes_encoded=%d keyframes=%d forced_keyframes=%d dropped_aus=%d dropped_gops=%d encode_ms=%.1f network_write_ms=%.1f", aus, encodedBytes, keyframes, forced+f, drop()+a, g, float64(em.snapshot().Avg.Microseconds())/1000, float64(wm.snapshot().Avg.Microseconds())/1000))
-		}
+		statsAUs++
 	}
 }
 
