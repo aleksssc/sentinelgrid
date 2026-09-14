@@ -3,7 +3,9 @@
 package rdp
 
 import (
+	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -12,16 +14,17 @@ import (
 // latestFrameWriter gives the websocket exactly one writer and permits at most
 // one replaceable video frame to wait behind a slow network write.
 type latestFrameWriter struct {
-	ws      *websocket.Conn
-	mu      sync.Mutex
-	latest  []byte
-	wake    chan struct{}
-	stop    chan struct{}
-	done    chan struct{}
-	writes  chan time.Duration
-	errors  chan error
-	stopped sync.Once
-	dropped uint64
+	ws       *websocket.Conn
+	mu       sync.Mutex
+	latest   []byte
+	wake     chan struct{}
+	stop     chan struct{}
+	done     chan struct{}
+	writes   chan time.Duration
+	errors   chan error
+	stopping atomic.Bool
+	stopped  sync.Once
+	dropped  uint64
 }
 
 func newLatestFrameWriter(ws *websocket.Conn) *latestFrameWriter {
@@ -31,26 +34,45 @@ func newLatestFrameWriter(ws *websocket.Conn) *latestFrameWriter {
 }
 
 func (w *latestFrameWriter) enqueue(frame []byte) {
+	if w.stopping.Load() {
+		return
+	}
 	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.stopping.Load() {
+		return
+	}
 	if w.latest != nil {
 		w.dropped++
 	}
 	w.latest = frame
-	w.mu.Unlock()
 	select {
 	case w.wake <- struct{}{}:
 	default:
 	}
 }
-func (w *latestFrameWriter) dropCount() uint64 { w.mu.Lock(); defer w.mu.Unlock(); return w.dropped }
+
+func (w *latestFrameWriter) dropCount() uint64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.dropped
+}
+
+// close starts shutdown before unblocking a pending write, so no further frame
+// can be selected or reported as a transport failure during normal teardown.
 func (w *latestFrameWriter) close() {
 	w.stopped.Do(func() {
+		w.stopping.Store(true)
+		w.mu.Lock()
+		w.latest = nil
+		w.mu.Unlock()
 		// Break a blocked network write before waiting for the sole writer.
 		_ = w.ws.SetWriteDeadline(time.Now())
 		close(w.stop)
 		<-w.done
 	})
 }
+
 func (w *latestFrameWriter) run() {
 	defer close(w.done)
 	for {
@@ -60,6 +82,9 @@ func (w *latestFrameWriter) run() {
 		case <-w.wake:
 		}
 		for {
+			if w.stopping.Load() {
+				return
+			}
 			w.mu.Lock()
 			frame := w.latest
 			w.latest = nil
@@ -69,9 +94,11 @@ func (w *latestFrameWriter) run() {
 			}
 			started := time.Now()
 			if err := w.ws.WriteMessage(websocket.BinaryMessage, frame); err != nil {
-				select {
-				case w.errors <- err:
-				default:
+				if !w.stopping.Load() {
+					select {
+					case w.errors <- err:
+					default:
+					}
 				}
 				return
 			}
@@ -81,4 +108,9 @@ func (w *latestFrameWriter) run() {
 			}
 		}
 	}
+}
+
+func isNormalWebSocketClose(err error) bool {
+	var closeErr *websocket.CloseError
+	return errors.As(err, &closeErr) && (closeErr.Code == websocket.CloseNormalClosure || closeErr.Code == websocket.CloseGoingAway)
 }

@@ -5,7 +5,6 @@ package rdp
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -184,10 +183,10 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 		return remoteHostFailure("screen-info", err)
 	}
 	logger.event("REMOTE_CAPTURE_START")
-	inputDone := make(chan error, 1)
-	go readRemoteInput(ctx, ws, inputDone)
 	writer := newLatestFrameWriter(ws)
 	defer writer.close()
+	inputDone := make(chan remoteInputResult, 1)
+	go readRemoteInput(ctx, ws, inputDone, writer.close)
 	captureMetrics, conversionMetrics, encodeMetrics := newFrameMetrics(120), newFrameMetrics(120), newFrameMetrics(120)
 	packetMetrics, writeMetrics, totalMetrics := newFrameMetrics(120), newFrameMetrics(120), newFrameMetrics(120)
 	var sequence uint64
@@ -197,19 +196,23 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	defer ticker.Stop()
 	for {
 		select {
-		case err := <-inputDone:
-			if err != nil && ctx.Err() == nil {
-				return err
+		case result := <-inputDone:
+			writer.close()
+			if result.normal || ctx.Err() != nil {
+				return nil
 			}
-			return nil
+			return result.err
 		case err := <-writer.errors:
-			select {
-			case inputErr := <-inputDone:
-				if inputErr == nil || ctx.Err() != nil {
+			if result, received := awaitRemoteInputResult(inputDone); received {
+				writer.close()
+				if result.normal || ctx.Err() != nil {
 					return nil
 				}
-				return inputErr
-			default:
+				return result.err
+			}
+			if ctx.Err() != nil || isNormalWebSocketClose(err) {
+				writer.close()
+				return nil
 			}
 			logger.event("REMOTE_FRAME_SEND_FAILED category=transport")
 			return remoteHostFailure("frame-send", err)
@@ -277,34 +280,34 @@ func sendScreenInfo(ws *websocket.Conn) error {
 	return writePacket(ws, data)
 }
 
-func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- error) {
+func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remoteInputResult, normalClose func()) {
 	for {
 		kind, data, err := ws.ReadMessage()
 		if err != nil {
-			var closeErr *websocket.CloseError
-			if errors.As(err, &closeErr) && (closeErr.Code == websocket.CloseNormalClosure || closeErr.Code == websocket.CloseGoingAway) {
-				done <- nil
+			if isNormalWebSocketClose(err) {
+				normalClose()
+				done <- remoteInputResult{normal: true}
 			} else {
-				done <- remoteHostFailure("input-read", fmt.Errorf("remote input connection closed: %w", err))
+				done <- remoteInputResult{err: remoteHostFailure("input-read", fmt.Errorf("remote input connection closed: %w", err))}
 			}
 			return
 		}
 		if kind != websocket.BinaryMessage {
-			done <- remoteHostFailure("input-invalid", fmt.Errorf("non-binary remote input"))
+			done <- remoteInputResult{err: remoteHostFailure("input-invalid", fmt.Errorf("non-binary remote input"))}
 			return
 		}
 		input, err := parseInput(data)
 		if err != nil {
-			done <- remoteHostFailure("input-invalid", err)
+			done <- remoteInputResult{err: remoteHostFailure("input-invalid", err)}
 			return
 		}
 		if err = injectInput(input); err != nil {
-			// Input is best-effort: UIPI or a transient desktop restriction must not stop video.
 			log.Printf("[RDP] remote input rejected: %s", sanitizeRemoteLogError(err))
 			continue
 		}
 		if ctx.Err() != nil {
-			done <- nil
+			normalClose()
+			done <- remoteInputResult{normal: true}
 			return
 		}
 	}
