@@ -183,10 +183,12 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 		return remoteHostFailure("screen-info", err)
 	}
 	logger.event("REMOTE_CAPTURE_START")
+	captureCtx, cancelCapture := context.WithCancel(ctx)
 	writer := newLatestFrameWriter(ws)
-	defer writer.close()
 	inputDone := make(chan remoteInputResult, 1)
-	go readRemoteInput(ctx, ws, inputDone, writer.close)
+	go readRemoteInput(captureCtx, ws, inputDone)
+	controller := remoteSessionController{ws: ws, writer: writer, cancelCapture: cancelCapture, inputDone: inputDone}
+	defer controller.stop()
 	captureMetrics, conversionMetrics, encodeMetrics := newFrameMetrics(120), newFrameMetrics(120), newFrameMetrics(120)
 	packetMetrics, writeMetrics, totalMetrics := newFrameMetrics(120), newFrameMetrics(120), newFrameMetrics(120)
 	var sequence uint64
@@ -197,36 +199,37 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	for {
 		select {
 		case result := <-inputDone:
-			writer.close()
+			controller.finish(true)
 			if result.normal || ctx.Err() != nil {
 				return nil
 			}
 			return result.err
-		case err := <-writer.errors:
-			if result, received := awaitRemoteInputResult(inputDone); received {
-				writer.close()
-				if result.normal || ctx.Err() != nil {
-					return nil
-				}
-				return result.err
+		case failure := <-writer.failures:
+			if err := controller.resolveWriteFailure(ctx, failure); err != nil {
+				logger.event("REMOTE_FRAME_SEND_FAILED category=transport")
+				return err
 			}
-			if ctx.Err() != nil || isNormalWebSocketClose(err) {
-				writer.close()
-				return nil
-			}
-			logger.event("REMOTE_FRAME_SEND_FAILED category=transport")
-			return remoteHostFailure("frame-send", err)
+			return nil
 		case write := <-writer.writes:
 			writeMetrics.add(write)
 		case <-ctx.Done():
+			controller.finish(false)
 			return nil
 		case <-ticker.C:
+		}
+		if captureCtx.Err() != nil {
+			controller.finish(false)
+			return nil
 		}
 		started := time.Now()
 		jpg, timings, err := capturePrimaryJPEGTimed()
 		if err != nil {
 			logger.event("REMOTE_CAPTURE_FAILED " + sanitizeRemoteLogError(err))
 			return remoteHostFailure(remoteCaptureStage(err), err)
+		}
+		if captureCtx.Err() != nil {
+			controller.finish(false)
+			return nil
 		}
 		sequence++
 		packetStarted := time.Now()
@@ -280,12 +283,11 @@ func sendScreenInfo(ws *websocket.Conn) error {
 	return writePacket(ws, data)
 }
 
-func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remoteInputResult, normalClose func()) {
+func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remoteInputResult) {
 	for {
 		kind, data, err := ws.ReadMessage()
 		if err != nil {
-			if isNormalWebSocketClose(err) {
-				normalClose()
+			if isNormalWebSocketClose(err) || ctx.Err() != nil {
 				done <- remoteInputResult{normal: true}
 			} else {
 				done <- remoteInputResult{err: remoteHostFailure("input-read", fmt.Errorf("remote input connection closed: %w", err))}
@@ -306,7 +308,6 @@ func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remote
 			continue
 		}
 		if ctx.Err() != nil {
-			normalClose()
 			done <- remoteInputResult{normal: true}
 			return
 		}
