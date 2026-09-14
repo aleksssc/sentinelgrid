@@ -8,6 +8,7 @@
 struct SGEncodedFrame { unsigned long long sequence, captureMicroseconds, encodeMicroseconds; unsigned long payloadSize, flags; };
 struct SGEncoderInfo { char name[256]; unsigned long hardware, forceKeyframeSupported, inputMode; };
 struct SGDecodedFrame { unsigned long long sequence, decodeMicroseconds; unsigned long width, height, stride, payloadSize; };
+struct SGDecoderStats { unsigned long long submittedAccessUnits, decodedFrames, bytes, failures, processInputNotAccepting, processOutputOK, needMoreInput, streamChanges, discardedOutputFrames; unsigned long width, height; };
 typedef HRESULT (WINAPI *CreateEncoder)(unsigned long, unsigned long, unsigned long, unsigned long, void**);
 typedef void (WINAPI *Destroy)(void*);
 typedef HRESULT (WINAPI *Encode)(void*, const unsigned char*, unsigned long, unsigned long long, unsigned long long, unsigned char*, unsigned long, SGEncodedFrame*);
@@ -15,7 +16,8 @@ typedef HRESULT (WINAPI *Force)(void*);
 typedef HRESULT (WINAPI *EncoderInfo)(void*, SGEncoderInfo*);
 typedef HRESULT (WINAPI *CreateDecoder)(unsigned long, unsigned long, unsigned long, void**);
 typedef HRESULT (WINAPI *Decode)(void*, const unsigned char*, unsigned long, unsigned long long, unsigned char*, unsigned long, SGDecodedFrame*);
-typedef unsigned long long (WINAPI *StreamChanges)(void*);
+typedef HRESULT (WINAPI *Drain)(void*, unsigned long long, unsigned char*, unsigned long, SGDecodedFrame*);
+typedef HRESULT (WINAPI *DecoderStats)(void*, SGDecoderStats*);
 
 bool ContainsNAL(const unsigned char* data, unsigned long length, unsigned char type) {
     for (unsigned long i = 0; i + 4 < length; ++i) {
@@ -41,8 +43,9 @@ int main() {
     auto createDecoder = reinterpret_cast<CreateDecoder>(GetProcAddress(dll, "SGVideo_CreateH264Decoder"));
     auto destroyDecoder = reinterpret_cast<Destroy>(GetProcAddress(dll, "SGVideo_DestroyH264Decoder"));
     auto decode = reinterpret_cast<Decode>(GetProcAddress(dll, "SGVideo_DecodeH264ToBGRA"));
-    auto streamChanges = reinterpret_cast<StreamChanges>(GetProcAddress(dll, "SGVideo_GetH264DecoderStreamChangeCount"));
-    if (!createEncoder || !destroyEncoder || !encode || !force || !encoderInfo || !createDecoder || !destroyDecoder || !decode || !streamChanges) {
+    auto drain = reinterpret_cast<Drain>(GetProcAddress(dll, "SGVideo_DrainH264Decoder"));
+    auto decoderStats = reinterpret_cast<DecoderStats>(GetProcAddress(dll, "SGVideo_GetH264DecoderStats"));
+    if (!createEncoder || !destroyEncoder || !encode || !force || !encoderInfo || !createDecoder || !destroyDecoder || !decode || !drain || !decoderStats) {
         std::printf("DLL_EXPORT_MISSING\n"); FreeLibrary(dll); MFShutdown(); return 3;
     }
     void* encoder = nullptr;
@@ -57,7 +60,7 @@ int main() {
     std::vector<unsigned char> bgra(static_cast<size_t>(width) * height * 4);
     std::vector<unsigned char> encoded(8 * 1024 * 1024);
     std::vector<unsigned char> decoded(static_cast<size_t>(width) * height * 4);
-    unsigned long encodedAUs = 0, decodedFrames = 0;
+    unsigned long encodedAUs = 0, deliveredFrames = 0;
     bool recoveryIDR = false;
     HRESULT forced = E_FAIL;
     unsigned long outputWidth = 0, outputHeight = 0;
@@ -78,17 +81,23 @@ int main() {
         SGDecodedFrame frame{};
         hr = decode(decoder, encoded.data(), au.payloadSize, au.sequence, decoded.data(), static_cast<unsigned long>(decoded.size()), &frame);
         if (FAILED(hr)) { std::printf("DECODE_FAILED=0x%08lx\n", hr); break; }
-        if (hr == S_OK) {
-            ++decodedFrames;
-            outputWidth = frame.width;
-            outputHeight = frame.height;
-        }
+        if (hr == S_OK) { ++deliveredFrames; outputWidth = frame.width; outputHeight = frame.height; }
     }
-    unsigned long long changeCount = streamChanges(decoder);
-    std::printf("ENCODED_AUS=%lu\nDECODED_FRAMES=%lu\nSTREAM_CHANGE_HANDLED=%s\nSTREAM_CHANGE_COUNT=%llu\nOUTPUT_WIDTH=%lu\nOUTPUT_HEIGHT=%lu\nFORCE_KEYFRAME_CALL_OK=%s\nRECOVERY_IDR_FOUND=%s\n", encodedAUs, decodedFrames, changeCount ? "true" : "false", changeCount, outputWidth, outputHeight, SUCCEEDED(forced) ? "true" : "false", recoveryIDR ? "true" : "false");
+    for (unsigned long long sequence = 180; sequence < 240; ++sequence) {
+        SGDecodedFrame frame{};
+        hr = drain(decoder, sequence, decoded.data(), static_cast<unsigned long>(decoded.size()), &frame);
+        if (FAILED(hr)) { std::printf("DRAIN_FAILED=0x%08lx\n", hr); break; }
+        if (hr != S_OK) break;
+        ++deliveredFrames;
+        outputWidth = frame.width;
+        outputHeight = frame.height;
+    }
+    SGDecoderStats stats{};
+    decoderStats(decoder, &stats);
+    std::printf("ENCODED_AUS=%lu\nDECODED_FRAMES=%llu\nDELIVERED_FRAMES=%lu\nPROCESS_OUTPUT_OK=%llu\nNOT_ACCEPTING_COUNT=%llu\nNEED_MORE_INPUT=%llu\nSTREAM_CHANGE_COUNT=%llu\nDISCARDED_OUTPUT_FRAMES=%llu\nOUTPUT_WIDTH=%lu\nOUTPUT_HEIGHT=%lu\nFORCE_KEYFRAME_CALL_OK=%s\nRECOVERY_IDR_FOUND=%s\n", encodedAUs, stats.decodedFrames, deliveredFrames, stats.processOutputOK, stats.processInputNotAccepting, stats.needMoreInput, stats.streamChanges, stats.discardedOutputFrames, outputWidth, outputHeight, SUCCEEDED(forced) ? "true" : "false", recoveryIDR ? "true" : "false");
     destroyDecoder(decoder);
     destroyEncoder(encoder);
     FreeLibrary(dll);
     MFShutdown();
-    return encodedAUs && decodedFrames && outputWidth == width && outputHeight == height && SUCCEEDED(forced) && recoveryIDR ? 0 : 6;
+    return encodedAUs && stats.decodedFrames && stats.processOutputOK && !stats.discardedOutputFrames && outputWidth == width && outputHeight == height && SUCCEEDED(forced) && recoveryIDR ? 0 : 6;
 }

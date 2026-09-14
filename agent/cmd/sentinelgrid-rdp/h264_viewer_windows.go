@@ -104,6 +104,7 @@ func (v *viewer) handleH264AccessUnit(data []byte) {
 	v.mu.Lock()
 	v.socketReceived++
 	v.frameBytes += uint64(len(annexB))
+	ausReceived := v.socketReceived
 	if decoded && !v.sessionClosed {
 		v.frame = frame
 		v.frameGeneration++
@@ -112,12 +113,14 @@ func (v *viewer) handleH264AccessUnit(data []byte) {
 		hwnd := v.hwnd
 		notify := hwnd != 0 && v.notification.schedule()
 		v.mu.Unlock()
+		decoder.logStats(v.logger, ausReceived)
 		if notify {
 			v.postFrameReady(hwnd)
 		}
 		return
 	}
 	v.mu.Unlock()
+	decoder.logStats(v.logger, ausReceived)
 }
 
 func (v *viewer) requestH264Keyframe(reason string) {

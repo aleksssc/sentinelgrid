@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -15,6 +16,13 @@ import (
 type nativeDecodedFrame struct {
 	Sequence, DecodeMilliseconds       uint64
 	Width, Height, Stride, PayloadSize uint32
+}
+
+type nativeDecoderStats struct {
+	SubmittedAccessUnits, DecodedFrames, Bytes, Failures     uint64
+	ProcessInputNotAccepting, ProcessOutputOK, NeedMoreInput uint64
+	StreamChanges, DiscardedOutputFrames                     uint64
+	Width, Height                                            uint32
 }
 
 type nativeDecoderInfo struct {
@@ -29,6 +37,7 @@ type nativeH264Decoder struct {
 	lastStage                          *windows.Proc
 	handle                             uintptr
 	width, height                      int
+	lastStatsLog                       time.Time
 }
 
 func newNativeH264Decoder(width, height int) (*nativeH264Decoder, error) {
@@ -101,7 +110,7 @@ func (d *nativeH264Decoder) decodeAU(payload []byte, sequence uint64) (viewerFra
 		return viewerFrame{}, false, nil
 	}
 	if err := nativeRendererHRESULT(result); err != nil {
-		return viewerFrame{}, false, fmt.Errorf("stage=%s hr=0x%08x: %w", d.lastErrorStage(), uint32(result), err)
+		return viewerFrame{}, false, fmt.Errorf("stage=%s hr=0x%08x: %w", d.lastErrorStageLocked(), uint32(result), err)
 	}
 	if decoded.Width == 0 || decoded.Height == 0 || decoded.Width > uint32(d.width) || decoded.Height > uint32(d.height) || decoded.Stride < decoded.Width*4 {
 		return viewerFrame{}, false, fmt.Errorf("decoder returned invalid frame metadata")
@@ -109,7 +118,22 @@ func (d *nativeH264Decoder) decodeAU(payload []byte, sequence uint64) (viewerFra
 	return viewerFrame{pixels: pixels, width: int(decoded.Width), height: int(decoded.Height), stride: int(decoded.Stride)}, true, nil
 }
 
-func (d *nativeH264Decoder) lastErrorStage() string {
+func (d *nativeH264Decoder) logStats(logger *viewerLogger, ausReceived uint64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.handle == 0 || time.Since(d.lastStatsLog) < 3*time.Second {
+		return
+	}
+	var stats nativeDecoderStats
+	result, _, _ := d.stats.Call(d.handle, uintptr(unsafe.Pointer(&stats)))
+	if nativeRendererHRESULT(result) != nil {
+		return
+	}
+	d.lastStatsLog = time.Now()
+	logger.event(fmt.Sprintf("VIEWER_H264_STATS aus_received=%d aus_submitted=%d decoded_frames=%d need_more_input=%d not_accepting=%d stream_changes=%d", ausReceived, stats.SubmittedAccessUnits, stats.DecodedFrames, stats.NeedMoreInput, stats.ProcessInputNotAccepting, stats.StreamChanges))
+}
+
+func (d *nativeH264Decoder) lastErrorStageLocked() string {
 	var stage [64]byte
 	result, _, _ := d.lastStage.Call(d.handle, uintptr(unsafe.Pointer(&stage[0])), uintptr(len(stage)))
 	if nativeRendererHRESULT(result) != nil {
