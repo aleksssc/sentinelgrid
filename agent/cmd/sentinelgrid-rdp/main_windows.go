@@ -54,6 +54,14 @@ const (
 	biRGB              = 0
 	blackBrush         = 4
 	transparent        = 1
+	psSolid            = 0
+	dtLeft             = 0x00000000
+	dtVCenter          = 0x00000004
+	dtSingleLine       = 0x00000020
+	dtEndEllipsis      = 0x00008000
+	fontWeightNormal   = 400
+	fontWeightSemiBold = 600
+	fontWeightBold     = 700
 )
 
 type viewer struct {
@@ -192,6 +200,14 @@ var getStockObject = viewerGDI32.NewProc("GetStockObject")
 var setTextColor = viewerGDI32.NewProc("SetTextColor")
 var setBkMode = viewerGDI32.NewProc("SetBkMode")
 var stretchDIBits = viewerGDI32.NewProc("StretchDIBits")
+var createSolidBrush = viewerGDI32.NewProc("CreateSolidBrush")
+var createPen = viewerGDI32.NewProc("CreatePen")
+var selectObject = viewerGDI32.NewProc("SelectObject")
+var deleteObject = viewerGDI32.NewProc("DeleteObject")
+var moveToEx = viewerGDI32.NewProc("MoveToEx")
+var lineTo = viewerGDI32.NewProc("LineTo")
+var polygon = viewerGDI32.NewProc("Polygon")
+var createFont = viewerGDI32.NewProc("CreateFontW")
 
 type point struct{ X, Y int32 }
 type rect struct{ Left, Top, Right, Bottom int32 }
@@ -896,19 +912,102 @@ func (v *viewer) logPresentStats(decodedGeneration uint64, presentedFPS float64)
 	avg, p50, p95, max := milliseconds(present)
 	v.logger.event(fmt.Sprintf("VIEWER_RENDER_STATS backend=%s decoded_generation=%d render_attempts=%d successful_presents=%d failed_presents=%d last_successful_generation=%d presented_fps=%.1f present_ms=avg:%.1f/p50:%.1f/p95:%.1f/max:%.1f device_resets=%d", backend, decodedGeneration, attempts, successful, zero+failed, lastSuccessful, presentedFPS, avg, p50, p95, max, rendererStats.DeviceResets))
 }
+func rgb(red, green, blue byte) uintptr { return uintptr(red) | uintptr(green)<<8 | uintptr(blue)<<16 }
+
+func fillStatusRect(hdc uintptr, area rect, color uintptr) {
+	brush, _, _ := createSolidBrush.Call(color)
+	if brush == 0 {
+		return
+	}
+	defer deleteObject.Call(brush)
+	fillRect.Call(hdc, uintptr(unsafe.Pointer(&area)), brush)
+}
+
+func statusFont(height, weight int32) uintptr {
+	name, _ := syscall.UTF16PtrFromString("Segoe UI")
+	font, _, _ := createFont.Call(uintptr(height), 0, 0, 0, uintptr(weight), 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(name)))
+	return font
+}
+
+func drawStatusText(hdc uintptr, text string, area rect, color uintptr, height, weight int32) {
+	value, _ := syscall.UTF16PtrFromString(text)
+	font := statusFont(height, weight)
+	if font != 0 {
+		previous, _, _ := selectObject.Call(hdc, font)
+		defer func() {
+			selectObject.Call(hdc, previous)
+			deleteObject.Call(font)
+		}()
+	}
+	setTextColor.Call(hdc, color)
+	drawText.Call(hdc, uintptr(unsafe.Pointer(value)), ^uintptr(0), uintptr(unsafe.Pointer(&area)), dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+}
+
+func drawStatusGrid(hdc uintptr, client rect) {
+	pen, _, _ := createPen.Call(psSolid, 1, rgb(25, 61, 82))
+	if pen == 0 {
+		return
+	}
+	previous, _, _ := selectObject.Call(hdc, pen)
+	defer func() {
+		selectObject.Call(hdc, previous)
+		deleteObject.Call(pen)
+	}()
+	const spacing int32 = 48
+	for x := client.Left - spacing; x < client.Right; x += spacing {
+		moveToEx.Call(hdc, uintptr(x), uintptr(client.Top), 0)
+		lineTo.Call(hdc, uintptr(x), uintptr(client.Bottom))
+	}
+	for y := client.Top - spacing; y < client.Bottom; y += spacing {
+		moveToEx.Call(hdc, uintptr(client.Left), uintptr(y), 0)
+		lineTo.Call(hdc, uintptr(client.Right), uintptr(y))
+	}
+}
+
+func drawStatusMark(hdc uintptr, x, y int32) {
+	points := [...]point{{x, y + 18}, {x + 30, y}, {x + 60, y + 18}, {x + 60, y + 54}, {x + 30, y + 72}, {x, y + 54}}
+	brush, _, _ := createSolidBrush.Call(rgb(10, 173, 238))
+	if brush == 0 {
+		return
+	}
+	previous, _, _ := selectObject.Call(hdc, brush)
+	polygon.Call(hdc, uintptr(unsafe.Pointer(&points[0])), uintptr(len(points)))
+	selectObject.Call(hdc, previous)
+	deleteObject.Call(brush)
+	inner := [...]point{{x + 15, y + 27}, {x + 30, y + 18}, {x + 45, y + 27}, {x + 45, y + 45}, {x + 30, y + 54}, {x + 15, y + 45}}
+	fillStatusRect(hdc, rect{Left: x + 15, Top: y + 18, Right: x + 45, Bottom: y + 54}, rgb(7, 19, 32))
+	pen, _, _ := createPen.Call(psSolid, 2, rgb(70, 209, 255))
+	if pen == 0 {
+		return
+	}
+	previous, _, _ = selectObject.Call(hdc, pen)
+	polygon.Call(hdc, uintptr(unsafe.Pointer(&inner[0])), uintptr(len(inner)))
+	selectObject.Call(hdc, previous)
+	deleteObject.Call(pen)
+}
+
 func (v *viewer) paintStatus(hdc uintptr, client rect, status string) {
 	if status == "" {
 		status = "Connecting to remote device..."
 	}
-	title, _ := syscall.UTF16PtrFromString("SentinelGrid Remote")
-	message, _ := syscall.UTF16PtrFromString(status)
-	setBkMode.Call(hdc, transparent)
-	setTextColor.Call(hdc, 0x00FFFFFF)
-	titleRect := rect{Left: 40, Top: 40, Right: client.Right - 40, Bottom: 90}
-	messageRect := rect{Left: 40, Top: 95, Right: client.Right - 40, Bottom: 145}
-	drawText.Call(hdc, uintptr(unsafe.Pointer(title)), ^uintptr(0), uintptr(unsafe.Pointer(&titleRect)), 0)
-	setTextColor.Call(hdc, 0x00C0C0C0)
-	drawText.Call(hdc, uintptr(unsafe.Pointer(message)), ^uintptr(0), uintptr(unsafe.Pointer(&messageRect)), 0)
+	fillStatusRect(hdc, client, rgb(5, 15, 26))
+	drawStatusGrid(hdc, client)
+	contentWidth := int32(440)
+	left := (client.Right - contentWidth) / 2
+	if left < 40 {
+		left = 40
+	}
+	top := client.Bottom/2 - 85
+	if top < 40 {
+		top = 40
+	}
+	panel := rect{Left: left - 28, Top: top - 24, Right: left + contentWidth, Bottom: top + 150}
+	fillStatusRect(hdc, panel, rgb(8, 25, 41))
+	accent := rect{Left: panel.Left, Top: panel.Top, Right: panel.Left + 4, Bottom: panel.Bottom}
+	fillStatusRect(hdc, accent, rgb(10, 173, 238))
+	drawStatusMark(hdc, left, top)
+	drawStatusText(hdc, "SentinelGrid Remote", rect{Left: left + 84, Top: top + 16, Right: panel.Right - 24, Bottom: top + 48}, rgb(241, 248, 252), 19, fontWeightBold)
+	drawStatusText(hdc, status, rect{Left: left, Top: top + 91, Right: panel.Right - 24, Bottom: top + 121}, rgb(190, 207, 219), 16, fontWeightNormal)
 }
 func main() {
 	if len(os.Args) == 3 && os.Args[1] == "-uri" {
