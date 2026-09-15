@@ -75,6 +75,7 @@ type viewer struct {
 	videoCodec                string
 	screenWidth, screenHeight int
 	lastKeyframeRequest       time.Time
+	input                     *viewerInputSender
 
 	socketReceived, decodeStarted, decodedCompleted     uint64
 	frameBytes                                          uint64
@@ -273,6 +274,7 @@ func runViewerConnecting(connect viewerConnect) error {
 	logger.event("VIEWER_START")
 	started := time.Now()
 	v := &viewer{logger: logger, status: "Connecting to remote device...", done: make(chan struct{}), statsStarted: started, statsReported: started, compressed: newLatestCompressedFrame(), decodeMetrics: newDurationWindow(120), conversionMetrics: newDurationWindow(120), bufferCopyMetrics: newDurationWindow(120), presentMetrics: newDurationWindow(120)}
+	v.input = newViewerInputSender(v)
 	activeViewer = v
 	sessionCtx, cancelSession := context.WithCancel(context.Background())
 	go func() {
@@ -297,6 +299,7 @@ func runViewerConnecting(connect viewerConnect) error {
 	}()
 	windowErr := v.window()
 	cancelSession()
+	v.input.close()
 	v.mu.RLock()
 	ws := v.ws
 	v.mu.RUnlock()
@@ -526,13 +529,21 @@ func (v *viewer) inputEnabled() bool {
 	return v.ws != nil && !v.sessionClosed
 }
 
-func (v *viewer) send(input rdp.Input) {
-	if !v.inputEnabled() {
+func (v *viewer) queueInput(input rdp.Input) {
+	if !v.inputEnabled() || v.input == nil {
 		return
 	}
+	if input.Type == "mouse_move" {
+		v.input.enqueueMouseMove(input)
+		return
+	}
+	v.input.enqueueCritical(input)
+}
+
+func (v *viewer) writeInput(input rdp.Input) error {
 	data, err := json.Marshal(input)
 	if err != nil {
-		return
+		return err
 	}
 	packet := append([]byte{rdp.PacketInput}, data...)
 	v.writeMu.Lock()
@@ -542,11 +553,9 @@ func (v *viewer) send(input rdp.Input) {
 	closed := v.sessionClosed
 	v.mu.RUnlock()
 	if ws == nil || closed {
-		return
+		return errors.New("viewer input session is closed")
 	}
-	if err := ws.WriteMessage(websocket.BinaryMessage, packet); err != nil {
-		v.logger.event("VIEWER_INPUT_SEND_FAILED")
-	}
+	return ws.WriteMessage(websocket.BinaryMessage, packet)
 }
 func win32Error(err error) string {
 	if errno, ok := err.(syscall.Errno); ok && errno != 0 {
@@ -725,11 +734,11 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 	case wmMButtonUp:
 		v.sendMouse(hwnd, "mouse_up", "middle", 0, lparam)
 	case wmMouseWheel:
-		v.send(rdp.Input{Type: "mouse_wheel", Delta: int(int16(wparam >> 16))})
+		v.queueInput(rdp.Input{Type: "mouse_wheel", Delta: int(int16(wparam >> 16))})
 	case wmKeyDown:
-		v.send(rdp.Input{Type: "key_down", VK: uint16(wparam)})
+		v.queueInput(rdp.Input{Type: "key_down", VK: uint16(wparam)})
 	case wmKeyUp:
-		v.send(rdp.Input{Type: "key_up", VK: uint16(wparam)})
+		v.queueInput(rdp.Input{Type: "key_up", VK: uint16(wparam)})
 	}
 	value, _, _ := defWindowProc.Call(hwnd, uintptr(message), wparam, lparam)
 	return value
@@ -739,7 +748,7 @@ func (v *viewer) sendMouse(hwnd uintptr, kind, button string, delta int, lparam 
 	if !ok {
 		return
 	}
-	v.send(rdp.Input{Type: kind, X: x, Y: y, Button: button, Delta: delta})
+	v.queueInput(rdp.Input{Type: kind, X: x, Y: y, Button: button, Delta: delta})
 }
 func (v *viewer) mapMouse(hwnd uintptr, x, y int) (int, int, bool) {
 	v.mu.RLock()
