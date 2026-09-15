@@ -315,6 +315,20 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 		frame, changed, e := backend.Capture(captureCtx)
 		videoWatchdog.end()
 		if e != nil {
+			if recoverCapture, ok := backend.(interface{ Restart(context.Context) error }); ok && isRecoverableDXGIError(e) {
+				if recoveryErr := recoverRemoteCapture(captureCtx, logger, recoverCapture, backend, width, height, e); recoveryErr == nil {
+					if source.codec() == "h264" {
+						if forceErr := source.forceKeyframe(); forceErr != nil {
+							logger.event("REMOTE_VIDEO_RECOVERY_FAILED stage=encode cause=" + sanitizeRemoteLogError(forceErr))
+							return remoteHostFailure("capture-recovery", forceErr)
+						}
+						forced++
+					}
+					continue
+				} else {
+					return remoteHostFailure("capture-recovery", recoveryErr)
+				}
+			}
 			return remoteHostFailure(remoteCaptureStage(e), e)
 		}
 		if !changed {
@@ -341,6 +355,41 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 		}
 		statsAUs++
 	}
+}
+
+func recoverRemoteCapture(ctx context.Context, logger *remoteLogger, restart interface{ Restart(context.Context) error }, backend CaptureBackend, expectedWidth, expectedHeight int, cause error) error {
+	logger.event("REMOTE_VIDEO_RECOVERY_START stage=capture cause=" + sanitizeRemoteLogError(cause))
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if attempt > 1 {
+			timer := time.NewTimer(250 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+		if err := restart.Restart(ctx); err != nil {
+			lastErr = err
+			continue
+		}
+		width, height := backend.Dimensions()
+		if width != expectedWidth || height != expectedHeight {
+			lastErr = fmt.Errorf("desktop dimensions changed during DXGI recovery: %dx%d, expected %dx%d", width, height, expectedWidth, expectedHeight)
+			break
+		}
+		logger.event(fmt.Sprintf("REMOTE_VIDEO_RECOVERY_SUCCESS stage=capture attempt=%d", attempt))
+		return nil
+	}
+	if lastErr == nil {
+		lastErr = cause
+	}
+	logger.event("REMOTE_VIDEO_RECOVERY_FAILED stage=capture cause=" + sanitizeRemoteLogError(lastErr))
+	return lastErr
 }
 
 type remoteVideoStage uint32

@@ -17,8 +17,11 @@ import (
 )
 
 const (
-	nativeVideoDLLName   = "SentinelGridVideo.dll"
-	dxgiErrorWaitTimeout = syscall.Errno(0x887A0027)
+	nativeVideoDLLName     = "SentinelGridVideo.dll"
+	dxgiErrorWaitTimeout   = syscall.Errno(0x887A0027)
+	dxgiErrorAccessLost    = syscall.Errno(0x887A0026)
+	dxgiErrorDeviceRemoved = syscall.Errno(0x887A0005)
+	dxgiErrorDeviceReset   = syscall.Errno(0x887A0007)
 )
 
 type nativeVideoFrame struct {
@@ -82,11 +85,26 @@ func newNativeDXGICaptureBackendAt(path string, diagnostic func(string)) (*nativ
 	return &nativeDXGICaptureBackend{dll: dll, create: create, destroy: destroy, start: start, dimensions: dimensions, acquire: acquire, diagnostic: diagnostic}, nil
 }
 
-func (b *nativeDXGICaptureBackend) Start(context.Context) error {
+func (b *nativeDXGICaptureBackend) Start(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.startLocked(ctx)
+}
+
+// Restart is called only after Capture has returned a DXGI terminal error. It
+// keeps all duplication and D3D ownership on the host video goroutine.
+func (b *nativeDXGICaptureBackend) Restart(ctx context.Context) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.startLocked(ctx)
+}
+
+func (b *nativeDXGICaptureBackend) startLocked(ctx context.Context) error {
 	if b.closed {
 		return fmt.Errorf("native DXGI backend is closed")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if b.handle == 0 {
 		result, _, _ := b.create.Call(uintptr(unsafe.Pointer(&b.handle)))
@@ -157,6 +175,9 @@ func (b *nativeDXGICaptureBackend) Capture(ctx context.Context) (captureFrame, b
 		return captureFrame{}, false, fmt.Errorf("native DXGI invalid frame dimensions")
 	}
 	return captureFrame{Width: b.width, Height: b.height, Stride: int(native.Stride), BGRA: pixels, Acquire: time.Duration(native.AcquireMicroseconds) * time.Microsecond, Copy: time.Duration(native.GPUCopyMicroseconds) * time.Microsecond, Readback: time.Duration(native.MapReadbackMicroseconds) * time.Microsecond}, true, nil
+}
+func isRecoverableDXGIError(err error) bool {
+	return errors.Is(err, dxgiErrorAccessLost) || errors.Is(err, dxgiErrorDeviceRemoved) || errors.Is(err, dxgiErrorDeviceReset)
 }
 func (b *nativeDXGICaptureBackend) event(message string) {
 	if b.diagnostic != nil {
