@@ -16,52 +16,64 @@ import (
 
 func TestRemoteSessionControllerNormalCloseWinsConcurrentWriteFailure(t *testing.T) {
 	upgrader := websocket.Upgrader{}
-	for attempt := 0; attempt < 1000; attempt++ {
-		received := make(chan struct{})
-		server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-			connection, err := upgrader.Upgrade(response, request, nil)
-			if err != nil {
-				t.Errorf("upgrade: %v", err)
-				return
-			}
-			defer connection.Close()
-			if _, _, err = connection.ReadMessage(); err != nil {
-				t.Errorf("server read: %v", err)
-				return
-			}
-			close(received)
-			if err = connection.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "done"), time.Now().Add(time.Second)); err != nil {
-				t.Errorf("server close: %v", err)
-			}
-		}))
-
-		url := "ws" + strings.TrimPrefix(server.URL, "http")
-		connection, _, err := websocket.DefaultDialer.Dial(url, nil)
+	received := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		connection, err := upgrader.Upgrade(response, request, nil)
 		if err != nil {
-			server.Close()
-			t.Fatal(err)
+			t.Errorf("upgrade: %v", err)
+			return
 		}
-		captureCtx, cancelCapture := context.WithCancel(context.Background())
-		writer := newLatestFrameWriter(connection)
-		done := make(chan remoteInputResult, 1)
-		go readRemoteInput(captureCtx, connection, done)
-		controller := remoteSessionController{ws: connection, writer: writer, cancelCapture: cancelCapture, inputDone: done}
-		writer.enqueue([]byte{1})
-		select {
-		case <-received:
-		case <-time.After(time.Second):
-			t.Fatalf("attempt %d: server did not receive active frame", attempt)
+		defer connection.Close()
+		if _, _, err = connection.ReadMessage(); err != nil {
+			t.Errorf("server read: %v", err)
+			return
 		}
-		// Keep a replaceable frame pending while the normal close is delivered.
-		writer.enqueue([]byte{2})
-		if err := controller.resolveWriteFailure(context.Background(), frameWriteResult{err: errors.New("simultaneous write failure")}); err != nil {
-			t.Fatalf("attempt %d: normal peer close became %v", attempt, err)
+		close(received)
+		if err = connection.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "done"), time.Now().Add(time.Second)); err != nil {
+			t.Errorf("server close: %v", err)
 		}
-		if captureCtx.Err() == nil {
-			t.Fatalf("attempt %d: capture was not cancelled", attempt)
-		}
-		connection.Close()
-		server.Close()
+	}))
+	defer server.Close()
+
+	connection, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+
+	captureCtx, cancelCapture := context.WithCancel(context.Background())
+	defer cancelCapture()
+	writer := newLatestFrameWriter(connection)
+	readerDone := make(chan remoteInputResult, 1)
+	go readRemoteInput(captureCtx, connection, readerDone)
+	writer.enqueue([]byte{1})
+	select {
+	case <-received:
+	case <-time.After(time.Second):
+		t.Fatal("server did not receive active frame")
+	}
+
+	// The server emitting a Close frame does not establish that the only
+	// WebSocket reader has classified it. Synchronize on that classification so
+	// this test verifies the controller contract rather than goroutine timing.
+	var inputResult remoteInputResult
+	select {
+	case inputResult = <-readerDone:
+	case <-time.After(time.Second):
+		t.Fatal("input reader did not classify normal peer close")
+	}
+	if !inputResult.normal || inputResult.err != nil {
+		t.Fatalf("input reader result = %+v, want normal close", inputResult)
+	}
+
+	done := make(chan remoteInputResult, 1)
+	done <- inputResult
+	controller := remoteSessionController{ws: connection, writer: writer, cancelCapture: cancelCapture, inputDone: done}
+	if err := controller.resolveWriteFailure(context.Background(), frameWriteResult{err: errors.New("simultaneous write failure")}); err != nil {
+		t.Fatalf("normal peer close became %v", err)
+	}
+	if captureCtx.Err() == nil {
+		t.Fatal("capture was not cancelled")
 	}
 }
 

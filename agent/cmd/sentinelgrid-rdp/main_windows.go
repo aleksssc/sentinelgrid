@@ -57,6 +57,8 @@ const (
 	framePresentTimer    = 1
 	framePresentPeriod   = 16
 	wsOverlappedWindow   = 0x00cf0000
+	wsChild              = 0x40000000
+	wsVisible            = 0x10000000
 	csHRedraw            = 0x0002
 	csVRedraw            = 0x0001
 	swShow               = 5
@@ -86,6 +88,13 @@ type viewer struct {
 	frame                     viewerFrame
 	frameGeneration           uint64
 	hwnd                      uintptr
+	videoHost                 uintptr
+	shell                     viewerShellLayout
+	scaleMode                 viewerScaleMode
+	showStats                 bool
+	fullscreen                bool
+	restorePlacement          windowPlacement
+	restoreStyle              uintptr
 	status                    string
 	logger                    *viewerLogger
 	compressed                *latestCompressedFrame
@@ -646,7 +655,22 @@ func (v *viewer) window() error {
 		sendMessage.Call(hwnd, wmSetIcon, iconSmall, icon)
 		sendMessage.Call(hwnd, wmSetIcon, iconBig, icon)
 	}
-	if renderer, rendererErr := newNativeRenderer(hwnd); rendererErr == nil {
+	v.applyWindowChrome(hwnd)
+	videoClass, _ := syscall.UTF16PtrFromString("SentinelGridRemoteVideoHost")
+	videoCallback := syscall.NewCallback(videoHostProc)
+	videoWC := wndClassEx{Size: uint32(unsafe.Sizeof(wndClassEx{})), Style: csHRedraw | csVRedraw, WndProc: videoCallback, Instance: instance, ClassName: videoClass, Background: getStockObjectValue(blackBrush)}
+	if atom, _, classErr := registerClassEx.Call(uintptr(unsafe.Pointer(&videoWC))); atom == 0 {
+		return fmt.Errorf("could not register video host class: %s", win32Error(classErr))
+	}
+	videoHost, _, videoErr := createWindowEx.Call(0, uintptr(unsafe.Pointer(videoClass)), 0, wsChild|wsVisible, 0, 0, 1, 1, hwnd, 0, instance, 0)
+	if videoHost == 0 {
+		return fmt.Errorf("could not create video host: %s", win32Error(videoErr))
+	}
+	v.mu.Lock()
+	v.hwnd, v.videoHost = hwnd, videoHost
+	v.mu.Unlock()
+	v.layoutShell(hwnd)
+	if renderer, rendererErr := newNativeRenderer(videoHost); rendererErr == nil {
 		v.mu.Lock()
 		v.renderer, v.rendererBackend = renderer, "d3d11"
 		v.mu.Unlock()
@@ -707,6 +731,7 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		killTimer.Call(hwnd, framePresentTimer)
 		v.mu.Lock()
 		v.hwnd = 0
+		v.videoHost = 0
 		destroyRenderer := v.renderer
 		destroyDecoder := v.decoder
 		v.renderer = nil
@@ -723,19 +748,10 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		postQuitMessage.Call(0)
 		return 0
 	case wmSize:
-		v.mu.RLock()
-		renderer := v.renderer
-		v.mu.RUnlock()
-		if renderer != nil {
-			var client rect
-			getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
-			if err := renderer.resize(int(client.Right), int(client.Bottom)); err != nil {
-				v.logger.event("VIEWER_D3D11_RESIZE_FAILED")
-			}
-		}
+		v.layoutShell(hwnd)
 		return 0
 	case wmSetFocus:
-		setFocus.Call(hwnd)
+		setFocus.Call(v.presentationHWND())
 	case wmKillFocus:
 		if v.input != nil {
 			v.input.releaseOnFocusLoss()
@@ -757,12 +773,12 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		closed := v.sessionClosed
 		v.mu.Unlock()
 		if !closed {
-			v.presentLatestFrame(hwnd)
+			v.presentLatestFrame(v.presentationHWND())
 		}
 		return 0
 	case wmTimer:
 		if wparam == framePresentTimer {
-			v.presentLatestFrame(hwnd)
+			v.presentLatestFrame(v.presentationHWND())
 			v.mu.Lock()
 			hasFrame := len(v.frame.pixels) != 0
 			animate := !hasFrame && time.Since(v.lastLoadingInvalidate) >= time.Second/30
@@ -771,39 +787,34 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 			}
 			v.mu.Unlock()
 			if animate {
-				invalidateRect.Call(hwnd, 0, 0, 0)
+				invalidateRect.Call(v.presentationHWND(), 0, 0, 0)
 			}
 		}
 		return 0
 	case wmStateChanged:
 		invalidateRect.Call(hwnd, 0, 0, 0)
+		invalidateRect.Call(v.presentationHWND(), 0, 0, 0)
 		return 0
 	case wmPaint:
-		v.paint(hwnd)
+		v.paintToolbar(hwnd)
 		return 0
-	case wmMouseMove:
-		v.sendMouse(hwnd, "mouse_move", "", 0, lparam)
 	case wmLButtonDown:
-		v.sendMouse(hwnd, "mouse_down", "left", 0, lparam)
-	case wmLButtonUp:
-		v.sendMouse(hwnd, "mouse_up", "left", 0, lparam)
-	case wmRButtonDown:
-		v.sendMouse(hwnd, "mouse_down", "right", 0, lparam)
-	case wmRButtonUp:
-		v.sendMouse(hwnd, "mouse_up", "right", 0, lparam)
-	case wmMButtonDown:
-		v.sendMouse(hwnd, "mouse_down", "middle", 0, lparam)
-	case wmMButtonUp:
-		v.sendMouse(hwnd, "mouse_up", "middle", 0, lparam)
-	case wmMouseWheel:
-		v.queueInput(rdp.Input{Type: "mouse_wheel", Delta: int(int16(wparam >> 16))})
-	case wmKeyDown, wmSysKeyDown:
-		if !viewerMessageIsInjected() {
-			v.queueInput(keyboardInput("key_down", wparam, lparam))
+		v.mu.RLock()
+		action := v.shell.actionAt(int(int16(lparam)), int(int16(lparam>>16)))
+		v.mu.RUnlock()
+		if action != "" {
+			v.shellAction(action)
+			return 0
 		}
-	case wmKeyUp, wmSysKeyUp:
-		if !viewerMessageIsInjected() {
-			v.queueInput(keyboardInput("key_up", wparam, lparam))
+	case wmKeyDown:
+		if wparam == 27 {
+			v.mu.RLock()
+			fullscreen := v.fullscreen
+			v.mu.RUnlock()
+			if fullscreen {
+				v.toggleFullscreen()
+				return 0
+			}
 		}
 	}
 	value, _, _ := defWindowProc.Call(hwnd, uintptr(message), wparam, lparam)
@@ -824,7 +835,11 @@ func (v *viewer) sendMouse(hwnd uintptr, kind, button string, delta int, lparam 
 	}
 	v.queueInput(rdp.Input{Type: kind, X: x, Y: y, Button: button, Delta: delta})
 }
+func (v *viewer) presentationHWND() uintptr { v.mu.RLock(); defer v.mu.RUnlock(); return v.videoHost }
 func (v *viewer) mapMouse(hwnd uintptr, x, y int) (int, int, bool) {
+	if hwnd == 0 || hwnd != v.presentationHWND() {
+		return 0, 0, false
+	}
 	v.mu.RLock()
 	frame := v.frame
 	v.mu.RUnlock()
