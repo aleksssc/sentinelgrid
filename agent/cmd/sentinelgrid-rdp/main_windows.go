@@ -211,6 +211,7 @@ var lineTo = viewerGDI32.NewProc("LineTo")
 var polygon = viewerGDI32.NewProc("Polygon")
 var createFont = viewerGDI32.NewProc("CreateFontW")
 var ellipse = viewerGDI32.NewProc("Ellipse")
+var roundRect = viewerGDI32.NewProc("RoundRect")
 
 type point struct{ X, Y int32 }
 type rect struct{ Left, Top, Right, Bottom int32 }
@@ -953,6 +954,7 @@ func drawStatusText(hdc uintptr, text string, area rect, color uintptr, height, 
 		}()
 	}
 	setTextColor.Call(hdc, color)
+	setBkMode.Call(hdc, 1) // TRANSPARENT
 	drawText.Call(hdc, uintptr(unsafe.Pointer(value)), ^uintptr(0), uintptr(unsafe.Pointer(&area)), dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 }
 
@@ -970,26 +972,25 @@ func fillStatusEllipse(hdc uintptr, area rect, color uintptr) {
 	ellipse.Call(hdc, uintptr(area.Left), uintptr(area.Top), uintptr(area.Right), uintptr(area.Bottom))
 }
 
-func drawStatusMark(hdc uintptr, x, y int32) {
-	outer := [...]point{{x + 34, y}, {x + 68, y + 20}, {x + 68, y + 57}, {x + 34, y + 78}, {x, y + 57}, {x, y + 20}}
-	inner := [...]point{{x + 34, y + 9}, {x + 59, y + 24}, {x + 59, y + 52}, {x + 34, y + 67}, {x + 9, y + 52}, {x + 9, y + 24}}
-	brush, _, _ := createSolidBrush.Call(rgb(0, 174, 239))
-	if brush == 0 {
+func drawStatusMark(hdc uintptr, x, y, size int32) {
+	if size < 12 {
 		return
 	}
-	previous, _, _ := selectObject.Call(hdc, brush)
-	polygon.Call(hdc, uintptr(unsafe.Pointer(&outer[0])), uintptr(len(outer)))
-	selectObject.Call(hdc, previous)
-	deleteObject.Call(brush)
-	brush, _, _ = createSolidBrush.Call(rgb(5, 10, 16))
-	if brush == 0 {
-		return
+	pointAt := func(px, py int32) point { return point{X: x + px*size/68, Y: y + py*size/78} }
+	outer := [...]point{pointAt(34, 0), pointAt(68, 20), pointAt(68, 57), pointAt(34, 78), pointAt(0, 57), pointAt(0, 20)}
+	inner := [...]point{pointAt(34, 9), pointAt(59, 24), pointAt(59, 52), pointAt(34, 67), pointAt(9, 52), pointAt(9, 24)}
+	fillPolygon := func(points []point, color uintptr) {
+		brush, _, _ := createSolidBrush.Call(color)
+		if brush == 0 {
+			return
+		}
+		previous, _, _ := selectObject.Call(hdc, brush)
+		polygon.Call(hdc, uintptr(unsafe.Pointer(&points[0])), uintptr(len(points)))
+		selectObject.Call(hdc, previous)
+		deleteObject.Call(brush)
 	}
-	previous, _, _ = selectObject.Call(hdc, brush)
-	polygon.Call(hdc, uintptr(unsafe.Pointer(&inner[0])), uintptr(len(inner)))
-	selectObject.Call(hdc, previous)
-	deleteObject.Call(brush)
-	fillStatusEllipse(hdc, rect{Left: x + 29, Top: y + 31, Right: x + 39, Bottom: y + 41}, rgb(103, 218, 255))
+	fillPolygon(outer[:], rgb(0, 156, 242))
+	fillPolygon(inner[:], rgb(13, 15, 18))
 }
 
 func drawCenteredStatusText(hdc uintptr, text string, area rect, color uintptr, height, weight int32) {
@@ -997,13 +998,55 @@ func drawCenteredStatusText(hdc uintptr, text string, area rect, color uintptr, 
 	font := statusFont(height, weight)
 	if font != 0 {
 		previous, _, _ := selectObject.Call(hdc, font)
-		defer func() {
-			selectObject.Call(hdc, previous)
-			deleteObject.Call(font)
-		}()
+		defer func() { selectObject.Call(hdc, previous); deleteObject.Call(font) }()
 	}
 	setTextColor.Call(hdc, color)
+	setBkMode.Call(hdc, 1) // TRANSPARENT
 	drawText.Call(hdc, uintptr(unsafe.Pointer(value)), ^uintptr(0), uintptr(unsafe.Pointer(&area)), dtCenter|dtVCenter|dtSingleLine|dtEndEllipsis)
+}
+
+func drawStatusRoundRect(hdc uintptr, area rect, radius int32, fill, border uintptr) {
+	brush, _, _ := createSolidBrush.Call(fill)
+	pen, _, _ := createPen.Call(0, 1, border)
+	if brush == 0 || pen == 0 {
+		if brush != 0 {
+			deleteObject.Call(brush)
+		}
+		if pen != 0 {
+			deleteObject.Call(pen)
+		}
+		return
+	}
+	oldBrush, _, _ := selectObject.Call(hdc, brush)
+	oldPen, _, _ := selectObject.Call(hdc, pen)
+	roundRect.Call(hdc, uintptr(area.Left), uintptr(area.Top), uintptr(area.Right), uintptr(area.Bottom), uintptr(radius), uintptr(radius))
+	selectObject.Call(hdc, oldPen)
+	selectObject.Call(hdc, oldBrush)
+	deleteObject.Call(pen)
+	deleteObject.Call(brush)
+}
+
+func loadingStatusLabel(status string) string {
+	switch status {
+	case "Reconnecting...":
+		return "Reconnecting"
+	case "Negotiating video...", "Starting remote display...":
+		return "Starting video"
+	case "Establishing secure session...":
+		return "Securing session"
+	default:
+		return "Connecting"
+	}
+}
+
+func clampStatus(value, low, high int32) int32 {
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
 }
 
 func (v *viewer) paintStatus(hdc uintptr, client rect, status string) {
@@ -1017,46 +1060,59 @@ func (v *viewer) paintStatus(hdc uintptr, client rect, status string) {
 		started = time.Now()
 	}
 	elapsed := time.Since(started)
-	animationStep := int(elapsed / (time.Second / 30))
-	dotPhase := animationStep / 8
+	fillStatusRect(hdc, client, rgb(10, 10, 12))
 
-	fillStatusRect(hdc, client, rgb(5, 10, 16))
-	centerX, centerY := (client.Left+client.Right)/2, (client.Top+client.Bottom)/2
-	for i := int32(0); i < 7; i++ {
-		radius := int32(260) - i*34
-		shade := byte(11 + i*2)
-		fillStatusEllipse(hdc, rect{Left: centerX - radius, Top: centerY - radius, Right: centerX + radius, Bottom: centerY + radius}, rgb(4, shade, shade+8))
+	// The loading shell mirrors the dashboard's inset topbar and compact surface cards.
+	headerHeight := int32(64)
+	fillStatusRect(hdc, rect{Left: client.Left, Top: client.Top, Right: client.Right, Bottom: client.Top + headerHeight}, rgb(9, 11, 14))
+	fillStatusRect(hdc, rect{Left: client.Left, Top: client.Top + headerHeight - 1, Right: client.Right, Bottom: client.Top + headerHeight}, rgb(37, 42, 50))
+	margin := int32(20)
+	drawStatusMark(hdc, client.Left+margin, client.Top+18, 24)
+	drawStatusText(hdc, "Sentinel", rect{Left: client.Left + 54, Top: client.Top + 15, Right: client.Left + 112, Bottom: client.Top + 47}, rgb(244, 245, 247), 16, fontWeightSemiBold)
+	drawStatusText(hdc, "Grid", rect{Left: client.Left + 111, Top: client.Top + 15, Right: client.Left + 152, Bottom: client.Top + 47}, rgb(149, 156, 168), 16, fontWeightNormal)
+	drawStatusText(hdc, "Remote", rect{Left: client.Left + 156, Top: client.Top + 16, Right: client.Left + 212, Bottom: client.Top + 47}, rgb(149, 156, 168), 13, fontWeightNormal)
+
+	badgeText := loadingStatusLabel(status)
+	badgeWidth := clampStatus(int32(len(badgeText))*7+38, 104, 142)
+	badge := rect{Left: client.Right - margin - badgeWidth, Top: client.Top + 18, Right: client.Right - margin, Bottom: client.Top + 46}
+	drawStatusRoundRect(hdc, badge, 10, rgb(17, 30, 50), rgb(43, 70, 106))
+	fillStatusEllipse(hdc, rect{Left: badge.Left + 11, Top: badge.Top + 10, Right: badge.Left + 17, Bottom: badge.Top + 16}, rgb(96, 165, 250))
+	drawStatusText(hdc, badgeText, rect{Left: badge.Left + 24, Top: badge.Top + 2, Right: badge.Right - 8, Bottom: badge.Bottom - 2}, rgb(147, 197, 253), 12, fontWeightSemiBold)
+
+	availableWidth := client.Right - client.Left - 40
+	cardWidth := clampStatus(availableWidth, 280, 430)
+	cardHeight := int32(266)
+	cardLeft := (client.Left + client.Right - cardWidth) / 2
+	contentTop := client.Top + headerHeight
+	cardTop := contentTop + ((client.Bottom - contentTop - cardHeight) / 2)
+	if cardTop < contentTop+20 {
+		cardTop = contentTop + 20
 	}
+	card := rect{Left: cardLeft, Top: cardTop, Right: cardLeft + cardWidth, Bottom: cardTop + cardHeight}
+	drawStatusRoundRect(hdc, card, 16, rgb(13, 15, 18), rgb(37, 42, 50))
+	drawStatusMark(hdc, card.Left+24, card.Top+23, 28)
+	drawStatusText(hdc, "SentinelGrid Remote", rect{Left: card.Left + 65, Top: card.Top + 20, Right: card.Right - 24, Bottom: card.Top + 49}, rgb(244, 245, 247), 15, fontWeightSemiBold)
+	drawStatusText(hdc, "Starting remote session", rect{Left: card.Left + 24, Top: card.Top + 72, Right: card.Right - 24, Bottom: card.Top + 96}, rgb(226, 232, 240), 14, fontWeightSemiBold)
+	drawStatusText(hdc, status, rect{Left: card.Left + 24, Top: card.Top + 101, Right: card.Right - 24, Bottom: card.Top + 124}, rgb(149, 156, 168), 12, fontWeightNormal)
 
-	logoX, logoY := centerX-34, centerY-112
-	drawStatusMark(hdc, logoX, logoY)
-	for dot := 0; dot < 3; dot++ {
-		active := (dotPhase % 3) == dot
-		color := rgb(37, 114, 146)
-		if active {
-			color = rgb(0, 174, 239)
-		}
-		x := centerX - 16 + int32(dot)*16
-		fillStatusEllipse(hdc, rect{Left: x - 3, Top: logoY + 91, Right: x + 3, Bottom: logoY + 97}, color)
+	steps := []struct {
+		label string
+		color uintptr
+	}{{"Secure session", rgb(130, 201, 167)}, {"Starting video", rgb(96, 165, 250)}, {"Remote control", rgb(149, 156, 168)}}
+	for index, step := range steps {
+		y := card.Top + 142 + int32(index)*24
+		fillStatusEllipse(hdc, rect{Left: card.Left + 25, Top: y + 5, Right: card.Left + 31, Bottom: y + 11}, step.color)
+		drawStatusText(hdc, step.label, rect{Left: card.Left + 40, Top: y, Right: card.Right - 24, Bottom: y + 17}, step.color, 12, fontWeightNormal)
 	}
-
-	textWidth := int32(420)
-	textArea := rect{Left: centerX - textWidth/2, Top: logoY + 119, Right: centerX + textWidth/2, Bottom: logoY + 150}
-	drawCenteredStatusText(hdc, "SentinelGrid Remote", textArea, rgb(245, 247, 250), 22, fontWeightSemiBold)
-	statusArea := rect{Left: centerX - textWidth/2, Top: logoY + 158, Right: centerX + textWidth/2, Bottom: logoY + 182}
-	drawCenteredStatusText(hdc, status, statusArea, rgb(127, 140, 153), 14, fontWeightNormal)
-
-	trackWidth, trackHeight := int32(184), int32(2)
-	track := rect{Left: centerX - trackWidth/2, Top: logoY + 199, Right: centerX + trackWidth/2, Bottom: logoY + 199 + trackHeight}
-	fillStatusRect(hdc, track, rgb(18, 37, 51))
-	highlightWidth := int32(54)
-	offset := int32(animationStep%90)*(trackWidth+highlightWidth)/90 - highlightWidth
-	fillStatusRect(hdc, rect{Left: track.Left + offset, Top: track.Top, Right: track.Left + offset + highlightWidth, Bottom: track.Bottom}, rgb(0, 174, 239))
-
-	footer := rect{Left: centerX - textWidth/2, Top: client.Bottom - 38, Right: centerX + textWidth/2, Bottom: client.Bottom - 16}
-	drawCenteredStatusText(hdc, "Secure remote connection • SentinelGrid", footer, rgb(101, 117, 130), 12, fontWeightNormal)
+	track := rect{Left: card.Left + 24, Top: card.Bottom - 49, Right: card.Right - 24, Bottom: card.Bottom - 46}
+	drawStatusRoundRect(hdc, track, 3, rgb(18, 21, 26), rgb(18, 21, 26))
+	highlightWidth := int32(56)
+	travel := (track.Right - track.Left) + highlightWidth
+	offset := int32((elapsed/(time.Second/60))%180)*travel/180 - highlightWidth
+	drawStatusRoundRect(hdc, rect{Left: track.Left + offset, Top: track.Top, Right: track.Left + offset + highlightWidth, Bottom: track.Bottom}, 3, rgb(96, 165, 250), rgb(96, 165, 250))
+	fillStatusRect(hdc, rect{Left: card.Left + 24, Top: card.Bottom - 30, Right: card.Right - 24, Bottom: card.Bottom - 29}, rgb(37, 42, 50))
+	drawStatusText(hdc, "Encrypted SentinelGrid Remote session", rect{Left: card.Left + 24, Top: card.Bottom - 25, Right: card.Right - 24, Bottom: card.Bottom - 6}, rgb(149, 156, 168), 11, fontWeightNormal)
 }
-
 func main() {
 	if len(os.Args) == 3 && os.Args[1] == "-uri" {
 		if err := runURI(os.Args[2]); err != nil {
