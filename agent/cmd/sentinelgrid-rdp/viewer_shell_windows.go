@@ -155,34 +155,33 @@ func (v *viewer) toggleFullscreen() {
 
 func (v *viewer) drawToolbar(hdc uintptr, client rect) {
 	v.mu.RLock()
-	layout, status, closed, hasFrame, statsOpen, mode := v.shell, v.status, v.sessionClosed, len(v.frame.pixels) != 0, v.showStats, v.scaleMode
+	layout, state, statsOpen, mode := v.shell, v.sessionState, v.showStats, v.scaleMode
 	v.mu.RUnlock()
 	fillStatusRect(hdc, layout.toolbarRect(), rgb(18, 21, 26))
 	fillStatusRect(hdc, rect{Left: 0, Top: int32(layout.toolbar.height - 1), Right: client.Right, Bottom: int32(layout.toolbar.height)}, rgb(37, 42, 50))
 	drawStatusMark(hdc, 16, 13, 24, rgb(18, 21, 26))
 	drawStatusText(hdc, "SentinelGrid Remote", rect{Left: 48, Top: 9, Right: 250, Bottom: 34}, rgb(244, 245, 247), 14, fontWeightSemiBold)
-	state, color := "Connecting", rgb(96, 165, 250)
-	if hasFrame {
-		state, color = "Connected", rgb(130, 201, 167)
-	}
-	if closed {
-		state, color = "Connection lost", rgb(241, 152, 161)
-	}
-	if status == "Disconnecting..." {
-		state, color = "Disconnecting", rgb(228, 187, 114)
+	stateLabel, color := state.label(), rgb(96, 165, 250)
+	switch state {
+	case viewerStateConnected:
+		color = rgb(130, 201, 167)
+	case viewerStateDisconnecting:
+		color = rgb(228, 187, 114)
+	case viewerStateSessionEnded:
+		color = rgb(174, 181, 191)
+	case viewerStateConnectionLost:
+		color = rgb(241, 152, 161)
 	}
 	fillStatusEllipse(hdc, rect{Left: 258, Top: 21, Right: 264, Bottom: 27}, color)
-	drawStatusText(hdc, state, rect{Left: 270, Top: 11, Right: 390, Bottom: 37}, color, 12, fontWeightSemiBold)
-	for _, item := range []struct{ name, label string }{{"fit", "Fit"}, {"actual", "100%"}, {"fullscreen", "Fullscreen"}, {"stats", "Stats"}, {"more", "..."}, {"disconnect", "Disconnect"}} {
+	drawStatusText(hdc, stateLabel, rect{Left: 270, Top: 11, Right: 390, Bottom: 37}, color, 12, fontWeightSemiBold)
+	for _, item := range []struct{ name, label string }{{"fit", "Fit"}, {"fullscreen", "Fullscreen"}, {"stats", "Stats"}, {"disconnect", "Disconnect"}} {
 		area := layout.buttons[item.name]
 		fill, border, text := rgb(18, 21, 26), rgb(37, 42, 50), rgb(226, 232, 240)
-		if item.name == "actual" {
-			fill, border, text = rgb(18, 21, 26), rgb(37, 42, 50), rgb(149, 156, 168)
-		}
+
 		if item.name == "disconnect" {
 			fill, border, text = rgb(57, 25, 31), rgb(116, 47, 57), rgb(241, 152, 161)
 		}
-		if (item.name == "fit" && mode == viewerScaleFit) || (item.name == "actual" && mode == viewerScaleActual) {
+		if item.name == "fit" && mode == viewerScaleFit {
 			fill, border, text = rgb(17, 30, 50), rgb(43, 70, 106), rgb(147, 197, 253)
 		}
 		drawStatusRoundRect(hdc, area.toRect(), 8, fill, border)
@@ -195,12 +194,12 @@ func (v *viewer) drawToolbar(hdc uintptr, client rect) {
 
 func (v *viewer) drawStatsPopover(hdc uintptr, layout viewerShellLayout) {
 	v.mu.RLock()
-	codec, width, height, decoded, presented, backend := v.videoCodec, v.screenWidth, v.screenHeight, v.decodedCompleted, v.successfulPresents, v.rendererBackend
+	codec, width, height, decoded, presented, backend, state := v.videoCodec, v.screenWidth, v.screenHeight, v.decodedCompleted, v.successfulPresents, v.rendererBackend, v.sessionState
 	v.mu.RUnlock()
 	panel := rect{Left: int32(layout.video.x + layout.video.width + 12), Top: int32(layout.toolbar.height + 12), Right: int32(layout.toolbar.width - 12), Bottom: int32(layout.toolbar.height + 170)}
 	drawStatusRoundRect(hdc, panel, 10, rgb(18, 21, 26), rgb(37, 42, 50))
 	drawStatusText(hdc, "Connection stats", rect{Left: panel.Left + 14, Top: panel.Top + 10, Right: panel.Right - 12, Bottom: panel.Top + 32}, rgb(244, 245, 247), 12, fontWeightSemiBold)
-	lines := []string{"Connection: Connected", fmt.Sprintf("Codec: %s", codec), fmt.Sprintf("Remote: %dx%d", width, height), "Target FPS: 30", fmt.Sprintf("Decoded frames: %d", decoded), fmt.Sprintf("Presented frames: %d", presented), fmt.Sprintf("Renderer: %s", backend)}
+	lines := []string{fmt.Sprintf("Connection: %s", state.label()), fmt.Sprintf("Codec: %s", codec), fmt.Sprintf("Remote: %dx%d", width, height), "Target FPS: 30", fmt.Sprintf("Decoded frames: %d", decoded), fmt.Sprintf("Presented frames: %d", presented), fmt.Sprintf("Renderer: %s", backend)}
 	for i, line := range lines {
 		drawStatusText(hdc, line, rect{Left: panel.Left + 14, Top: panel.Top + 36 + int32(i*18), Right: panel.Right - 12, Bottom: panel.Top + 54 + int32(i*18)}, rgb(149, 156, 168), 11, fontWeightNormal)
 	}
@@ -285,5 +284,20 @@ func (v *viewer) paintToolbar(hwnd uintptr) {
 	defer endPaint.Call(hwnd, uintptr(unsafe.Pointer(&paint)))
 	var client rect
 	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
+	fillStatusRect(hdc, client, rgb(10, 10, 12))
 	v.drawToolbar(hdc, client)
+}
+
+func (v *viewer) paintTerminalStatus(hdc uintptr, client rect, state viewerSessionState) {
+	fillStatusRect(hdc, client, rgb(10, 10, 12))
+	cardWidth, cardHeight := int32(380), int32(150)
+	card := rect{Left: (client.Right - cardWidth) / 2, Top: (client.Bottom - cardHeight) / 2, Right: (client.Right + cardWidth) / 2, Bottom: (client.Bottom + cardHeight) / 2}
+	drawStatusRoundRect(hdc, card, 14, rgb(18, 21, 26), rgb(37, 42, 50))
+	color, detail := rgb(241, 152, 161), "The remote session has ended. Start a new Remote session from SentinelGrid."
+	if state == viewerStateSessionEnded {
+		color, detail = rgb(174, 181, 191), "The remote session ended normally."
+	}
+	drawCenteredStatusText(hdc, state.label(), rect{Left: card.Left + 20, Top: card.Top + 30, Right: card.Right - 20, Bottom: card.Top + 60}, color, 16, fontWeightSemiBold)
+	drawCenteredStatusText(hdc, detail, rect{Left: card.Left + 28, Top: card.Top + 70, Right: card.Right - 28, Bottom: card.Top + 104}, rgb(174, 181, 191), 11, fontWeightNormal)
+	drawCenteredStatusText(hdc, "Use Disconnect to close this window.", rect{Left: card.Left + 20, Top: card.Top + 112, Right: card.Right - 20, Bottom: card.Bottom - 18}, rgb(149, 156, 168), 11, fontWeightNormal)
 }

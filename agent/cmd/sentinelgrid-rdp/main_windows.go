@@ -96,6 +96,7 @@ type viewer struct {
 	restorePlacement          windowPlacement
 	restoreStyle              uintptr
 	status                    string
+	sessionState              viewerSessionState
 	logger                    *viewerLogger
 	compressed                *latestCompressedFrame
 	closeRequested            bool
@@ -319,7 +320,7 @@ func runViewerConnecting(connect viewerConnect) error {
 	defer logger.close()
 	logger.event("VIEWER_START")
 	started := time.Now()
-	v := &viewer{logger: logger, status: "Connecting to remote device...", done: make(chan struct{}), statsStarted: started, statsReported: started, compressed: newLatestCompressedFrame(), decodeMetrics: newDurationWindow(120), conversionMetrics: newDurationWindow(120), bufferCopyMetrics: newDurationWindow(120), presentMetrics: newDurationWindow(120), loadingAnimationStarted: started}
+	v := &viewer{logger: logger, status: "Connecting to remote device...", sessionState: viewerStateConnecting, done: make(chan struct{}), statsStarted: started, statsReported: started, compressed: newLatestCompressedFrame(), decodeMetrics: newDurationWindow(120), conversionMetrics: newDurationWindow(120), bufferCopyMetrics: newDurationWindow(120), presentMetrics: newDurationWindow(120), loadingAnimationStarted: started}
 	v.input = newViewerInputSender(v)
 	activeViewer = v
 	sessionCtx, cancelSession := context.WithCancel(context.Background())
@@ -339,7 +340,7 @@ func runViewerConnecting(connect viewerConnect) error {
 		v.ws = ws
 		v.mu.Unlock()
 		v.logger.event("VIEWER_RELAY_CONNECTED")
-		v.setStatus("Starting video...")
+		v.setSessionState(viewerStateNegotiatingVideo)
 		go v.decodeFrames()
 		v.receive()
 	}()
@@ -369,11 +370,34 @@ func (v *viewer) setStatus(status string) {
 		postMessage.Call(hwnd, wmStateChanged, 0, 0)
 	}
 }
-func (v *viewer) fail(status string) { v.logger.event("VIEWER_SESSION_FAILED"); v.setStatus(status) }
+
+func (v *viewer) setSessionState(state viewerSessionState) {
+	v.mu.Lock()
+	if v.sessionState == viewerStateDisconnecting && state != viewerStateDisconnecting {
+		v.mu.Unlock()
+		return
+	}
+	v.sessionState = state
+	if state == viewerStateConnected || state.terminal() || state == viewerStateDisconnecting {
+		v.status = ""
+	}
+	hwnd := v.hwnd
+	v.mu.Unlock()
+	if hwnd != 0 {
+		postMessage.Call(hwnd, wmStateChanged, 0, 0)
+	}
+}
+
+func (v *viewer) fail(status string) {
+	v.logger.event("VIEWER_SESSION_FAILED")
+	v.setStatus(status)
+	v.setSessionState(viewerStateConnectionLost)
+}
 
 func (v *viewer) requestClose() {
 	v.mu.Lock()
 	v.closeRequested = true
+	v.sessionState = viewerStateDisconnecting
 	v.mu.Unlock()
 }
 
@@ -434,15 +458,19 @@ func (v *viewer) receive() {
 			} else {
 				v.logger.event(fmt.Sprintf("VIEWER_RELAY_CLOSED category=%s", relayCloseCategory(err)))
 			}
+			localClose := v.wasCloseRequested()
+			state := viewerTerminalState(localClose, relayCloseCategory(err))
 			v.mu.Lock()
 			v.sessionClosed = true
-			hasFrame, hwnd := len(v.frame.pixels) != 0, v.hwnd
+			v.sessionState = state
+			hwnd := v.hwnd
 			v.notification.cancel()
 			v.mu.Unlock()
 			v.compressed.close()
-			if !hasFrame {
-				v.fail("Remote session ended")
-			} else if hwnd != 0 {
+			if v.input != nil {
+				v.input.releaseOnFocusLoss()
+			}
+			if hwnd != 0 {
 				postMessage.Call(hwnd, wmStateChanged, 0, 0)
 			}
 			return
@@ -572,7 +600,7 @@ func (r *byteReader) Read(p []byte) (int, error) {
 func (v *viewer) inputEnabled() bool {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
-	return v.ws != nil && !v.sessionClosed
+	return v.ws != nil && !v.sessionClosed && v.sessionState == viewerStateConnected
 }
 
 func (v *viewer) queueInput(input rdp.Input) {
@@ -761,12 +789,7 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 			v.input.releaseOnFocusLoss()
 		}
 	case wmEraseBkgnd:
-		v.mu.RLock()
-		hasFrame := len(v.frame.pixels) != 0
-		v.mu.RUnlock()
-		if hasFrame {
-			return 1
-		}
+		return 1
 	case wmFrameReady:
 		v.mu.Lock()
 		v.notification.consume()
@@ -893,15 +916,24 @@ func (v *viewer) presentLatestFrameGDI(hwnd uintptr, frame viewerFrame, generati
 func (v *viewer) recordRendererResult(err error, generation uint64, elapsed time.Duration) {
 	v.mu.Lock()
 	v.presentAttempts++
+	connected := false
 	if err == nil {
 		v.presentMetrics.add(elapsed)
 		v.successfulPresents++
 		v.lastSuccessfulGeneration = generation
+		if v.sessionState == viewerStateNegotiatingVideo {
+			v.sessionState = viewerStateConnected
+			connected = true
+		}
 		v.status = ""
 	} else {
 		v.gdiErrorPresents++
 	}
+	hwnd := v.hwnd
 	v.mu.Unlock()
+	if connected && hwnd != 0 {
+		postMessage.Call(hwnd, wmStateChanged, 0, 0)
+	}
 	if err != nil {
 		v.logger.event("VIEWER_D3D11_PRESENT_FAILED")
 	}
@@ -914,16 +946,20 @@ func (v *viewer) paint(hwnd uintptr) {
 	}
 	defer endPaint.Call(hwnd, uintptr(unsafe.Pointer(&paint)))
 	v.mu.RLock()
-	renderer, status, hasFrame := v.renderer, v.status, len(v.frame.pixels) != 0
+	renderer, status, state, hasFrame := v.renderer, v.status, v.sessionState, len(v.frame.pixels) != 0
 	v.mu.RUnlock()
+	var client rect
+	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
+	if state.terminal() {
+		v.paintTerminalStatus(hdc, client, state)
+		return
+	}
 	if renderer != nil && hasFrame {
 		if err := renderer.redraw(); err != nil {
 			v.logger.event("VIEWER_D3D11_REDRAW_FAILED")
 		}
 		return
 	}
-	var client rect
-	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
 	fillRect.Call(hdc, uintptr(unsafe.Pointer(&client)), getStockObjectValue(blackBrush))
 	if !hasFrame {
 		v.paintStatus(hdc, client, status)
@@ -946,15 +982,24 @@ func (v *viewer) recordPaintResult(result int32, width, height, clientWidth, cli
 	}
 	logResult := false
 	if success {
+		connected := false
 		unique := v.paintState.record(generation)
 		paintEvents, uniquePainted := v.paintState.paintEvents, v.paintState.uniqueFramesPainted
+		if v.sessionState == viewerStateNegotiatingVideo {
+			v.sessionState = viewerStateConnected
+			connected = true
+		}
 		if !v.paintLogged {
 			v.paintLogged = true
 			logResult = true
 		}
 		v.paintFailureLogged = false
 		v.status = ""
+		hwnd := v.hwnd
 		v.mu.Unlock()
+		if connected && hwnd != 0 {
+			postMessage.Call(hwnd, wmStateChanged, 0, 0)
+		}
 		if logResult {
 			v.logger.event(fmt.Sprintf("VIEWER_PAINT_RESULT result=%d width=%d height=%d client_width=%d client_height=%d frame_generation=%d", result, width, height, clientWidth, clientHeight, generation))
 		}
@@ -1127,66 +1172,24 @@ func (v *viewer) paintStatus(hdc uintptr, client rect, status string) {
 	if status == "" {
 		status = "Connecting to remote device..."
 	}
-	v.mu.RLock()
-	started := v.loadingAnimationStarted
-	v.mu.RUnlock()
-	if started.IsZero() {
-		started = time.Now()
-	}
-	elapsed := time.Since(started)
 	fillStatusRect(hdc, client, rgb(10, 10, 12))
-
-	// The loading shell mirrors the dashboard's inset topbar and compact surface cards.
-	headerHeight := int32(64)
-	fillStatusRect(hdc, rect{Left: client.Left, Top: client.Top, Right: client.Right, Bottom: client.Top + headerHeight}, rgb(9, 11, 14))
-	fillStatusRect(hdc, rect{Left: client.Left, Top: client.Top + headerHeight - 1, Right: client.Right, Bottom: client.Top + headerHeight}, rgb(37, 42, 50))
-	margin := int32(20)
-	drawStatusMark(hdc, client.Left+margin, client.Top+18, 24, rgb(9, 11, 14))
-	drawStatusText(hdc, "Sentinel", rect{Left: client.Left + 54, Top: client.Top + 15, Right: client.Left + 112, Bottom: client.Top + 47}, rgb(244, 245, 247), 16, fontWeightSemiBold)
-	drawStatusText(hdc, "Grid", rect{Left: client.Left + 111, Top: client.Top + 15, Right: client.Left + 152, Bottom: client.Top + 47}, rgb(149, 156, 168), 16, fontWeightNormal)
-	drawStatusText(hdc, "Remote", rect{Left: client.Left + 156, Top: client.Top + 16, Right: client.Left + 212, Bottom: client.Top + 47}, rgb(149, 156, 168), 13, fontWeightNormal)
-
-	badgeText := loadingStatusLabel(status)
-	badgeWidth := clampStatus(int32(len(badgeText))*7+38, 104, 142)
-	badge := rect{Left: client.Right - margin - badgeWidth, Top: client.Top + 18, Right: client.Right - margin, Bottom: client.Top + 46}
-	drawStatusRoundRect(hdc, badge, 10, rgb(17, 30, 50), rgb(43, 70, 106))
-	fillStatusEllipse(hdc, rect{Left: badge.Left + 11, Top: badge.Top + 10, Right: badge.Left + 17, Bottom: badge.Top + 16}, rgb(96, 165, 250))
-	drawStatusText(hdc, badgeText, rect{Left: badge.Left + 24, Top: badge.Top + 2, Right: badge.Right - 8, Bottom: badge.Bottom - 2}, rgb(147, 197, 253), 12, fontWeightSemiBold)
-
-	availableWidth := client.Right - client.Left - 40
-	cardWidth := clampStatus(availableWidth, 320, 470)
-	cardHeight := int32(278)
-	cardLeft := (client.Left + client.Right - cardWidth) / 2
-	contentTop := client.Top + headerHeight
-	cardTop := contentTop + ((client.Bottom - contentTop - cardHeight) / 2)
-	if cardTop < contentTop+20 {
-		cardTop = contentTop + 20
-	}
-	card := rect{Left: cardLeft, Top: cardTop, Right: cardLeft + cardWidth, Bottom: cardTop + cardHeight}
+	cardWidth, cardHeight := int32(420), int32(250)
+	card := rect{Left: (client.Right - cardWidth) / 2, Top: (client.Bottom - cardHeight) / 2, Right: (client.Right + cardWidth) / 2, Bottom: (client.Bottom + cardHeight) / 2}
 	drawStatusRoundRect(hdc, card, 16, rgb(13, 15, 18), rgb(37, 42, 50))
-	drawStatusMark(hdc, card.Left+24, card.Top+23, 28, rgb(13, 15, 18))
-	drawStatusText(hdc, "SentinelGrid Remote", rect{Left: card.Left + 65, Top: card.Top + 20, Right: card.Right - 24, Bottom: card.Top + 49}, rgb(244, 245, 247), 15, fontWeightSemiBold)
-	drawStatusText(hdc, "Starting remote session", rect{Left: card.Left + 24, Top: card.Top + 72, Right: card.Right - 24, Bottom: card.Top + 96}, rgb(226, 232, 240), 14, fontWeightSemiBold)
-	drawStatusText(hdc, status, rect{Left: card.Left + 24, Top: card.Top + 101, Right: card.Right - 24, Bottom: card.Top + 124}, rgb(174, 181, 191), 12, fontWeightNormal)
-
-	steps := []struct {
+	drawStatusMark(hdc, card.Left+24, card.Top+24, 28, rgb(13, 15, 18))
+	drawStatusText(hdc, "SentinelGrid Remote", rect{Left: card.Left + 65, Top: card.Top + 21, Right: card.Right - 24, Bottom: card.Top + 50}, rgb(244, 245, 247), 15, fontWeightSemiBold)
+	drawStatusText(hdc, "Starting remote session", rect{Left: card.Left + 24, Top: card.Top + 76, Right: card.Right - 24, Bottom: card.Top + 100}, rgb(226, 232, 240), 14, fontWeightSemiBold)
+	drawStatusText(hdc, status, rect{Left: card.Left + 24, Top: card.Top + 105, Right: card.Right - 24, Bottom: card.Top + 128}, rgb(174, 181, 191), 12, fontWeightNormal)
+	for index, step := range []struct {
 		label string
 		color uintptr
-	}{{"Secure session", rgb(130, 201, 167)}, {"Starting video", rgb(96, 165, 250)}, {"Remote control", rgb(149, 156, 168)}}
-	for index, step := range steps {
-		y := card.Top + 143 + int32(index)*26
+	}{{"Secure session", rgb(130, 201, 167)}, {"Starting video", rgb(96, 165, 250)}, {"Remote control", rgb(149, 156, 168)}} {
+		y := card.Top + 146 + int32(index)*25
 		fillStatusEllipse(hdc, rect{Left: card.Left + 25, Top: y + 5, Right: card.Left + 31, Bottom: y + 11}, step.color)
 		drawStatusText(hdc, step.label, rect{Left: card.Left + 40, Top: y, Right: card.Right - 24, Bottom: y + 17}, step.color, 12, fontWeightNormal)
 	}
-	track := rect{Left: card.Left + 24, Top: card.Bottom - 53, Right: card.Right - 24, Bottom: card.Bottom - 50}
-	drawStatusRoundRect(hdc, track, 3, rgb(18, 21, 26), rgb(18, 21, 26))
-	highlightWidth := int32(56)
-	travel := (track.Right - track.Left) + highlightWidth
-	offset := int32((elapsed/(time.Second/60))%180)*travel/180 - highlightWidth
-	drawStatusRoundRect(hdc, rect{Left: track.Left + offset, Top: track.Top, Right: track.Left + offset + highlightWidth, Bottom: track.Bottom}, 3, rgb(96, 165, 250), rgb(96, 165, 250))
-	fillStatusRect(hdc, rect{Left: card.Left + 24, Top: card.Bottom - 32, Right: card.Right - 24, Bottom: card.Bottom - 31}, rgb(37, 42, 50))
-	drawStatusText(hdc, "Encrypted SentinelGrid Remote session", rect{Left: card.Left + 24, Top: card.Bottom - 27, Right: card.Right - 24, Bottom: card.Bottom - 8}, rgb(149, 156, 168), 11, fontWeightNormal)
 }
+
 func main() {
 	if len(os.Args) == 3 && os.Args[1] == "-uri" {
 		if err := runURI(os.Args[2]); err != nil {

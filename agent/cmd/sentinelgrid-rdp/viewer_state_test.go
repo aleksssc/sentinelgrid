@@ -7,7 +7,7 @@ import (
 )
 
 func TestInputIsDisabledAfterRelayClose(t *testing.T) {
-	viewer := &viewer{ws: &websocket.Conn{}}
+	viewer := &viewer{ws: &websocket.Conn{}, sessionState: viewerStateConnected}
 	if !viewer.inputEnabled() {
 		t.Fatal("connected viewer rejected input")
 	}
@@ -18,7 +18,7 @@ func TestInputIsDisabledAfterRelayClose(t *testing.T) {
 }
 
 func TestPaintResultRequiresPositiveScanlineCount(t *testing.T) {
-	viewer := &viewer{logger: &viewerLogger{}, status: "Starting video..."}
+	viewer := &viewer{logger: &viewerLogger{}, status: "Starting video...", sessionState: viewerStateNegotiatingVideo}
 	viewer.recordPaintResult(0, 1920, 1080, 1280, 800, 1)
 	if viewer.paintState.paintEvents != 0 || viewer.status != "Starting video..." {
 		t.Fatalf("zero scanline result was treated as visible paint: %#v", viewer)
@@ -34,7 +34,7 @@ func TestPaintResultRequiresPositiveScanlineCount(t *testing.T) {
 	if viewer.presentAttempts != 3 || viewer.successfulPresents != 1 || viewer.zeroResultPresents != 1 || viewer.gdiErrorPresents != 1 || viewer.lastSuccessfulGeneration != 1 {
 		t.Fatalf("unexpected presentation counters: %#v", viewer)
 	}
-	if viewer.status != "" {
-		t.Fatalf("status after first visible frame = %q, want empty", viewer.status)
+	if viewer.status != "" || viewer.sessionState != viewerStateConnected {
+		t.Fatalf("state after first visible frame = %q / %s, want empty / Connected", viewer.status, viewer.sessionState.label())
 	}
 }
