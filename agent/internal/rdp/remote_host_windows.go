@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf16"
 	"unsafe"
@@ -253,6 +254,13 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	}
 	controller := remoteSessionController{ws: ws, writer: writer, cancelCapture: cancel, inputDone: done}
 	defer controller.stop()
+	videoWatchdog := newRemoteVideoStallWatchdog()
+	watchdogCtx, stopVideoWatchdog := context.WithCancel(ctx)
+	watchdogDone := startRemoteVideoStallWatchdog(watchdogCtx, logger, videoWatchdog)
+	defer func() {
+		stopVideoWatchdog()
+		<-watchdogDone
+	}()
 	var seq, aus, encodedBytes, keyframes, forced uint64
 	em, wm := newFrameMetrics(120), newFrameMetrics(120)
 	tick := time.NewTicker(time.Second / 30)
@@ -303,7 +311,9 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 		case <-tick.C:
 		}
 		statsCaptureAttempts++
+		videoWatchdog.begin(remoteVideoStageCapture, seq+1)
 		frame, changed, e := backend.Capture(captureCtx)
+		videoWatchdog.end()
 		if e != nil {
 			return remoteHostFailure(remoteCaptureStage(e), e)
 		}
@@ -311,14 +321,18 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 			continue
 		}
 		seq++
+		videoWatchdog.begin(remoteVideoStageEncode, seq)
 		out, e := source.encode(frame, seq, time.Now())
+		videoWatchdog.end()
 		if e != nil {
 			return remoteHostFailure("encode", e)
 		}
 		if len(out.packet) == 0 {
 			continue
 		}
+		videoWatchdog.begin(remoteVideoStageEnqueue, seq)
 		put(out.packet, out.flags)
+		videoWatchdog.end()
 		em.add(out.encode)
 		aus++
 		encodedBytes += uint64(out.bytes)
@@ -327,6 +341,92 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 		}
 		statsAUs++
 	}
+}
+
+type remoteVideoStage uint32
+
+const (
+	remoteVideoStageIdle remoteVideoStage = iota
+	remoteVideoStageCapture
+	remoteVideoStageEncode
+	remoteVideoStageEnqueue
+)
+
+func (s remoteVideoStage) String() string {
+	switch s {
+	case remoteVideoStageCapture:
+		return "capture"
+	case remoteVideoStageEncode:
+		return "encode"
+	case remoteVideoStageEnqueue:
+		return "enqueue"
+	default:
+		return "idle"
+	}
+}
+
+type remoteVideoStallWatchdog struct {
+	stage    atomic.Uint32
+	started  atomic.Int64
+	sequence atomic.Uint64
+}
+
+func newRemoteVideoStallWatchdog() *remoteVideoStallWatchdog {
+	return &remoteVideoStallWatchdog{}
+}
+
+func (w *remoteVideoStallWatchdog) begin(stage remoteVideoStage, sequence uint64) {
+	w.sequence.Store(sequence)
+	w.started.Store(time.Now().UnixNano())
+	w.stage.Store(uint32(stage))
+}
+
+func (w *remoteVideoStallWatchdog) end() {
+	w.stage.Store(uint32(remoteVideoStageIdle))
+}
+
+func startRemoteVideoStallWatchdog(ctx context.Context, logger *remoteLogger, watchdog *remoteVideoStallWatchdog) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		tick := time.NewTicker(250 * time.Millisecond)
+		defer tick.Stop()
+		var reportedStage remoteVideoStage
+		var reportedStarted int64
+		var reportedSequence uint64
+		var lastReport time.Time
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-tick.C:
+				stage := remoteVideoStage(watchdog.stage.Load())
+				started := watchdog.started.Load()
+				sequence := watchdog.sequence.Load()
+				if reportedStage != remoteVideoStageIdle && (stage != reportedStage || started != reportedStarted || sequence != reportedSequence) {
+					duration := now.Sub(time.Unix(0, reportedStarted))
+					logger.event(fmt.Sprintf("REMOTE_VIDEO_STALL_RECOVERED stage=%s duration_ms=%d sequence=%d", reportedStage, duration.Milliseconds(), reportedSequence))
+					reportedStage = remoteVideoStageIdle
+					lastReport = time.Time{}
+				}
+				if stage == remoteVideoStageIdle || started == 0 {
+					continue
+				}
+				duration := now.Sub(time.Unix(0, started))
+				if duration < time.Second {
+					continue
+				}
+				if stage != reportedStage || started != reportedStarted || sequence != reportedSequence || now.Sub(lastReport) >= 5*time.Second {
+					logger.event(fmt.Sprintf("REMOTE_VIDEO_STALL stage=%s duration_ms=%d sequence=%d", stage, duration.Milliseconds(), sequence))
+					reportedStage = stage
+					reportedStarted = started
+					reportedSequence = sequence
+					lastReport = now
+				}
+			}
+		}
+	}()
+	return done
 }
 
 type remoteControl struct {
