@@ -14,8 +14,9 @@ try {
     )) {
         $output = Join-Path $root "cmd\$($entry.Directory)\version"
         if (Test-Path -LiteralPath ($output + '_windows_amd64.syso')) { throw 'Version resource already exists; finish or clean up the previous build first.' }
+        $icon = if ($entry.Directory -eq 'sentinelgrid-rdp') { '--icon=' + (Join-Path $root 'cmd\sentinelgrid-rdp\sentinelgrid-mark.ico') } else { '--icon=' }
         & go tool go-winres simply --arch amd64 --out $output --manifest none --product-version $Version --file-version $Version `
-            --product-name "SentinelGrid $($entry.Name)" --file-description "SentinelGrid $($entry.Name)" --original-filename $entry.File --icon=
+            --product-name "SentinelGrid $($entry.Name)" --file-description "SentinelGrid $($entry.Name)" --original-filename $entry.File $icon
         if ($LASTEXITCODE -ne 0) { throw "Version resource generation failed: $($entry.Name)" }
     }
 } finally { Set-Location -LiteralPath $location.Path }

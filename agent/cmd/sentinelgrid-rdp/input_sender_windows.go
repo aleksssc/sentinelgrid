@@ -17,41 +17,55 @@ const (
 )
 
 type viewerInputSender struct {
-	viewer *viewer
-
-	mu       sync.Mutex
-	move     *rdp.Input
-	critical []rdp.Input
-	wake     chan struct{}
-	stop     chan struct{}
-	stopOnce sync.Once
-
-	mouseEvents         uint64
-	mouseMovesSent      uint64
-	mouseMovesCoalesced uint64
-	criticalEventsSent  uint64
-	writeMetrics        durationWindow
-	lastMoveSent        time.Time
-	lastStatsLogged     time.Time
-	lastWriteFailure    time.Time
+	viewer                                                               *viewer
+	mu                                                                   sync.Mutex
+	move                                                                 *rdp.Input
+	critical                                                             []rdp.Input
+	keys                                                                 map[uint16]rdp.Input
+	buttons                                                              map[string]rdp.Input
+	wake                                                                 chan struct{}
+	stop                                                                 chan struct{}
+	done                                                                 chan struct{}
+	stopOnce                                                             sync.Once
+	mouseEvents, mouseMovesSent, mouseMovesCoalesced, criticalEventsSent uint64
+	writeMetrics                                                         durationWindow
+	lastMoveSent, lastStatsLogged, lastWriteFailure                      time.Time
 }
 
 func newViewerInputSender(v *viewer) *viewerInputSender {
-	sender := &viewerInputSender{
-		viewer:          v,
-		wake:            make(chan struct{}, 1),
-		stop:            make(chan struct{}),
-		writeMetrics:    newDurationWindow(120),
-		lastStatsLogged: time.Now(),
-	}
-	go sender.run()
-	return sender
+	s := &viewerInputSender{viewer: v, keys: make(map[uint16]rdp.Input), buttons: make(map[string]rdp.Input), wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}), writeMetrics: newDurationWindow(120), lastStatsLogged: time.Now()}
+	go s.run()
+	return s
 }
 
+// close waits for normal writes to stop, then synchronously sends the releases
+// while the websocket is still owned by the viewer.
 func (s *viewerInputSender) close() {
-	s.stopOnce.Do(func() { close(s.stop) })
+	s.stopOnce.Do(func() { close(s.stop); <-s.done; s.releaseAll() })
 }
-
+func (s *viewerInputSender) releaseAll() {
+	for _, input := range s.releaseEvents() {
+		_ = s.viewer.writeInput(input)
+	}
+}
+func (s *viewerInputSender) releaseEvents() []rdp.Input {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	releases := make([]rdp.Input, 0, len(s.keys)+len(s.buttons))
+	for _, input := range s.keys {
+		input.Type = "key_up"
+		releases = append(releases, input)
+	}
+	for _, input := range s.buttons {
+		input.Type = "mouse_up"
+		releases = append(releases, input)
+	}
+	s.keys = make(map[uint16]rdp.Input)
+	s.buttons = make(map[string]rdp.Input)
+	s.critical = nil
+	s.move = nil
+	return releases
+}
 func (s *viewerInputSender) enqueueMouseMove(input rdp.Input) {
 	s.mu.Lock()
 	s.mouseEvents++
@@ -62,32 +76,46 @@ func (s *viewerInputSender) enqueueMouseMove(input rdp.Input) {
 	s.mu.Unlock()
 	s.signal()
 }
-
 func (s *viewerInputSender) enqueueCritical(input rdp.Input) {
 	s.mu.Lock()
+	switch input.Type {
+	case "key_down":
+		if _, ok := s.keys[input.VK]; ok {
+			s.mu.Unlock()
+			return
+		}
+		s.keys[input.VK] = input
+	case "key_up":
+		delete(s.keys, input.VK)
+	case "mouse_down":
+		if _, ok := s.buttons[input.Button]; ok {
+			s.mu.Unlock()
+			return
+		}
+		s.buttons[input.Button] = input
+	case "mouse_up":
+		delete(s.buttons, input.Button)
+	}
 	if input.Type == "mouse_down" || input.Type == "mouse_up" || input.Type == "mouse_wheel" {
 		s.mouseEvents++
 	}
-	if len(s.critical) >= viewerInputQueueLimit {
-		s.mu.Unlock()
-		s.viewer.logger.event("VIEWER_INPUT_QUEUE_FULL")
-		return
-	}
+	// A viewer can hold at most 256 virtual keys and three buttons. Never drop
+	// transitions: a missing release is worse than backpressure.
 	s.critical = append(s.critical, input)
 	s.mu.Unlock()
 	s.signal()
 }
-
+func (s *viewerInputSender) releaseOnFocusLoss() { s.releaseAll() }
 func (s *viewerInputSender) signal() {
 	select {
 	case s.wake <- struct{}{}:
 	default:
 	}
 }
-
 func (s *viewerInputSender) run() {
 	ticker := time.NewTicker(viewerMouseMoveInterval)
 	defer ticker.Stop()
+	defer close(s.done)
 	for {
 		select {
 		case <-s.stop:
@@ -99,10 +127,9 @@ func (s *viewerInputSender) run() {
 		s.logStats()
 	}
 }
-
 func (s *viewerInputSender) flush() {
 	for {
-		input, isMove, ok := s.next()
+		input, move, ok := s.next()
 		if !ok {
 			return
 		}
@@ -112,7 +139,7 @@ func (s *viewerInputSender) flush() {
 		s.mu.Lock()
 		s.writeMetrics.add(elapsed)
 		if err == nil {
-			if isMove {
+			if move {
 				s.mouseMovesSent++
 				s.lastMoveSent = time.Now()
 			} else {
@@ -129,7 +156,6 @@ func (s *viewerInputSender) flush() {
 		}
 	}
 }
-
 func (s *viewerInputSender) next() (rdp.Input, bool, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -147,7 +173,6 @@ func (s *viewerInputSender) next() (rdp.Input, bool, bool) {
 	s.move = nil
 	return input, true, true
 }
-
 func (s *viewerInputSender) logStats() {
 	s.mu.Lock()
 	if time.Since(s.lastStatsLogged) < viewerInputStatsPeriod {
@@ -155,14 +180,13 @@ func (s *viewerInputSender) logStats() {
 		return
 	}
 	s.lastStatsLogged = time.Now()
-	mouseEvents, movesSent := s.mouseEvents, s.mouseMovesSent
-	coalesced, critical := s.mouseMovesCoalesced, s.criticalEventsSent
+	mouse, sent, coalesced, critical := s.mouseEvents, s.mouseMovesSent, s.mouseMovesCoalesced, s.criticalEventsSent
 	depth := len(s.critical)
 	if s.move != nil {
 		depth++
 	}
 	writes := s.writeMetrics.snapshot()
 	s.mu.Unlock()
-	writeMS, _, _, _ := milliseconds(writes)
-	s.viewer.logger.event(fmt.Sprintf("VIEWER_INPUT_STATS mouse_events=%d mouse_moves_sent=%d mouse_moves_coalesced=%d critical_events_sent=%d queue_depth=%d write_ms=%.1f", mouseEvents, movesSent, coalesced, critical, depth, writeMS))
+	ms, _, _, _ := milliseconds(writes)
+	s.viewer.logger.event(fmt.Sprintf("VIEWER_INPUT_STATS mouse_events=%d mouse_moves_sent=%d mouse_moves_coalesced=%d critical_events_sent=%d queue_depth=%d write_ms=%.1f", mouse, sent, coalesced, critical, depth, ms))
 }

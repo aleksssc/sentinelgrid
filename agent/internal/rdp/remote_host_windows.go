@@ -187,7 +187,11 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	defer cancel()
 	done := make(chan remoteInputResult, 1)
 	controls := make(chan remoteControl, 8)
-	go readRemoteInput(captureCtx, ws, done, controls)
+	hostWatchdog := newRemoteHostLoopWatchdog()
+	hostWatchdogCtx, stopHostWatchdog := context.WithCancel(captureCtx)
+	hostWatchdogDone := startRemoteHostLoopWatchdog(hostWatchdogCtx, logger, hostWatchdog)
+	defer func() { stopHostWatchdog(); <-hostWatchdogDone }()
+	go readRemoteInput(captureCtx, ws, done, controls, hostWatchdog)
 	caps := VideoCapabilities{Version: videoProtocolVersion, Codecs: []string{"jpeg"}}
 	select {
 	case c := <-controls:
@@ -255,6 +259,7 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	controller := remoteSessionController{ws: ws, writer: writer, cancelCapture: cancel, inputDone: done}
 	defer controller.stop()
 	videoWatchdog := newRemoteVideoStallWatchdog()
+	hostWatchdog.advance(remoteHostLoopIdle)
 	watchdogCtx, stopVideoWatchdog := context.WithCancel(ctx)
 	watchdogDone := startRemoteVideoStallWatchdog(watchdogCtx, logger, videoWatchdog)
 	defer func() {
@@ -283,14 +288,18 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 	for {
 		select {
 		case r := <-done:
+			hostWatchdog.advance(remoteHostLoopWaitingInputShutdown)
 			controller.finish(true)
 			return r.err
 		case f := <-failures:
+			hostWatchdog.advance(remoteHostLoopWriterFailure)
+			hostWatchdog.advance(remoteHostLoopResolveWriterFailure)
 			if e := controller.resolveWriteFailure(ctx, f); e != nil {
 				return e
 			}
 			return nil
 		case d := <-writes:
+			hostWatchdog.markWriterCompletion()
 			wm.add(d)
 			continue
 		case c := <-controls:
@@ -304,16 +313,21 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 			}
 			continue
 		case <-statsTick.C:
+			hostWatchdog.markStatsTick()
 			logVideoStats()
 			continue
 		case <-ctx.Done():
+			hostWatchdog.advance(remoteHostLoopShutdown)
 			return nil
 		case <-tick.C:
+			hostWatchdog.markVideoTick()
 		}
 		statsCaptureAttempts++
 		videoWatchdog.begin(remoteVideoStageCapture, seq+1)
+		hostWatchdog.advance(remoteHostLoopCapture)
 		frame, changed, e := backend.Capture(captureCtx)
 		videoWatchdog.end()
+		hostWatchdog.markCapture()
 		if e != nil {
 			if recoverCapture, ok := backend.(interface{ Restart(context.Context) error }); ok && isRecoverableDXGIError(e) {
 				if recoveryErr := recoverRemoteCapture(captureCtx, logger, recoverCapture, backend, width, height, e); recoveryErr == nil {
@@ -336,8 +350,10 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 		}
 		seq++
 		videoWatchdog.begin(remoteVideoStageEncode, seq)
+		hostWatchdog.advance(remoteHostLoopEncode)
 		out, e := source.encode(frame, seq, time.Now())
 		videoWatchdog.end()
+		hostWatchdog.markEncoded()
 		if e != nil {
 			return remoteHostFailure("encode", e)
 		}
@@ -345,8 +361,10 @@ func runRemoteHost(ctx context.Context, logger *remoteLogger) error {
 			continue
 		}
 		videoWatchdog.begin(remoteVideoStageEnqueue, seq)
+		hostWatchdog.advance(remoteHostLoopEnqueue)
 		put(out.packet, out.flags)
 		videoWatchdog.end()
+		hostWatchdog.markQueued()
 		em.add(out.encode)
 		aus++
 		encodedBytes += uint64(out.bytes)
@@ -517,10 +535,20 @@ func sendScreenInfo(ws *websocket.Conn) error {
 	return writePacket(ws, data)
 }
 
-func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remoteInputResult, controls ...chan<- remoteControl) {
+func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remoteInputResult, options ...any) {
+	injected := newInjectedInputState()
+	defer injected.releaseAll()
 	var control chan<- remoteControl
-	if len(controls) != 0 {
-		control = controls[0]
+	var watchdog *remoteHostLoopWatchdog
+	for _, option := range options {
+		switch value := option.(type) {
+		case chan remoteControl:
+			control = value
+		case chan<- remoteControl:
+			control = value
+		case *remoteHostLoopWatchdog:
+			watchdog = value
+		}
 	}
 	last := time.Time{}
 	for {
@@ -536,6 +564,9 @@ func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remote
 		if kind != websocket.BinaryMessage || len(data) == 0 {
 			done <- remoteInputResult{err: remoteHostFailure("input-invalid", fmt.Errorf("invalid remote packet"))}
 			return
+		}
+		if watchdog != nil {
+			watchdog.markInputPacket()
 		}
 		switch data[0] {
 		case PacketVideoCapabilities:
@@ -568,7 +599,7 @@ func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remote
 				done <- remoteInputResult{err: remoteHostFailure("input-invalid", e)}
 				return
 			}
-			if e = injectInput(in); e != nil {
+			if e = injected.inject(in); e != nil {
 				log.Printf("[RDP] remote input rejected: %s", sanitizeRemoteLogError(e))
 			}
 		default:
@@ -713,6 +744,8 @@ func capturePrimaryJPEGTimed() ([]byte, captureTiming, error) {
 	return nil, timing, fmt.Errorf("CAPTURE_JPEG_FAILED width=%d height=%d reason=frame_exceeds_limit", width, height)
 }
 
+const sentinelGridInputTag uintptr = 0x5347494E
+
 type mouseInput struct {
 	DX, DY                 int32
 	MouseData, Flags, Time uint32
@@ -732,13 +765,14 @@ type inputRecord struct {
 	Data inputUnion
 }
 
-func injectInput(input Input) error {
+func sendInputRecord(input Input) error {
 	var record inputRecord
 	switch input.Type {
 	case "mouse_move":
 		w, h := screenSize()
 		record.Data.Mouse.DX = int32(input.X * 65535 / max(1, w-1))
 		record.Data.Mouse.DY = int32(input.Y * 65535 / max(1, h-1))
+		record.Data.Mouse.ExtraInfo = sentinelGridInputTag
 		record.Data.Mouse.Flags = 0x8001
 	case "mouse_wheel":
 		record.Data.Mouse.MouseData = uint32(int32(input.Delta))
@@ -753,12 +787,16 @@ func injectInput(input Input) error {
 		}
 		// Button events carry their own absolute point so a dropped move cannot
 		// make a click land at an earlier cursor position.
+		record.Data.Mouse.ExtraInfo = sentinelGridInputTag
 		record.Data.Mouse.Flags = 0x8001 | flags[input.Button]
 	case "key_down", "key_up":
 		record.Type = 1
-		*(*keyInput)(unsafe.Pointer(&record.Data)) = keyInput{VK: input.VK}
+		*(*keyInput)(unsafe.Pointer(&record.Data)) = keyInput{VK: input.VK, Scan: input.Scan, ExtraInfo: sentinelGridInputTag}
+		if input.Extended {
+			(*keyInput)(unsafe.Pointer(&record.Data)).Flags |= 0x0001
+		}
 		if input.Type == "key_up" {
-			(*keyInput)(unsafe.Pointer(&record.Data)).Flags = 0x0002
+			(*keyInput)(unsafe.Pointer(&record.Data)).Flags |= 0x0002
 		}
 	default:
 		return fmt.Errorf("unsupported remote input")

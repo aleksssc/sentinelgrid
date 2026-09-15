@@ -30,43 +30,53 @@ import (
 )
 
 const (
-	wmDestroy          = 0x0002
-	wmPaint            = 0x000f
-	wmSize             = 0x0005
-	wmEraseBkgnd       = 0x0014
-	wmSetFocus         = 0x0007
-	wmClose            = 0x0010
-	wmMouseMove        = 0x0200
-	wmLButtonDown      = 0x0201
-	wmLButtonUp        = 0x0202
-	wmRButtonDown      = 0x0204
-	wmRButtonUp        = 0x0205
-	wmMButtonDown      = 0x0207
-	wmMButtonUp        = 0x0208
-	wmMouseWheel       = 0x020a
-	wmKeyDown          = 0x0100
-	wmKeyUp            = 0x0101
-	wmFrameReady       = 0x8001
-	wmStateChanged     = 0x8002
-	wmTimer            = 0x0113
-	framePresentTimer  = 1
-	framePresentPeriod = 16
-	wsOverlappedWindow = 0x00cf0000
-	csHRedraw          = 0x0002
-	csVRedraw          = 0x0001
-	swShow             = 5
-	biRGB              = 0
-	blackBrush         = 4
-	transparent        = 1
-	psSolid            = 0
-	dtLeft             = 0x00000000
-	dtCenter           = 0x00000001
-	dtVCenter          = 0x00000004
-	dtSingleLine       = 0x00000020
-	dtEndEllipsis      = 0x00008000
-	fontWeightNormal   = 400
-	fontWeightSemiBold = 600
-	fontWeightBold     = 700
+	wmDestroy            = 0x0002
+	wmPaint              = 0x000f
+	wmSize               = 0x0005
+	wmEraseBkgnd         = 0x0014
+	wmSetFocus           = 0x0007
+	wmClose              = 0x0010
+	wmMouseMove          = 0x0200
+	wmLButtonDown        = 0x0201
+	wmLButtonUp          = 0x0202
+	wmRButtonDown        = 0x0204
+	wmRButtonUp          = 0x0205
+	wmMButtonDown        = 0x0207
+	wmMButtonUp          = 0x0208
+	wmMouseWheel         = 0x020a
+	wmKeyDown            = 0x0100
+	wmKeyUp              = 0x0101
+	wmSysKeyDown         = 0x0104
+	wmSysKeyUp           = 0x0105
+	wmKillFocus          = 0x0008
+	wmActivateApp        = 0x001c
+	wmFrameReady         = 0x8001
+	wmStateChanged       = 0x8002
+	wmTimer              = 0x0113
+	wmSetIcon            = 0x0080
+	framePresentTimer    = 1
+	framePresentPeriod   = 16
+	wsOverlappedWindow   = 0x00cf0000
+	csHRedraw            = 0x0002
+	csVRedraw            = 0x0001
+	swShow               = 5
+	biRGB                = 0
+	blackBrush           = 4
+	transparent          = 1
+	imageIcon            = 1
+	lrDefaultSize        = 0x0040
+	iconSmall            = 0
+	iconBig              = 1
+	sentinelGridInputTag = 0x5347494E
+	psSolid              = 0
+	dtLeft               = 0x00000000
+	dtCenter             = 0x00000001
+	dtVCenter            = 0x00000004
+	dtSingleLine         = 0x00000020
+	dtEndEllipsis        = 0x00008000
+	fontWeightNormal     = 400
+	fontWeightSemiBold   = 600
+	fontWeightBold       = 700
 )
 
 type viewer struct {
@@ -198,6 +208,9 @@ var releaseWindowDC = viewerUser32.NewProc("ReleaseDC")
 var endPaint = viewerUser32.NewProc("EndPaint")
 var invalidateRect = viewerUser32.NewProc("InvalidateRect")
 var getClientRect = viewerUser32.NewProc("GetClientRect")
+var getMessageExtraInfo = viewerUser32.NewProc("GetMessageExtraInfo")
+var loadImage = viewerUser32.NewProc("LoadImageW")
+var sendMessage = viewerUser32.NewProc("SendMessageW")
 var setFocus = viewerUser32.NewProc("SetFocus")
 var fillRect = viewerUser32.NewProc("FillRect")
 var drawText = viewerUser32.NewProc("DrawTextW")
@@ -607,12 +620,15 @@ func (v *viewer) window() error {
 		return fmt.Errorf("could not get viewer module handle: %s", win32Error(instanceErr))
 	}
 	callback := syscall.NewCallback(viewerProc)
+	icon, _, _ := loadImage.Call(instance, 1, imageIcon, 0, 0, lrDefaultSize)
 	wc := wndClassEx{
 		Size:       uint32(unsafe.Sizeof(wndClassEx{})),
 		Style:      csHRedraw | csVRedraw,
 		WndProc:    callback,
 		Instance:   instance,
+		Icon:       icon,
 		ClassName:  class,
+		IconSmall:  icon,
 		Background: getStockObjectValue(blackBrush),
 	}
 	if atom, _, err := registerClassEx.Call(uintptr(unsafe.Pointer(&wc))); atom == 0 {
@@ -626,6 +642,10 @@ func (v *viewer) window() error {
 		return fmt.Errorf("could not create viewer window: %s", win32Error(err))
 	}
 	v.logger.event("VIEWER_WINDOW_CREATED")
+	if icon != 0 {
+		sendMessage.Call(hwnd, wmSetIcon, iconSmall, icon)
+		sendMessage.Call(hwnd, wmSetIcon, iconBig, icon)
+	}
 	if renderer, rendererErr := newNativeRenderer(hwnd); rendererErr == nil {
 		v.mu.Lock()
 		v.renderer, v.rendererBackend = renderer, "d3d11"
@@ -716,6 +736,14 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		return 0
 	case wmSetFocus:
 		setFocus.Call(hwnd)
+	case wmKillFocus:
+		if v.input != nil {
+			v.input.releaseOnFocusLoss()
+		}
+	case wmActivateApp:
+		if wparam == 0 && v.input != nil {
+			v.input.releaseOnFocusLoss()
+		}
 	case wmEraseBkgnd:
 		v.mu.RLock()
 		hasFrame := len(v.frame.pixels) != 0
@@ -769,13 +797,25 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		v.sendMouse(hwnd, "mouse_up", "middle", 0, lparam)
 	case wmMouseWheel:
 		v.queueInput(rdp.Input{Type: "mouse_wheel", Delta: int(int16(wparam >> 16))})
-	case wmKeyDown:
-		v.queueInput(rdp.Input{Type: "key_down", VK: uint16(wparam)})
-	case wmKeyUp:
-		v.queueInput(rdp.Input{Type: "key_up", VK: uint16(wparam)})
+	case wmKeyDown, wmSysKeyDown:
+		if !viewerMessageIsInjected() {
+			v.queueInput(keyboardInput("key_down", wparam, lparam))
+		}
+	case wmKeyUp, wmSysKeyUp:
+		if !viewerMessageIsInjected() {
+			v.queueInput(keyboardInput("key_up", wparam, lparam))
+		}
 	}
 	value, _, _ := defWindowProc.Call(hwnd, uintptr(message), wparam, lparam)
 	return value
+}
+func viewerMessageIsInjected() bool {
+	value, _, _ := getMessageExtraInfo.Call()
+	return isSentinelGridInputTag(value)
+}
+func isSentinelGridInputTag(value uintptr) bool { return value == sentinelGridInputTag }
+func keyboardInput(kind string, wparam, lparam uintptr) rdp.Input {
+	return rdp.Input{Type: kind, VK: uint16(wparam), Scan: uint16((lparam >> 16) & 0xff), Extended: lparam&(1<<24) != 0}
 }
 func (v *viewer) sendMouse(hwnd uintptr, kind, button string, delta int, lparam uintptr) {
 	x, y, ok := v.mapMouse(hwnd, int(int16(lparam)), int(int16(lparam>>16)))
@@ -1002,17 +1042,16 @@ func drawStatusMark(hdc uintptr, x, y, size int32, background uintptr) {
 			sx := bounds.Min.X + int(dx)*bounds.Dx()/int(size)
 			r, g, b, a := sentinelGridMark.At(sx, sy).RGBA()
 			alpha := uint32(a)
-			r = uint32(r) + backR*(65535-alpha)
-			g = uint32(g) + backG*(65535-alpha)
-			b = uint32(b) + backB*(65535-alpha)
+			r8 := (uint32(r)*alpha/65535 + backR*(65535-alpha)) / 65535
+			g8 := (uint32(g)*alpha/65535 + backG*(65535-alpha)) / 65535
+			b8 := (uint32(b)*alpha/65535 + backB*(65535-alpha)) / 65535
 			offset := (dy*size + dx) * 4
-			pixels[offset], pixels[offset+1], pixels[offset+2], pixels[offset+3] = byte(b>>8), byte(g>>8), byte(r>>8), 0xff
+			pixels[offset], pixels[offset+1], pixels[offset+2], pixels[offset+3] = byte(b8), byte(g8), byte(r8), 0xff
 		}
 	}
 	info := bitmapInfo{Header: bitmapInfoHeader{Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: size, Height: -height, Planes: 1, BitCount: 32, Compression: biRGB}}
 	stretchDIBits.Call(hdc, uintptr(x), uintptr(y), uintptr(size), uintptr(height), 0, 0, uintptr(size), uintptr(height), uintptr(unsafe.Pointer(&pixels[0])), uintptr(unsafe.Pointer(&info)), 0, 0x00cc0020)
 }
-
 func drawCenteredStatusText(hdc uintptr, text string, area rect, color uintptr, height, weight int32) {
 	value, _ := syscall.UTF16PtrFromString(text)
 	font := statusFont(height, weight)

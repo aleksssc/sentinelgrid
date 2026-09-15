@@ -5,6 +5,7 @@ package rdp
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -37,21 +38,23 @@ func (c *remoteSessionController) finish(inputConsumed bool) remoteInputResult {
 	}
 	return <-c.inputDone
 }
-func (c *remoteSessionController) resolveWriteFailure(ctx context.Context, failure frameWriteResult) error {
+func (c *remoteSessionController) resolveWriteFailure(_ context.Context, failure frameWriteResult) error {
 	if failure.normal {
-		c.finish(false)
+		c.stop()
 		return nil
 	}
-	c.writer.beginShutdown()
+	// A normal peer close can race the writer failure. Give the input reader one
+	// bounded opportunity to classify it, then close the shared socket ourselves.
+	timer := time.NewTimer(250 * time.Millisecond)
+	defer timer.Stop()
 	select {
 	case result := <-c.inputDone:
 		c.finish(true)
 		if result.normal {
 			return nil
 		}
-		return remoteHostFailure("frame-send", failure.err)
-	case <-ctx.Done():
-		c.finish(false)
-		return nil
+	case <-timer.C:
+		c.stop()
 	}
+	return remoteHostFailure("frame-send", failure.err)
 }

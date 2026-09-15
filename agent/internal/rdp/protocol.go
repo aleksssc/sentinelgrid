@@ -69,12 +69,14 @@ type ScreenInfo struct {
 	Height int    `json:"height"`
 }
 type Input struct {
-	Type   string `json:"type"`
-	X      int    `json:"x,omitempty"`
-	Y      int    `json:"y,omitempty"`
-	Button string `json:"button,omitempty"`
-	Delta  int    `json:"delta,omitempty"`
-	VK     uint16 `json:"vk,omitempty"`
+	Type     string `json:"type"`
+	X        int    `json:"x,omitempty"`
+	Y        int    `json:"y,omitempty"`
+	Button   string `json:"button,omitempty"`
+	Delta    int    `json:"delta,omitempty"`
+	VK       uint16 `json:"vk,omitempty"`
+	Scan     uint16 `json:"scan,omitempty"`
+	Extended bool   `json:"extended,omitempty"`
 }
 
 func packet(kind byte, value []byte) ([]byte, error) {
