@@ -19,7 +19,7 @@ type frameWriteResult struct {
 // latestFrameWriter gives the websocket exactly one writer and permits at most
 // one replaceable video frame to wait behind a slow network write.
 type latestFrameWriter struct {
-	ws       *websocket.Conn
+	ws       websocketWriteConn
 	mu       sync.Mutex
 	latest   []byte
 	wake     chan struct{}
@@ -30,10 +30,11 @@ type latestFrameWriter struct {
 	stopping atomic.Bool
 	stopped  sync.Once
 	dropped  uint64
+	now      func() time.Time
 }
 
 func newLatestFrameWriter(ws *websocket.Conn) *latestFrameWriter {
-	writer := &latestFrameWriter{ws: ws, wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}), writes: make(chan time.Duration, 1), failures: make(chan frameWriteResult, 1)}
+	writer := &latestFrameWriter{ws: ws, wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}), writes: make(chan time.Duration, 1), failures: make(chan frameWriteResult, 1), now: time.Now}
 	go writer.run()
 	return writer
 }
@@ -83,6 +84,21 @@ func (w *latestFrameWriter) close() {
 	})
 }
 
+func (w *latestFrameWriter) write(frame []byte) error {
+	if w.stopping.Load() {
+		return nil
+	}
+	if err := w.ws.SetWriteDeadline(w.now().Add(remoteWriteTimeout)); err != nil {
+		return err
+	}
+	// Do not allow a fresh normal deadline to undo close's immediate deadline.
+	if w.stopping.Load() {
+		_ = w.ws.SetWriteDeadline(time.Now())
+		return nil
+	}
+	return w.ws.WriteMessage(websocket.BinaryMessage, frame)
+}
+
 func (w *latestFrameWriter) run() {
 	defer close(w.done)
 	for {
@@ -103,12 +119,15 @@ func (w *latestFrameWriter) run() {
 				break
 			}
 			started := time.Now()
-			if err := w.ws.WriteMessage(websocket.BinaryMessage, frame); err != nil {
+			if err := w.write(frame); err != nil {
 				w.beginShutdown()
 				select {
 				case w.failures <- frameWriteResult{err: err, normal: isNormalWebSocketClose(err)}:
 				default:
 				}
+				return
+			}
+			if w.stopping.Load() {
 				return
 			}
 			select {

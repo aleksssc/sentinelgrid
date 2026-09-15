@@ -13,7 +13,14 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const remoteWriteTimeout = 15 * time.Second
+
 var ticketPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+
+type websocketWriteConn interface {
+	SetWriteDeadline(time.Time) error
+	WriteMessage(int, []byte) error
+}
 
 type Connection struct {
 	Version   int       `json:"version,omitempty"`
@@ -88,7 +95,21 @@ func Dial(ctx context.Context, c Connection) (*websocket.Conn, error) {
 	return conn, nil
 }
 
-func writePacket(ws *websocket.Conn, packet []byte) error {
-	ws.SetWriteDeadline(time.Now().Add(15 * time.Second))
+// writePacket gives every individual Remote WebSocket write a fresh bounded
+// deadline. Net.Conn deadlines persist after successful writes, so callers
+// must never rely on a deadline established by an earlier packet.
+func writePacket(ws websocketWriteConn, packet []byte) error {
+	return writePacketAt(ws, packet, time.Now)
+}
+
+func writePacketAt(ws websocketWriteConn, packet []byte, now func() time.Time) error {
+	if err := ws.SetWriteDeadline(now().Add(remoteWriteTimeout)); err != nil {
+		return err
+	}
 	return ws.WriteMessage(websocket.BinaryMessage, packet)
+}
+
+// WritePacket is the Viewer-facing form of the Remote bounded-write policy.
+func WritePacket(ws *websocket.Conn, packet []byte) error {
+	return writePacket(ws, packet)
 }

@@ -13,7 +13,7 @@ import (
 // h264Writer serializes websocket writes without making capture wait on a slow
 // peer. Its GOP queue discards an incomplete dependency chain atomically.
 type h264Writer struct {
-	ws             *websocket.Conn
+	ws             websocketWriteConn
 	queue          *h264GOPQueue
 	wake           chan struct{}
 	stop           chan struct{}
@@ -23,11 +23,12 @@ type h264Writer struct {
 	stopping       atomic.Bool
 	stopped        sync.Once
 	force          func() error
+	now            func() time.Time
 	recoveryForced bool
 }
 
 func newH264Writer(ws *websocket.Conn, force func() error) *h264Writer {
-	w := &h264Writer{ws: ws, queue: newH264GOPQueue(32), wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}), writes: make(chan time.Duration, 1), failures: make(chan frameWriteResult, 1), force: force}
+	w := &h264Writer{ws: ws, queue: newH264GOPQueue(32), wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}), writes: make(chan time.Duration, 1), failures: make(chan frameWriteResult, 1), force: force, now: time.Now}
 	go w.run()
 	return w
 }
@@ -54,6 +55,20 @@ func (w *h264Writer) close() {
 }
 func (w *h264Writer) dropCount() uint64               { _, units, _ := w.queue.stats(); return units }
 func (w *h264Writer) stats() (uint64, uint64, uint64) { return w.queue.stats() }
+func (w *h264Writer) write(packet []byte) error {
+	if w.stopping.Load() {
+		return nil
+	}
+	if err := w.ws.SetWriteDeadline(w.now().Add(remoteWriteTimeout)); err != nil {
+		return err
+	}
+	// close may set the immediate deadline while this writer was preparing.
+	if w.stopping.Load() {
+		_ = w.ws.SetWriteDeadline(time.Now())
+		return nil
+	}
+	return w.ws.WriteMessage(websocket.BinaryMessage, packet)
+}
 func (w *h264Writer) run() {
 	defer close(w.done)
 	for {
@@ -71,12 +86,15 @@ func (w *h264Writer) run() {
 				break
 			}
 			started := time.Now()
-			if err := w.ws.WriteMessage(websocket.BinaryMessage, packet); err != nil {
+			if err := w.write(packet); err != nil {
 				w.beginShutdown()
 				select {
 				case w.failures <- frameWriteResult{err: err, normal: isNormalWebSocketClose(err)}:
 				default:
 				}
+				return
+			}
+			if w.stopping.Load() {
 				return
 			}
 			select {

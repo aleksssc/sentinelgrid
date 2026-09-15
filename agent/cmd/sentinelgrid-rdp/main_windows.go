@@ -592,7 +592,7 @@ func (v *viewer) writeInput(input rdp.Input) error {
 	if ws == nil || closed {
 		return errors.New("viewer input session is closed")
 	}
-	return ws.WriteMessage(websocket.BinaryMessage, packet)
+	return rdp.WritePacket(ws, packet)
 }
 func win32Error(err error) string {
 	if errno, ok := err.(syscall.Errno); ok && errno != 0 {

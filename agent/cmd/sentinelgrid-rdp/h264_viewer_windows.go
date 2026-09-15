@@ -5,10 +5,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"time"
-
-	"github.com/gorilla/websocket"
 	"sentinelgrid/agent/internal/rdp"
+	"time"
 )
 
 func (v *viewer) configureVideoCapabilities(width, height int) {
@@ -50,7 +48,7 @@ func (v *viewer) configureVideoCapabilities(width, height int) {
 	}
 	v.writeMu.Lock()
 	defer v.writeMu.Unlock()
-	if err := ws.WriteMessage(websocket.BinaryMessage, append([]byte{rdp.PacketVideoCapabilities}, packet...)); err != nil {
+	if err := rdp.WritePacket(ws, append([]byte{rdp.PacketVideoCapabilities}, packet...)); err != nil {
 		v.logger.event("VIEWER_VIDEO_CAPABILITIES_SEND_FAILED")
 	}
 }
@@ -164,7 +162,7 @@ func (v *viewer) requestH264Keyframe(reason string) {
 		return
 	}
 	v.writeMu.Lock()
-	err = ws.WriteMessage(websocket.BinaryMessage, append([]byte{rdp.PacketVideoKeyframe}, payload...))
+	err = rdp.WritePacket(ws, append([]byte{rdp.PacketVideoKeyframe}, payload...))
 	v.writeMu.Unlock()
 	if err != nil {
 		v.logger.event("VIEWER_KEYFRAME_REQUEST_SEND_FAILED")
