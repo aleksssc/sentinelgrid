@@ -82,33 +82,38 @@ const (
 )
 
 type viewer struct {
-	mu                        sync.RWMutex
-	writeMu                   sync.Mutex
-	ws                        *websocket.Conn
-	frame                     viewerFrame
-	frameGeneration           uint64
-	hwnd                      uintptr
-	videoHost                 uintptr
-	shell                     viewerShellLayout
-	scaleMode                 viewerScaleMode
-	showStats                 bool
-	fullscreen                bool
-	restorePlacement          windowPlacement
-	restoreStyle              uintptr
-	status                    string
-	sessionState              viewerSessionState
-	logger                    *viewerLogger
-	compressed                *latestCompressedFrame
-	closeRequested            bool
-	sessionClosed             bool
-	done                      chan struct{}
-	renderer                  *nativeRenderer
-	rendererBackend           string
-	decoder                   *nativeH264Decoder
-	videoCodec                string
-	screenWidth, screenHeight int
-	lastKeyframeRequest       time.Time
-	input                     *viewerInputSender
+	mu                         sync.RWMutex
+	writeMu                    sync.Mutex
+	ws                         *websocket.Conn
+	frame                      viewerFrame
+	frameGeneration            uint64
+	hwnd                       uintptr
+	videoHost                  uintptr
+	shell                      viewerShellLayout
+	scaleMode                  viewerScaleMode
+	showStats                  bool
+	hoverAction, pressedAction string
+	shutdownOnce               sync.Once
+	shutdownDone               chan struct{}
+	fullscreen                 bool
+	shellTransition            bool
+	lastStatsInvalidate        time.Time
+	restorePlacement           windowPlacement
+	restoreStyle               uintptr
+	status                     string
+	sessionState               viewerSessionState
+	logger                     *viewerLogger
+	compressed                 *latestCompressedFrame
+	closeRequested             bool
+	sessionClosed              bool
+	done                       chan struct{}
+	renderer                   *nativeRenderer
+	rendererBackend            string
+	decoder                    *nativeH264Decoder
+	videoCodec                 string
+	screenWidth, screenHeight  int
+	lastKeyframeRequest        time.Time
+	input                      *viewerInputSender
 
 	socketReceived, decodeStarted, decodedCompleted     uint64
 	frameBytes                                          uint64
@@ -337,26 +342,42 @@ func runViewerConnecting(connect viewerConnect) error {
 			return
 		}
 		v.mu.Lock()
+		if v.closeRequested {
+			v.mu.Unlock()
+			_ = ws.Close()
+			return
+		}
 		v.ws = ws
 		v.mu.Unlock()
 		v.logger.event("VIEWER_RELAY_CONNECTED")
 		v.setSessionState(viewerStateNegotiatingVideo)
-		go v.decodeFrames()
+		decodeDone := make(chan struct{})
+		go func() { defer close(decodeDone); v.decodeFrames() }()
 		v.receive()
+		v.compressed.close()
+		<-decodeDone
+		v.mu.Lock()
+		decoder := v.decoder
+		v.decoder = nil
+		v.mu.Unlock()
+		if decoder != nil {
+			decoder.close()
+		}
 	}()
 	windowErr := v.window()
 	cancelSession()
-	v.input.close()
-	v.mu.RLock()
-	ws := v.ws
-	v.mu.RUnlock()
-	if ws != nil {
-		_ = ws.Close()
-	}
+	v.beginShutdown()
 	select {
 	case <-v.done:
 	case <-time.After(2 * time.Second):
 		logger.event("VIEWER_RELAY_CLOSE_WAIT_TIMEOUT")
+	}
+	if v.shutdownDone != nil {
+		select {
+		case <-v.shutdownDone:
+		case <-time.After(2 * time.Second):
+			logger.event("VIEWER_INPUT_CLOSE_WAIT_TIMEOUT")
+		}
 	}
 	logger.event("VIEWER_EXIT")
 	return windowErr
@@ -373,7 +394,7 @@ func (v *viewer) setStatus(status string) {
 
 func (v *viewer) setSessionState(state viewerSessionState) {
 	v.mu.Lock()
-	if v.sessionState == viewerStateDisconnecting && state != viewerStateDisconnecting {
+	if !v.sessionState.canTransition(state) {
 		v.mu.Unlock()
 		return
 	}
@@ -456,16 +477,20 @@ func (v *viewer) receive() {
 			if v.wasCloseRequested() {
 				v.logger.event("VIEWER_RELAY_CLOSED category=client_close")
 			} else {
-				v.logger.event(fmt.Sprintf("VIEWER_RELAY_CLOSED category=%s", relayCloseCategory(err)))
+				code := 0
+				var closeErr *websocket.CloseError
+				if errors.As(err, &closeErr) {
+					code = closeErr.Code
+				}
+				v.logger.event(fmt.Sprintf("VIEWER_RELAY_CLOSED category=%s code=%d", relayCloseCategory(err), code))
 			}
-			localClose := v.wasCloseRequested()
-			state := viewerTerminalState(localClose, relayCloseCategory(err))
 			v.mu.Lock()
 			v.sessionClosed = true
-			v.sessionState = state
+			v.sessionState = viewerTerminalState(v.closeRequested, relayCloseCategory(err))
 			hwnd := v.hwnd
 			v.notification.cancel()
 			v.mu.Unlock()
+			_ = ws.Close()
 			v.compressed.close()
 			if v.input != nil {
 				v.input.releaseOnFocusLoss()
@@ -624,7 +649,7 @@ func (v *viewer) writeInput(input rdp.Input) error {
 	defer v.writeMu.Unlock()
 	v.mu.RLock()
 	ws := v.ws
-	closed := v.sessionClosed
+	closed := v.sessionClosed || ((v.closeRequested || v.sessionState.terminal()) && input.Type != "key_up" && input.Type != "mouse_up")
 	v.mu.RUnlock()
 	if ws == nil || closed {
 		return errors.New("viewer input session is closed")
@@ -673,11 +698,12 @@ func (v *viewer) window() error {
 		return fmt.Errorf("could not register viewer window: %s", win32Error(err))
 	}
 	v.logger.event("VIEWER_REGISTER_CLASS_OK")
-	hwnd, _, err := createWindowEx.Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), wsOverlappedWindow, 100, 100, 1280, 800, 0, 0, instance, 0)
+	hwnd, _, err := createWindowEx.Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), wsOverlappedWindow|0x02000000, 100, 100, 1280, 800, 0, 0, instance, 0)
 	if hwnd == 0 {
 		v.logger.event(fmt.Sprintf("VIEWER_WINDOW_FAILED stage=create_window error=%s", win32Error(err)))
 		return fmt.Errorf("could not create viewer window: %s", win32Error(err))
 	}
+	defer viewerUser32.NewProc("DestroyWindow").Call(hwnd)
 	v.logger.event("VIEWER_WINDOW_CREATED")
 	if icon != 0 {
 		sendMessage.Call(hwnd, wmSetIcon, iconSmall, icon)
@@ -751,32 +777,35 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		value, _, _ := defWindowProc.Call(hwnd, uintptr(message), wparam, lparam)
 		return value
 	}
+	if v.localShellKey(message, wparam, lparam) {
+		return 0
+	}
 	switch message {
 	case wmClose:
 		v.logger.event("VIEWER_CLOSE_REQUESTED")
-		v.requestClose()
+		v.beginShutdown()
 	case wmDestroy:
 		killTimer.Call(hwnd, framePresentTimer)
 		v.mu.Lock()
 		v.hwnd = 0
 		v.videoHost = 0
 		destroyRenderer := v.renderer
-		destroyDecoder := v.decoder
 		v.renderer = nil
-		v.decoder = nil
 		v.notification.cancel()
 		v.mu.Unlock()
 		if destroyRenderer != nil {
 			destroyRenderer.close()
 		}
-		if destroyDecoder != nil {
-			destroyDecoder.close()
-		}
 		v.logger.event("VIEWER_CLOSE")
 		postQuitMessage.Call(0)
 		return 0
 	case wmSize:
-		v.layoutShell(hwnd)
+		v.mu.RLock()
+		transition := v.shellTransition
+		v.mu.RUnlock()
+		if !transition {
+			v.layoutShell(hwnd)
+		}
 		return 0
 	case wmSetFocus:
 		setFocus.Call(v.presentationHWND())
@@ -803,12 +832,19 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 		if wparam == framePresentTimer {
 			v.presentLatestFrame(v.presentationHWND())
 			v.mu.Lock()
+			refreshStats := v.showStats && time.Since(v.lastStatsInvalidate) >= time.Second
+			if refreshStats {
+				v.lastStatsInvalidate = time.Now()
+			}
 			hasFrame := len(v.frame.pixels) != 0
 			animate := !hasFrame && time.Since(v.lastLoadingInvalidate) >= time.Second/30
 			if animate {
 				v.lastLoadingInvalidate = time.Now()
 			}
 			v.mu.Unlock()
+			if refreshStats {
+				invalidateRect.Call(hwnd, 0, 0, 0)
+			}
 			if animate {
 				invalidateRect.Call(v.presentationHWND(), 0, 0, 0)
 			}
@@ -821,12 +857,8 @@ func viewerProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr {
 	case wmPaint:
 		v.paintToolbar(hwnd)
 		return 0
-	case wmLButtonDown:
-		v.mu.RLock()
-		action := v.shell.actionAt(int(int16(lparam)), int(int16(lparam>>16)))
-		v.mu.RUnlock()
-		if action != "" {
-			v.shellAction(action)
+	case wmMouseMove, wmLButtonDown, wmLButtonUp, wmMouseLeave, wmCaptureChanged:
+		if v.handleShellPointer(hwnd, message, lparam) {
 			return 0
 		}
 	case wmKeyDown:
@@ -877,7 +909,13 @@ func (v *viewer) mapMouse(hwnd uintptr, x, y int) (int, int, bool) {
 func (v *viewer) presentLatestFrame(hwnd uintptr) {
 	v.mu.Lock()
 	frame, generation, renderer := v.frame, v.frameGeneration, v.renderer
-	if !v.notification.shouldPresent(generation) {
+	if hwnd == 0 || v.sessionClosed || v.closeRequested || (v.sessionState != viewerStateNegotiatingVideo && v.sessionState != viewerStateConnected) || !v.notification.shouldPresent(generation) {
+		v.mu.Unlock()
+		return
+	}
+	var client rect
+	getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
+	if client.Right <= 0 || client.Bottom <= 0 {
 		v.mu.Unlock()
 		return
 	}
@@ -954,15 +992,20 @@ func (v *viewer) paint(hwnd uintptr) {
 		v.paintTerminalStatus(hdc, client, state)
 		return
 	}
-	if renderer != nil && hasFrame {
+	if renderer != nil && hasFrame && state == viewerStateConnected {
 		if err := renderer.redraw(); err != nil {
 			v.logger.event("VIEWER_D3D11_REDRAW_FAILED")
 		}
 		return
 	}
 	fillRect.Call(hdc, uintptr(unsafe.Pointer(&client)), getStockObjectValue(blackBrush))
-	if !hasFrame {
+	if state != viewerStateConnected {
 		v.paintStatus(hdc, client, status)
+	} else if hasFrame {
+		v.mu.RLock()
+		frame, generation := v.frame, v.frameGeneration
+		v.mu.RUnlock()
+		v.presentLatestFrameGDI(hwnd, frame, generation)
 	}
 }
 func (v *viewer) recordExposureResult(result int32, width, height, clientWidth, clientHeight int, generation uint64) {
@@ -1147,8 +1190,6 @@ func drawStatusRoundRect(hdc uintptr, area rect, radius int32, fill, border uint
 
 func loadingStatusLabel(status string) string {
 	switch status {
-	case "Reconnecting...":
-		return "Reconnecting"
 	case "Negotiating video...", "Starting remote display...":
 		return "Starting video"
 	case "Establishing secure session...":
@@ -1173,7 +1214,15 @@ func (v *viewer) paintStatus(hdc uintptr, client rect, status string) {
 		status = "Connecting to remote device..."
 	}
 	fillStatusRect(hdc, client, rgb(10, 10, 12))
-	cardWidth, cardHeight := int32(420), int32(250)
+	v.mu.RLock()
+	state := v.sessionState
+	v.mu.RUnlock()
+	secure := rgb(96, 165, 250)
+	if state == viewerStateNegotiatingVideo {
+		secure = rgb(130, 201, 167)
+		status = "Secure session established. Starting video..."
+	}
+	cardWidth, cardHeight := int32(min(420, int(client.Right)-24)), int32(250)
 	card := rect{Left: (client.Right - cardWidth) / 2, Top: (client.Bottom - cardHeight) / 2, Right: (client.Right + cardWidth) / 2, Bottom: (client.Bottom + cardHeight) / 2}
 	drawStatusRoundRect(hdc, card, 16, rgb(13, 15, 18), rgb(37, 42, 50))
 	drawStatusMark(hdc, card.Left+24, card.Top+24, 28, rgb(13, 15, 18))
@@ -1183,7 +1232,7 @@ func (v *viewer) paintStatus(hdc uintptr, client rect, status string) {
 	for index, step := range []struct {
 		label string
 		color uintptr
-	}{{"Secure session", rgb(130, 201, 167)}, {"Starting video", rgb(96, 165, 250)}, {"Remote control", rgb(149, 156, 168)}} {
+	}{{"Secure session", secure}, {"Starting video", rgb(96, 165, 250)}, {"Remote control", rgb(149, 156, 168)}} {
 		y := card.Top + 146 + int32(index)*25
 		fillStatusEllipse(hdc, rect{Left: card.Left + 25, Top: y + 5, Right: card.Left + 31, Bottom: y + 11}, step.color)
 		drawStatusText(hdc, step.label, rect{Left: card.Left + 40, Top: y, Right: card.Right - 24, Bottom: y + 17}, step.color, 12, fontWeightNormal)

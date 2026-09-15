@@ -30,7 +30,7 @@ func viewerLayoutForClient(width, height int) viewerShellLayout {
 		width int
 	}{{"disconnect", 86}, {"stats", 52}, {"fullscreen", 82}, {"fit", 42}} {
 		x -= item.width
-		layout.buttons[item.name] = imageRect{x: x, y: 10, width: item.width, height: 30}
+		layout.buttons[item.name] = imageRect{x: x, y: 9, width: item.width, height: 32}
 		x -= 6
 	}
 	return layout

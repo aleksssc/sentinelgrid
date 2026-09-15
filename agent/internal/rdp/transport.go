@@ -75,8 +75,32 @@ func Dial(ctx context.Context, c Connection) (*websocket.Conn, error) {
 		}
 		return nil, &PairingError{Category: category, err: fmt.Errorf("RDP relay connection failed")}
 	}
+	stopPairing := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	err = awaitRelayReady(conn)
+	stopPairing()
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		_ = conn.Close()
+		return nil, &PairingError{Category: "cancelled", err: err}
+	}
+	return conn, nil
+}
+
+type pairingSocket interface {
+	SetReadLimit(int64)
+	SetReadDeadline(time.Time) error
+	ReadMessage() (int, []byte, error)
+	Close() error
+}
+
+func awaitRelayReady(conn pairingSocket) error {
 	conn.SetReadLimit(maxRemotePacket)
-	conn.SetReadDeadline(time.Now().Add(65 * time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(65 * time.Second)); err != nil {
+		_ = conn.Close()
+		return &PairingError{Category: "ready_deadline", err: err}
+	}
 	kind, data, err := conn.ReadMessage()
 	var ready struct {
 		Type string `json:"type"`
@@ -89,10 +113,15 @@ func Dial(ctx context.Context, c Connection) (*websocket.Conn, error) {
 		} else if kind != websocket.TextMessage || ready.Type != "ready" {
 			category = "ready_invalid"
 		}
-		return nil, &PairingError{Category: category, err: fmt.Errorf("RDP relay pairing failed")}
+		return &PairingError{Category: category, err: fmt.Errorf("RDP relay pairing failed")}
 	}
-	conn.SetReadDeadline(c.ExpiresAt)
-	return conn, nil
+	// Launch expiry authorizes establishment, not the lifetime of paired sockets.
+	// The relay owns active-session expiry, revocation and idle policy.
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		_ = conn.Close()
+		return &PairingError{Category: "ready_deadline", err: err}
+	}
+	return nil
 }
 
 // writePacket gives every individual Remote WebSocket write a fresh bounded

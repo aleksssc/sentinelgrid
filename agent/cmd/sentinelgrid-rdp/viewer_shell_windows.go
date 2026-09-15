@@ -56,7 +56,7 @@ type monitorInfo struct {
 }
 
 func setDWMAttribute(hwnd uintptr, attribute uint32, value unsafe.Pointer, size uintptr) {
-	if hwnd != 0 {
+	if hwnd != 0 && dwmSetWindowAttribute.Find() == nil {
 		_, _, _ = dwmSetWindowAttribute.Call(hwnd, uintptr(attribute), uintptr(value), size)
 	}
 }
@@ -64,7 +64,7 @@ func setDWMAttribute(hwnd uintptr, attribute uint32, value unsafe.Pointer, size 
 func (v *viewer) applyWindowChrome(hwnd uintptr) {
 	dark := int32(1)
 	setDWMAttribute(hwnd, dwmwaUseImmersiveDarkMode, unsafe.Pointer(&dark), unsafe.Sizeof(dark))
-	caption, border, text, corner := uint32(0x0012151a), uint32(0x00252a32), uint32(0x00f4f5f7), uint32(dwmwcpRound)
+	caption, border, text, corner := uint32(rgb(18, 21, 26)), uint32(rgb(37, 42, 50)), uint32(rgb(244, 245, 247)), uint32(dwmwcpRound)
 	setDWMAttribute(hwnd, dwmwaCaptionColor, unsafe.Pointer(&caption), unsafe.Sizeof(caption))
 	setDWMAttribute(hwnd, dwmwaBorderColor, unsafe.Pointer(&border), unsafe.Sizeof(border))
 	setDWMAttribute(hwnd, dwmwaTextColor, unsafe.Pointer(&text), unsafe.Sizeof(text))
@@ -111,10 +111,13 @@ func (v *viewer) shellAction(action string) {
 		v.mu.Unlock()
 		v.layoutShell(hwnd)
 	case "disconnect":
-		v.setStatus("Disconnecting...")
-		v.requestClose()
-		v.input.releaseOnFocusLoss()
-		postMessage.Call(v.hwnd, wmClose, 0, 0)
+		v.beginShutdown()
+		v.mu.RLock()
+		hwnd := v.hwnd
+		v.mu.RUnlock()
+		if hwnd != 0 {
+			postMessage.Call(hwnd, wmClose, 0, 0)
+		}
 	}
 	if v.hwnd != 0 {
 		invalidateRect.Call(v.hwnd, 0, 0, 0)
@@ -123,44 +126,86 @@ func (v *viewer) shellAction(action string) {
 
 func (v *viewer) toggleFullscreen() {
 	v.mu.Lock()
-	hwnd := v.hwnd
+	hwnd, fullscreen := v.hwnd, v.fullscreen
+	v.mu.Unlock()
 	if hwnd == 0 {
-		v.mu.Unlock()
 		return
 	}
-	if !v.fullscreen {
-		placement := windowPlacement{Length: uint32(unsafe.Sizeof(windowPlacement{}))}
-		getWindowPlacement.Call(hwnd, uintptr(unsafe.Pointer(&placement)))
-		v.restorePlacement = placement
-		v.restoreStyle, _, _ = getWindowLongPtr.Call(hwnd, gwlStyle)
-		v.fullscreen = true
-		v.mu.Unlock()
+	placement := windowPlacement{Length: uint32(unsafe.Sizeof(windowPlacement{}))}
+	var style uintptr
+	var info monitorInfo
+	if !fullscreen {
+		if ok, _, _ := getWindowPlacement.Call(hwnd, uintptr(unsafe.Pointer(&placement))); ok == 0 {
+			v.logger.event("VIEWER_FULLSCREEN_FAILED stage=placement")
+			return
+		}
+		style, _, _ = getWindowLongPtr.Call(hwnd, gwlStyle)
 		monitor, _, _ := monitorFromWindow.Call(hwnd, monitorDefaultToNearest)
-		info := monitorInfo{Size: uint32(unsafe.Sizeof(monitorInfo{}))}
-		getMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info)))
-		setWindowLongPtr.Call(hwnd, gwlStyle, wsPopup)
-		setWindowPos.Call(hwnd, 0, uintptr(info.Monitor.Left), uintptr(info.Monitor.Top), uintptr(info.Monitor.Right-info.Monitor.Left), uintptr(info.Monitor.Bottom-info.Monitor.Top), swpFrameChanged|swpNoOwnerZOrder|swpNoZOrder)
-	} else {
-		placement, style := v.restorePlacement, v.restoreStyle
-		v.fullscreen = false
+		info = monitorInfo{Size: uint32(unsafe.Sizeof(monitorInfo{}))}
+		if ok, _, _ := getMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info))); ok == 0 {
+			v.logger.event("VIEWER_FULLSCREEN_FAILED stage=monitor")
+			return
+		}
+		v.mu.Lock()
+		v.restorePlacement, v.restoreStyle = placement, style
 		v.mu.Unlock()
-		setWindowLongPtr.Call(hwnd, gwlStyle, style)
-		setWindowPlacement.Call(hwnd, uintptr(unsafe.Pointer(&placement)))
-		setWindowPos.Call(hwnd, 0, 0, 0, 0, 0, swpFrameChanged|swpNoOwnerZOrder|swpNoZOrder)
-		v.layoutShell(hwnd)
-		return
+	} else {
+		v.mu.RLock()
+		placement, style = v.restorePlacement, v.restoreStyle
+		v.mu.RUnlock()
 	}
-	v.layoutShell(hwnd)
+	v.mu.Lock()
+	v.shellTransition = true
+	v.mu.Unlock()
+	defer func() {
+		v.mu.Lock()
+		v.shellTransition = false
+		v.mu.Unlock()
+		v.layoutShell(hwnd)
+		invalidateRect.Call(hwnd, 0, 0, 0)
+		invalidateRect.Call(v.presentationHWND(), 0, 0, 0)
+	}()
+	if !fullscreen {
+		if previous, _, _ := setWindowLongPtr.Call(hwnd, gwlStyle, wsPopup|0x02000000|(style&wsVisible)); previous == 0 {
+			v.logger.event("VIEWER_FULLSCREEN_FAILED stage=style")
+			return
+		}
+		if ok, _, _ := setWindowPos.Call(hwnd, 0, uintptr(info.Monitor.Left), uintptr(info.Monitor.Top), uintptr(info.Monitor.Right-info.Monitor.Left), uintptr(info.Monitor.Bottom-info.Monitor.Top), swpFrameChanged|swpNoOwnerZOrder|swpNoZOrder); ok == 0 {
+			setWindowLongPtr.Call(hwnd, gwlStyle, style)
+			setWindowPlacement.Call(hwnd, uintptr(unsafe.Pointer(&placement)))
+			v.logger.event("VIEWER_FULLSCREEN_FAILED stage=position")
+			return
+		}
+	} else {
+		if previous, _, _ := setWindowLongPtr.Call(hwnd, gwlStyle, style); previous == 0 {
+			v.logger.event("VIEWER_FULLSCREEN_FAILED stage=restore_style")
+			return
+		}
+		if ok, _, _ := setWindowPlacement.Call(hwnd, uintptr(unsafe.Pointer(&placement))); ok == 0 {
+			v.logger.event("VIEWER_FULLSCREEN_FAILED stage=restore_placement")
+			return
+		}
+		if ok, _, _ := setWindowPos.Call(hwnd, 0, 0, 0, 0, 0, fullscreenRestoreFlags); ok == 0 {
+			v.logger.event("VIEWER_FULLSCREEN_FAILED stage=restore_frame")
+			return
+		}
+	}
+	v.mu.Lock()
+	v.fullscreen = !fullscreen
+	v.mu.Unlock()
 }
 
 func (v *viewer) drawToolbar(hdc uintptr, client rect) {
 	v.mu.RLock()
 	layout, state, statsOpen, mode := v.shell, v.sessionState, v.showStats, v.scaleMode
+	hover, pressed, fullscreen := v.hoverAction, v.pressedAction, v.fullscreen
 	v.mu.RUnlock()
 	fillStatusRect(hdc, layout.toolbarRect(), rgb(18, 21, 26))
 	fillStatusRect(hdc, rect{Left: 0, Top: int32(layout.toolbar.height - 1), Right: client.Right, Bottom: int32(layout.toolbar.height)}, rgb(37, 42, 50))
-	drawStatusMark(hdc, 16, 13, 24, rgb(18, 21, 26))
-	drawStatusText(hdc, "SentinelGrid Remote", rect{Left: 48, Top: 9, Right: 250, Bottom: 34}, rgb(244, 245, 247), 14, fontWeightSemiBold)
+	if layout.buttons["fit"].x >= 400 {
+		drawStatusMark(hdc, 16, 13, 24, rgb(18, 21, 26))
+		drawStatusText(hdc, "SentinelGrid Remote", rect{Left: 48, Top: 9, Right: 245, Bottom: 39}, rgb(244, 245, 247), 16, fontWeightSemiBold)
+	}
 	stateLabel, color := state.label(), rgb(96, 165, 250)
 	switch state {
 	case viewerStateConnected:
@@ -172,20 +217,37 @@ func (v *viewer) drawToolbar(hdc uintptr, client rect) {
 	case viewerStateConnectionLost:
 		color = rgb(241, 152, 161)
 	}
-	fillStatusEllipse(hdc, rect{Left: 258, Top: 21, Right: 264, Bottom: 27}, color)
-	drawStatusText(hdc, stateLabel, rect{Left: 270, Top: 11, Right: 390, Bottom: 37}, color, 12, fontWeightSemiBold)
+	chipLeft := int32(250)
+	if layout.buttons["fit"].x < 400 {
+		chipLeft = 12
+	}
+	if int(chipLeft)+140 < layout.buttons["fit"].x {
+		drawStatusRoundRect(hdc, rect{Left: chipLeft, Top: 12, Right: chipLeft + 140, Bottom: 38}, 12, rgb(9, 11, 14), rgb(37, 42, 50))
+		fillStatusEllipse(hdc, rect{Left: chipLeft + 10, Top: 22, Right: chipLeft + 16, Bottom: 28}, color)
+		drawStatusText(hdc, stateLabel, rect{Left: chipLeft + 24, Top: 12, Right: chipLeft + 135, Bottom: 38}, color, 13, fontWeightSemiBold)
+	}
 	for _, item := range []struct{ name, label string }{{"fit", "Fit"}, {"fullscreen", "Fullscreen"}, {"stats", "Stats"}, {"disconnect", "Disconnect"}} {
 		area := layout.buttons[item.name]
 		fill, border, text := rgb(18, 21, 26), rgb(37, 42, 50), rgb(226, 232, 240)
 
-		if item.name == "disconnect" {
+		if item.name == "disconnect" && state.terminal() {
+			item.label = "Close"
+		}
+		if item.name == "disconnect" && !state.terminal() {
 			fill, border, text = rgb(57, 25, 31), rgb(116, 47, 57), rgb(241, 152, 161)
 		}
-		if item.name == "fit" && mode == viewerScaleFit {
+		if item.name == "fit" && mode == viewerScaleFit || item.name == "stats" && statsOpen || item.name == "fullscreen" && fullscreen {
 			fill, border, text = rgb(17, 30, 50), rgb(43, 70, 106), rgb(147, 197, 253)
 		}
-		drawStatusRoundRect(hdc, area.toRect(), 8, fill, border)
-		drawCenteredStatusText(hdc, item.label, area.toRect(), text, 11, fontWeightSemiBold)
+		if hover == item.name {
+			border = rgb(96, 165, 250)
+			fill = rgb(27, 35, 47)
+		}
+		if pressed == item.name && hover == item.name {
+			fill = rgb(43, 70, 106)
+		}
+		drawStatusRoundRect(hdc, area.toRect(), 16, fill, border)
+		drawCenteredStatusText(hdc, item.label, area.toRect(), text, 13, fontWeightSemiBold)
 	}
 	if statsOpen {
 		v.drawStatsPopover(hdc, layout)
@@ -196,12 +258,12 @@ func (v *viewer) drawStatsPopover(hdc uintptr, layout viewerShellLayout) {
 	v.mu.RLock()
 	codec, width, height, decoded, presented, backend, state := v.videoCodec, v.screenWidth, v.screenHeight, v.decodedCompleted, v.successfulPresents, v.rendererBackend, v.sessionState
 	v.mu.RUnlock()
-	panel := rect{Left: int32(layout.video.x + layout.video.width + 12), Top: int32(layout.toolbar.height + 12), Right: int32(layout.toolbar.width - 12), Bottom: int32(layout.toolbar.height + 170)}
+	panel := rect{Left: int32(layout.video.x + layout.video.width + 12), Top: int32(layout.toolbar.height + 12), Right: int32(layout.toolbar.width - 12), Bottom: int32(layout.toolbar.height + 250)}
 	drawStatusRoundRect(hdc, panel, 10, rgb(18, 21, 26), rgb(37, 42, 50))
 	drawStatusText(hdc, "Connection stats", rect{Left: panel.Left + 14, Top: panel.Top + 10, Right: panel.Right - 12, Bottom: panel.Top + 32}, rgb(244, 245, 247), 12, fontWeightSemiBold)
 	lines := []string{fmt.Sprintf("Connection: %s", state.label()), fmt.Sprintf("Codec: %s", codec), fmt.Sprintf("Remote: %dx%d", width, height), "Target FPS: 30", fmt.Sprintf("Decoded frames: %d", decoded), fmt.Sprintf("Presented frames: %d", presented), fmt.Sprintf("Renderer: %s", backend)}
 	for i, line := range lines {
-		drawStatusText(hdc, line, rect{Left: panel.Left + 14, Top: panel.Top + 36 + int32(i*18), Right: panel.Right - 12, Bottom: panel.Top + 54 + int32(i*18)}, rgb(149, 156, 168), 11, fontWeightNormal)
+		drawStatusText(hdc, line, rect{Left: panel.Left + 14, Top: panel.Top + 42 + int32(i*26), Right: panel.Right - 12, Bottom: panel.Top + 66 + int32(i*26)}, rgb(174, 181, 191), 13, fontWeightNormal)
 	}
 }
 
@@ -218,7 +280,25 @@ func videoHostProc(hwnd uintptr, message uint32, wparam, lparam uintptr) uintptr
 		result, _, _ := defWindowProc.Call(hwnd, uintptr(message), wparam, lparam)
 		return result
 	}
+	if v.localShellKey(message, wparam, lparam) {
+		return 0
+	}
+	v.mu.RLock()
+	terminal := v.sessionState.terminal()
+	v.mu.RUnlock()
+	if terminal && message >= wmMouseMove && message <= wmMouseWheel {
+		if message == wmLButtonUp {
+			var client rect
+			getClientRect.Call(hwnd, uintptr(unsafe.Pointer(&client)))
+			if terminalCloseRect(int(client.Right), int(client.Bottom)).contains(int(int16(lparam)), int(int16(lparam>>16))) {
+				v.shellAction("disconnect")
+			}
+		}
+		return 0
+	}
 	switch message {
+	case wmEraseBkgnd:
+		return 1
 	case wmSize:
 		v.resizeVideoHost(hwnd)
 		return 0
@@ -290,14 +370,20 @@ func (v *viewer) paintToolbar(hwnd uintptr) {
 
 func (v *viewer) paintTerminalStatus(hdc uintptr, client rect, state viewerSessionState) {
 	fillStatusRect(hdc, client, rgb(10, 10, 12))
-	cardWidth, cardHeight := int32(380), int32(150)
-	card := rect{Left: (client.Right - cardWidth) / 2, Top: (client.Bottom - cardHeight) / 2, Right: (client.Right + cardWidth) / 2, Bottom: (client.Bottom + cardHeight) / 2}
-	drawStatusRoundRect(hdc, card, 14, rgb(18, 21, 26), rgb(37, 42, 50))
-	color, detail := rgb(241, 152, 161), "The remote session has ended. Start a new Remote session from SentinelGrid."
+	width, height := int(client.Right), int(client.Bottom)
+	cardWidth := min(480, max(0, width-24))
+	card := imageRect{x: (width - cardWidth) / 2, y: (height - 210) / 2, width: cardWidth, height: 210}.toRect()
+	drawStatusRoundRect(hdc, card, 24, rgb(18, 21, 26), rgb(37, 42, 50))
+	color, detail := rgb(241, 152, 161), "The Remote session ended unexpectedly."
 	if state == viewerStateSessionEnded {
-		color, detail = rgb(174, 181, 191), "The remote session ended normally."
+		color, detail = rgb(174, 181, 191), "The Remote session has finished."
 	}
-	drawCenteredStatusText(hdc, state.label(), rect{Left: card.Left + 20, Top: card.Top + 30, Right: card.Right - 20, Bottom: card.Top + 60}, color, 16, fontWeightSemiBold)
-	drawCenteredStatusText(hdc, detail, rect{Left: card.Left + 28, Top: card.Top + 70, Right: card.Right - 28, Bottom: card.Top + 104}, rgb(174, 181, 191), 11, fontWeightNormal)
-	drawCenteredStatusText(hdc, "Use Disconnect to close this window.", rect{Left: card.Left + 20, Top: card.Top + 112, Right: card.Right - 20, Bottom: card.Bottom - 18}, rgb(149, 156, 168), 11, fontWeightNormal)
+	drawCenteredStatusText(hdc, state.label(), rect{Left: card.Left + 16, Top: card.Top + 25, Right: card.Right - 16, Bottom: card.Top + 55}, color, 20, fontWeightSemiBold)
+	drawCenteredStatusText(hdc, detail, rect{Left: card.Left + 16, Top: card.Top + 65, Right: card.Right - 16, Bottom: card.Top + 90}, rgb(226, 232, 240), 14, fontWeightNormal)
+	if state == viewerStateConnectionLost {
+		drawCenteredStatusText(hdc, "Start a new Remote session from SentinelGrid.", rect{Left: card.Left + 16, Top: card.Top + 95, Right: card.Right - 16, Bottom: card.Top + 120}, rgb(149, 156, 168), 13, fontWeightNormal)
+	}
+	button := terminalCloseRect(width, height).toRect()
+	drawStatusRoundRect(hdc, button, 16, rgb(17, 30, 50), rgb(43, 70, 106))
+	drawCenteredStatusText(hdc, "Close", button, rgb(147, 197, 253), 14, fontWeightSemiBold)
 }

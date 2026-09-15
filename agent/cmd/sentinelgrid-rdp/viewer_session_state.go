@@ -12,6 +12,22 @@ const (
 	viewerStateConnectionLost
 )
 
+func (s viewerSessionState) canTransition(next viewerSessionState) bool {
+	if s == next {
+		return true
+	}
+	if next == viewerStateDisconnecting {
+		return true
+	}
+	if s.terminal() || s == viewerStateDisconnecting {
+		return false
+	}
+	if next.terminal() {
+		return true
+	}
+	return s == viewerStateLaunching && next == viewerStateConnecting || s == viewerStateConnecting && next == viewerStateNegotiatingVideo || s == viewerStateNegotiatingVideo && next == viewerStateConnected
+}
+
 func (s viewerSessionState) terminal() bool {
 	return s == viewerStateSessionEnded || s == viewerStateConnectionLost
 }

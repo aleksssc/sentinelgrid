@@ -48,26 +48,26 @@ func TestReadRemoteInputRoutesAndRateLimitsKeyframeControl(t *testing.T) {
 	done := make(chan remoteInputResult, 1)
 	controls := make(chan remoteControl, 3)
 	go readRemoteInput(ctx, client, done, controls)
+	// Completion follows all control sends. Selecting it alongside buffered
+	// controls can falsely fail even when every packet was routed correctly.
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("reader did not finish after the peer sent all controls and closed")
+	}
+	close(controls)
 	var gotCaps bool
 	keyframes := 0
-	deadline := time.After(time.Second)
-	for !gotCaps || keyframes != 1 {
-		select {
-		case control := <-controls:
-			if control.capabilities != nil {
-				gotCaps = supportsH264(*control.capabilities)
-			}
-			if control.keyframe {
-				keyframes++
-			}
-		case result := <-done:
-			t.Fatalf("reader stopped before controls were routed: %+v", result)
-		case <-deadline:
-			t.Fatalf("capabilities=%t keyframes=%d", gotCaps, keyframes)
+	for control := range controls {
+		if control.capabilities != nil {
+			gotCaps = supportsH264(*control.capabilities)
+		}
+		if control.keyframe {
+			keyframes++
 		}
 	}
-	if keyframes != 1 {
-		t.Fatalf("rate limiter forwarded %d keyframe requests", keyframes)
+	if !gotCaps || keyframes != 1 {
+		t.Fatalf("capabilities=%t keyframes=%d, want H264 capabilities and one rate-limited keyframe request", gotCaps, keyframes)
 	}
 }
 

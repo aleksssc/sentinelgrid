@@ -213,3 +213,99 @@ go vet ./...
 
 Automated checks are not production qualification. Do not disable legacy routes
 until a real deployed relay and installed signed Agent pass the checklist above.
+
+
+## Native Remote lifecycle and termination diagnostics
+
+Remote launch credentials and active-session policy have different lifetimes.
+The launch token and relay ticket are one-use and expire after 60 seconds. The
+Viewer connection returned by launch redemption contains that establishment
+expiry; the Agent connection and relay authorization response contain the
+session's policy expiry. Do not use the Viewer launch expiry as a paired socket
+read deadline. Native pairing retains its bounded 65-second ready wait and
+cancellation, then clears that establishment read deadline. The relay still owns
+session expiry, idle policy and periodic authorization/revocation checks; the
+Agent service additionally retains its session-context deadline. No ticket is
+reused and no automatic reconnect exists.
+
+This fixes a demonstrated one-minute Viewer termination: the previous Dial path
+installed the short-lived launch expiry on ReadMessage even while video arrived.
+Local Viewer logs showed network_error at 52-56 seconds after pairing (roughly
+60 seconds from launch). It does not establish which historical relay error
+produced a particular 1011: the old relay recorded no reason for that event.
+
+Every relay teardown now logs one sanitized JSON session_finished event:
+session_id, reason, failed, close_code, phase, age_ms and idle_ms. Socket/forwarding
+failures include role; close events include peer_close_code. Authorization failures
+include operation and an allowlisted backend_code plus backend_status when the
+backend returned HTTP. Correlate session_id with backend RDP logs to distinguish
+revocation/policy denial from a backend outage. Never log raw WebSocket reasons,
+exception messages, tickets, launch tokens or authorization headers.
+
+Reasons include peer_normal_close, peer_abnormal_close, peer_socket_error,
+protocol_violation, queue_overflow, downstream_unavailable,
+downstream_backpressure, downstream_send_failure, downstream_send_timeout,
+authorization_failure, invalid_policy, pair_timeout, session_expired,
+idle_timeout and relay_shutdown. A failed finish receipt is logged separately.
+Normal 1000/1001 and an empty peer close handshake (1005) end normally; abrupt
+1006 and peer 1011 remain failures. Client-facing text remains Session ended,
+with 1000 for normal teardown and 1011 for failure. The Viewer never normalizes
+1011 into a successful end.
+
+Timeout ownership is unchanged except for removing the erroneous launch read
+deadline and explicitly bounding Node downstream sends:
+
+| Boundary | Purpose |
+| --- | --- |
+| 60-second relay pair timer | Wait for the second authorized peer; cancelled once active |
+| Session expires_at | Organization session lifetime, not the launch ticket TTL |
+| Idle policy, 60-7200 seconds | Inactivity; binary traffic refreshes activity |
+| 5-second policy poll / 8-second backend request | Revocation and active relay presence |
+| 15-second per-write deadline | Fresh ownership for every native data write and Node downstream send |
+| 1-second relay close grace | Force socket cleanup if close handshake does not complete |
+| 1-second Viewer shutdown grace | Aggregate held-input release and close, off the UI thread |
+
+The native Host's existing immediate writer shutdown deadline, socket-close
+reader unblocking and 250 ms concurrent normal-close classification remain intact.
+Node ws and Gorilla handle incoming ping/pong control frames automatically; this
+RDP relay does not introduce a speculative periodic heartbeat. A 65-second
+loopback traffic soak crosses the pair/idle boundary, but does not qualify Railway
+or another proxy. Inspect actual hosting logs/settings if the instrumented build
+still disconnects; do not increase timeouts or hide 1011.
+
+Viewer shell uses the dashboard Sentinel palette, one toolbar and one videoHost.
+D3D11 stays attached only to videoHost. Stats intentionally reserves 272 pixels
+at the right rather than covering remote input, and its counters refresh while
+open. Fit remains aspect-preserving. Terminal content clears the desktop and
+provides Close (also in the toolbar); input is disabled. Fullscreen preserves
+placement/style without a zero-size restore. Focus-loss releases use the existing
+sender queue; local close bounds cleanup in the background. Decoder cleanup is
+owned by session completion, not a blocking UI destroy handler. Native video,
+input packet formats, authentication and release signing policy are unchanged.
+
+Additional qualification commands, from the project root:
+
+```powershell
+node --test scripts\test-rdp-relay-close-semantics.mjs scripts\test-rdp-relay-diagnostics.mjs
+$env:SENTINELGRID_RDP_SOAK = '1'
+node --test scripts\test-rdp-relay-diagnostics.mjs
+Remove-Item Env:SENTINELGRID_RDP_SOAK
+cd agent
+go test -count=20 ./cmd/sentinelgrid-rdp
+go test -count=20 -run 'Test(Pair|RemoteSession|Input|Keyboard|Transport|.*Deadline|.*WriteFailure)' ./internal/rdp
+go test -count=1 ./...
+go vet ./...
+```
+
+The soak measures session survival and ordered delivery, not encoder FPS. Hidden
+HWND tests exercise repeated fullscreen placement and Stats layout without
+capturing or injecting input into the local desktop. Real PC A (Agent) to PC B
+(Viewer) validation remains required for mouse/keyboard/Ctrl combinations, drag,
+scroll, resize/fullscreen, 100/125/150% DPI, long sessions, normal disconnect and
+network interruption. Self-remote recursion is expected. No production readiness
+or 0.2.0 release qualification is implied by automated tests or unsigned builds.
+
+Repeated input routing checks also synchronize reader completion before inspecting
+the buffered control queue. This removes a select-order test race and verifies
+that both keyframe requests were consumed before asserting rate limiting; the
+production input reader and its one-second rate limiter are unchanged.

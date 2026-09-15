@@ -45,13 +45,21 @@ func (s *viewerInputSender) close() {
 }
 func (s *viewerInputSender) releaseAll() {
 	for _, input := range s.releaseEvents() {
-		_ = s.viewer.writeInput(input)
+		if err := s.viewer.writeInput(input); err != nil {
+			s.viewer.logger.event("VIEWER_INPUT_RELEASE_FAILED")
+			return
+		}
 	}
 }
 func (s *viewerInputSender) releaseEvents() []rdp.Input {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	releases := make([]rdp.Input, 0, len(s.keys)+len(s.buttons))
+	for _, input := range s.critical {
+		if input.Type == "key_up" || input.Type == "mouse_up" {
+			releases = append(releases, input)
+		}
+	}
 	for _, input := range s.keys {
 		input.Type = "key_up"
 		releases = append(releases, input)
@@ -105,7 +113,24 @@ func (s *viewerInputSender) enqueueCritical(input rdp.Input) {
 	s.mu.Unlock()
 	s.signal()
 }
-func (s *viewerInputSender) releaseOnFocusLoss() { s.releaseAll() }
+
+// Focus messages only enqueue releases; the sole sender owns network I/O.
+func (s *viewerInputSender) releaseOnFocusLoss() {
+	s.mu.Lock()
+	for _, input := range s.keys {
+		input.Type = "key_up"
+		s.critical = append(s.critical, input)
+	}
+	for _, input := range s.buttons {
+		input.Type = "mouse_up"
+		s.critical = append(s.critical, input)
+	}
+	s.keys = make(map[uint16]rdp.Input)
+	s.buttons = make(map[string]rdp.Input)
+	s.move = nil
+	s.mu.Unlock()
+	s.signal()
+}
 func (s *viewerInputSender) signal() {
 	select {
 	case s.wake <- struct{}{}:
@@ -129,6 +154,11 @@ func (s *viewerInputSender) run() {
 }
 func (s *viewerInputSender) flush() {
 	for {
+		select {
+		case <-s.stop:
+			return
+		default:
+		}
 		input, move, ok := s.next()
 		if !ok {
 			return

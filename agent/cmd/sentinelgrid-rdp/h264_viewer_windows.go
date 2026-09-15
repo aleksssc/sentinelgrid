@@ -11,7 +11,7 @@ import (
 
 func (v *viewer) configureVideoCapabilities(width, height int) {
 	v.mu.RLock()
-	if v.videoCodec != "" || v.ws == nil || v.renderer == nil {
+	if v.videoCodec != "" || v.ws == nil || v.renderer == nil || v.sessionClosed || v.closeRequested {
 		v.mu.RUnlock()
 		return
 	}
@@ -22,7 +22,7 @@ func (v *viewer) configureVideoCapabilities(width, height int) {
 		codecs = []string{"h264", "jpeg"}
 	}
 	v.mu.Lock()
-	if v.videoCodec != "" || v.ws == nil {
+	if v.videoCodec != "" || v.ws == nil || v.sessionClosed || v.closeRequested {
 		v.mu.Unlock()
 		if decoder != nil {
 			decoder.close()
