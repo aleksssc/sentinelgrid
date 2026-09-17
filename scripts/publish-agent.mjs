@@ -16,13 +16,16 @@ const names = {
 };
 
 export function validateManifest(manifest, version, channel, signer) {
-  if (!/^\d+\.\d+\.\d+$/.test(version) || !["dev", "beta", "stable"].includes(channel) ||
+  const parts = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.exec(version);
+  if (!parts || parts[0] !== version || Number(parts[1]) > 255 || Number(parts[2]) > 255 || Number(parts[3]) > 65535 ||
+      !["dev", "beta", "stable"].includes(channel) ||
       !/^[A-F0-9]{64}$/.test(signer) || manifest.schema_version !== 1 || manifest.product !== "SentinelGridAgent" ||
       manifest.version !== version || manifest.channel !== channel || manifest.platform !== "windows" ||
       manifest.architecture !== "amd64" || manifest.signed !== true || typeof manifest.development_update_build !== "boolean" ||
       manifest.development_repair_package === true ||
       manifest.installation_artifact !== "msi" || manifest.update_protocol !== 2 ||
       !Array.isArray(manifest.trusted_signer_sha256) || !manifest.trusted_signer_sha256.includes(signer) ||
+      manifest.trusted_signer_sha256.some((pin) => !/^[A-F0-9]{64}$/.test(pin)) ||
       (channel === "stable" && manifest.development_update_build)) throw new Error("INVALID_RELEASE_MANIFEST");
   httpsOrigin(manifest.server_url, "MANIFEST_SERVER_URL");
   for (const key of artifactKeys) {
@@ -32,10 +35,44 @@ export function validateManifest(manifest, version, channel, signer) {
   }
 }
 
-// Dependency injection keeps all failure-ordering tests isolated from hosted infrastructure.
+export function validatePublicationProfile(manifest, signer, env) {
+  if (manifest.channel !== "stable") {
+    if (manifest.development_update_build && env.SENTINELGRID_PUBLISH_ALLOW_DEVELOPMENT !== "true") throw new Error("ISOLATED_DEVELOPMENT_BACKEND_ACKNOWLEDGEMENT_REQUIRED");
+    return;
+  }
+  const pins = env.SENTINELGRID_UPDATE_SIGNER_SHA256;
+  if (!/^[a-fA-F0-9]{40}$/.test(env.SENTINELGRID_SIGN_CERT_THUMBPRINT ?? "") ||
+      !/^[a-fA-F0-9]{64}(,[a-fA-F0-9]{64})*$/.test(pins ?? "") ||
+      !pins.toUpperCase().split(",").includes(signer) || manifest.trusted_signer_sha256.join(",") !== pins.toUpperCase()) {
+    throw new Error("PRODUCTION_SIGNER_NOT_CONFIGURED_OR_PIN_MISMATCH");
+  }
+  if (env.SENTINELGRID_SIGN_CERT_THUMBPRINT.toUpperCase() === env.SENTINELGRID_DEV_SIGN_CERT_THUMBPRINT?.toUpperCase() ||
+      manifest.trusted_signer_sha256.includes(env.SENTINELGRID_DEV_UPDATE_SIGNER_SHA256?.toUpperCase())) throw new Error("PRODUCTION_CANNOT_TRUST_DEVELOPMENT_SIGNER");
+}
+
+export async function verifyPublishedChannel(admin, expected) {
+  const { data: head, error: headError } = await admin.from("agent_release_channels")
+    .select("release_id").eq("channel", expected.channel).maybeSingle();
+  if (headError || !head?.release_id) throw new Error("PUBLISHED_CHANNEL_HEAD_VERIFICATION_FAILED");
+  const { data: release, error: releaseError } = await admin.from("agent_releases")
+    .select("id, version, channel, platform, architecture, is_active, storage_path, sha256, size_bytes")
+    .eq("id", head.release_id).single();
+  if (releaseError || !release || release.id !== head.release_id || release.version !== expected.version ||
+      release.channel !== expected.channel || release.platform !== "windows" || release.architecture !== "amd64" ||
+      release.is_active !== true || release.storage_path !== `${expected.channel}/${expected.version}/SentinelGridAgent.exe` ||
+      release.sha256 !== expected.sha256 || release.size_bytes !== expected.size_bytes) throw new Error("PUBLISHED_RELEASE_DB_MISMATCH");
+  const { data: bundle, error: bundleError } = await admin.from("agent_release_bundles")
+    .select("msi_sha256, msi_size_bytes, updater_sha256, updater_size_bytes, manifest_sha256, signer_sha256, development_build")
+    .eq("release_id", head.release_id).single();
+  if (bundleError || !bundle || ["msi_sha256", "msi_size_bytes", "updater_sha256", "updater_size_bytes", "manifest_sha256", "signer_sha256", "development_build"]
+    .some((key) => bundle[key] !== expected[key])) throw new Error("PUBLISHED_BUNDLE_DB_MISMATCH");
+}
+
+// Dependency injection keeps failure-ordering tests isolated from hosted infrastructure.
 export async function publishRelease({ manifest, manifestBytes, version, channel, signer, readArtifact, validateLocal,
-  upload, download, validateStored, activate, verifyWebsite }) {
+  upload, download, validateStored, activate, verifyChannel, verifyWebsite }) {
   validateManifest(manifest, version, channel, signer);
+  if (JSON.stringify(JSON.parse(manifestBytes)) !== JSON.stringify(manifest)) throw new Error("MANIFEST_BYTES_MISMATCH");
   await validateLocal();
   const files = [];
   for (const key of artifactKeys) {
@@ -55,13 +92,15 @@ export async function publishRelease({ manifest, manifestBytes, version, channel
     if (stored.length !== file.size || digest(stored) !== file.sha256) throw new Error("STORED_ARTIFACT_MISMATCH");
     await validateStored(file.filename, stored);
   }
-  // This callback must revalidate the complete downloaded bundle with Windows Authenticode.
   await validateStored();
-  await activate({ version, channel, sha256: manifest.agent.sha256, size_bytes: manifest.agent.size,
+  const release = { version, channel, sha256: manifest.agent.sha256, size_bytes: manifest.agent.size,
     msi_sha256: manifest.msi.sha256, msi_size_bytes: manifest.msi.size,
     updater_sha256: manifest.updater.sha256, updater_size_bytes: manifest.updater.size,
-    manifest_sha256: digest(manifestBytes), signer_sha256: signer, development_build: manifest.development_update_build });
+    manifest_sha256: digest(manifestBytes), signer_sha256: signer, development_build: manifest.development_update_build };
+  await activate(release);
+  await verifyChannel(release);
   await verifyWebsite();
+  await verifyChannel(release);
 }
 
 function httpsOrigin(value, label) {
@@ -97,23 +136,31 @@ async function main() {
   const manifestBytes = await readFile(join(directory, "manifest.json"));
   const manifest = JSON.parse(manifestBytes);
   validateManifest(manifest, version, channel, signer);
-  if (manifest.development_update_build && process.env.SENTINELGRID_PUBLISH_ALLOW_DEVELOPMENT !== "true") throw new Error("ISOLATED_DEVELOPMENT_BACKEND_ACKNOWLEDGEMENT_REQUIRED");
+  validatePublicationProfile(manifest, signer, process.env);
   if (new URL(manifest.server_url).origin !== website.origin) throw new Error("MSI_ENROLLMENT_ORIGIN_MUST_MATCH_WEBSITE");
   const admin = createClient(backend.href, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const storage = admin.storage.from("agent-releases");
   const { data: bucket, error: bucketError } = await admin.storage.getBucket("agent-releases");
   if (bucketError || !bucket || bucket.public) throw new Error("PRIVATE_RELEASE_BUCKET_REQUIRED");
-  const { data: token, error: tokenError } = await admin.from("agent_enrollment_tokens")
-    .select("organization_id, expires_at, used_at, revoked_at").eq("token_hash", digest(enrollmentToken)).maybeSingle();
-  if (tokenError || !token || token.used_at || token.revoked_at || !Number.isFinite(Date.parse(token.expires_at)) || Date.parse(token.expires_at) < Date.now() + 180000) throw new Error("VALID_WEBSITE_ENROLLMENT_TOKEN_REQUIRED_WITH_THREE_MINUTES_REMAINING");
-  const { data: policy, error: policyError } = await admin.from("organization_agent_update_settings")
-    .select("channel").eq("organization_id", token.organization_id).maybeSingle();
-  if (policyError || (policy?.channel ?? "stable") !== channel) throw new Error("WEBSITE_TEST_TOKEN_CHANNEL_MISMATCH");
-  const evidence = join(root, "dist", "validation", `publish-${version}-${randomUUID()}`);
+  async function verifyEnrollmentContext() {
+    const { data: token, error: tokenError } = await admin.from("agent_enrollment_tokens")
+      .select("organization_id, expires_at, used_at, revoked_at").eq("token_hash", digest(enrollmentToken)).maybeSingle();
+    if (tokenError || !token || token.used_at || token.revoked_at || !Number.isFinite(Date.parse(token.expires_at)) || Date.parse(token.expires_at) < Date.now() + 180000) throw new Error("VALID_WEBSITE_ENROLLMENT_TOKEN_REQUIRED_WITH_THREE_MINUTES_REMAINING");
+    const { data: policy, error: policyError } = await admin.from("organization_agent_update_settings")
+      .select("channel").eq("organization_id", token.organization_id).maybeSingle();
+    if (policyError || (policy?.channel ?? "stable") !== channel) throw new Error("WEBSITE_TEST_TOKEN_CHANNEL_MISMATCH");
+  }
+  await verifyEnrollmentContext();
+  const { data: existing, error: existingError } = await admin.from("agent_releases")
+    .select("id").eq("channel", channel).eq("version", version).eq("platform", "windows").eq("architecture", "amd64").maybeSingle();
+  if (existingError) throw new Error("IMMUTABLE_RELEASE_PREFLIGHT_FAILED");
+  if (existing) throw new Error("RELEASE_ALREADY_PUBLISHED_IMMUTABLE_CHECK_PREVIOUS_PUBLICATION_EVIDENCE");
+  const evidence = join(root, "dist", "validation", `publish-${channel}-${version}-${randomUUID()}`);
   await mkdir(evidence, { recursive: true });
   function validate(dir, websiteMSI) {
     const args = ["-NoProfile", "-NonInteractive", "-File", join(root, "scripts", "validate-agent-release.ps1"),
       "-ArtifactDirectory", dir, "-ExpectedVersion", version, "-ExpectedChannel", channel, "-ExpectedSignerSHA256", signer];
+    if (channel === "stable") args.push("-ExpectedCertificateThumbprint", process.env.SENTINELGRID_SIGN_CERT_THUMBPRINT);
     if (websiteMSI) args.push("-WebsiteMSI", websiteMSI);
     const result = spawnSync("powershell.exe", args, { stdio: "inherit", windowsHide: true });
     if (result.error || result.status !== 0) throw new Error("WINDOWS_RELEASE_VALIDATION_FAILED");
@@ -124,20 +171,25 @@ async function main() {
     upload: async (path, bytes) => {
       const { error } = await storage.upload(path, bytes, { upsert: false, contentType: "application/octet-stream", cacheControl: "31536000" });
       if (error && String(error.statusCode) !== "409") throw new Error("IMMUTABLE_ARTIFACT_UPLOAD_FAILED");
-      // An interrupted publish may resume only if existing bytes independently verify below.
+      // Resume an interrupted upload only when existing bytes independently verify below.
       if (error) console.log("Existing immutable object: verifying before resuming.");
     },
     download: async (path, size) => {
       const { data, error } = await storage.createSignedUrl(path, 180);
       if (error || !data) throw new Error("STORAGE_VERIFICATION_URL_FAILED");
       const url = new URL(data.signedUrl);
-      if (url.protocol !== "https:" || url.origin !== backend.origin) throw new Error("UNTRUSTED_STORAGE_ORIGIN");
+      if (url.protocol !== "https:" || url.origin !== backend.origin || url.username || url.password) throw new Error("UNTRUSTED_STORAGE_ORIGIN");
       return (await boundedDownload(url, size)).bytes;
     },
     validateStored: (filename, bytes) => filename ? writeFile(join(evidence, filename), bytes, { flag: "wx" }) : validate(evidence),
     activate: async (release) => {
+      await verifyEnrollmentContext();
       const { error } = await admin.rpc("publish_agent_release", { p_release: release });
       if (error) throw new Error("PUBLICATION_COMMIT_FAILED_OR_UNACKNOWLEDGED_CHECK_CHANNEL_STATE");
+    },
+    verifyChannel: async (release) => {
+      await verifyEnrollmentContext();
+      await verifyPublishedChannel(admin, release);
     },
     verifyWebsite: async () => {
       const url = new URL("/api/agent/download", website);
@@ -145,7 +197,7 @@ async function main() {
       const response = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(20000) });
       if (response.status !== 302 || response.headers.get("x-sentinelgrid-version") !== version || response.headers.get("x-sentinelgrid-channel") !== channel) throw new Error("PUBLISHED_BUT_WEBSITE_VERSION_VERIFICATION_FAILED");
       const location = new URL(response.headers.get("location") ?? "");
-      if (location.protocol !== "https:" || location.origin !== backend.origin ||
+      if (location.protocol !== "https:" || location.origin !== backend.origin || location.username || location.password || location.hash ||
           location.pathname !== `/storage/v1/object/sign/agent-releases/${channel}/${version}/SentinelGridAgent.msi` ||
           location.searchParams.get("download") !== `SentinelGridAgent__${enrollmentToken}.msi`) throw new Error("PUBLISHED_BUT_WEBSITE_STORAGE_OR_FILENAME_INVALID");
       const downloaded = await boundedDownload(location, manifest.msi.size);
@@ -153,10 +205,10 @@ async function main() {
       const path = join(evidence, "website-SentinelGridAgent.msi");
       await writeFile(path, downloaded.bytes, { flag: "wx" });
       validate(evidence, path);
-      await writeFile(join(evidence, "receipt.json"), JSON.stringify({ version, channel, signer_sha256: signer,
-        website_msi_sha256: digest(downloaded.bytes), website_filename_verified: true, verified_at: new Date().toISOString() }, null, 2));
     },
   });
+  await writeFile(join(evidence, "receipt.json"), JSON.stringify({ version, channel, signer_sha256: signer,
+    website_msi_sha256: manifest.msi.sha256, channel_head_verified: true, website_filename_verified: true, verified_at: new Date().toISOString() }, null, 2), { flag: "wx" });
   console.log(`PUBLISHED AND WEBSITE VERIFIED: ${version} ${channel}. Evidence: ${evidence}`);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

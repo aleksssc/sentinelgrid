@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory = $true)][string]$ArtifactDirectory,
     [Parameter(Mandatory = $true)][string]$ExpectedVersion,
     [Parameter(Mandatory = $true)][ValidateSet('dev', 'beta', 'stable')][string]$ExpectedChannel,
-    [string]$ExpectedSignerSHA256 = 'A69D0BD1B538550D53F16FCB727F81893B0781ED75C58FC77A50AC214FB3996F',
+    [Parameter(Mandatory = $true)][string]$ExpectedSignerSHA256,
+    [string]$ExpectedCertificateThumbprint,
     [string]$WebsiteMSI
 )
 Set-StrictMode -Version Latest
@@ -14,6 +15,9 @@ function Assert-Signature([string]$Path) {
     $signature = Get-AuthenticodeSignature -LiteralPath $Path
     if ($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate) { throw "Authenticode is not Valid: $([IO.Path]::GetFileName($Path)) ($($signature.Status))" }
     if ((Get-SignerSHA256 $signature.SignerCertificate) -cne $ExpectedSignerSHA256.ToUpperInvariant()) { throw 'Signer SHA256 differs from the independently supplied pin.' }
+    if ($ExpectedCertificateThumbprint -and $signature.SignerCertificate.Thumbprint -ine $ExpectedCertificateThumbprint) { throw 'Artifact signer differs from the configured certificate thumbprint.' }
+    Assert-CodeSigningIdentity $signature.SignerCertificate $manifest.development_update_build
+    if ($ExpectedChannel -eq 'stable' -and $env:SENTINELGRID_DEV_UPDATE_SIGNER_SHA256 -and @($manifest.trusted_signer_sha256) -contains $env:SENTINELGRID_DEV_UPDATE_SIGNER_SHA256.ToUpperInvariant()) { throw 'Stable artifacts cannot trust the configured development signer.' }
 }
 function Assert-Version([string]$Actual, [string]$Expected, [string]$Message) {
     if ([version]$Actual -ne [version]($Expected + '.0')) { throw $Message }
@@ -73,13 +77,15 @@ function Assert-PE([string]$Path) {
         if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne 0x8664) { throw 'PE is not Windows amd64.' }
     } finally { $reader.Dispose(); $stream.Dispose() }
 }
-if ($ExpectedSignerSHA256 -notmatch '^[A-Fa-f0-9]{64}$') { throw 'An independent single SHA256 signer pin is required.' }
+if ($ExpectedSignerSHA256 -notmatch '^[A-Fa-f0-9]{64}\z') { throw 'An independent single SHA256 signer pin is required.' }
+if ($ExpectedCertificateThumbprint -and $ExpectedCertificateThumbprint -notmatch '^[A-Fa-f0-9]{40}\z') { throw 'Expected certificate thumbprint must be 40 hex characters.' }
 $directory = (Resolve-Path -LiteralPath $ArtifactDirectory).Path
 $manifest = Get-Content -LiteralPath (Join-Path $directory 'manifest.json') -Raw | ConvertFrom-Json
 if ($manifest.installation_artifact -cne 'msi' -or $manifest.update_protocol -ne 2) { throw 'Full-product MSI publication is required.' }
 if ($manifest.schema_version -ne 1 -or $manifest.product -cne 'SentinelGridAgent' -or $manifest.version -cne $ExpectedVersion -or $manifest.channel -cne $ExpectedChannel -or $manifest.platform -cne 'windows' -or $manifest.architecture -cne 'amd64' -or $manifest.signed -ne $true) { throw 'Invalid release manifest identity or signing state.' }
+if ($manifest.development_update_build -isnot [bool]) { throw 'Manifest development_update_build must be a boolean.' }
 if ($manifest.development_update_build -and $ExpectedChannel -eq 'stable') { throw 'Development artifacts cannot be stable.' }
-if (@($manifest.trusted_signer_sha256) -cnotcontains $ExpectedSignerSHA256.ToUpperInvariant()) { throw 'Manifest signer does not match the expected pin.' }
+if (@($manifest.trusted_signer_sha256) -cnotcontains $ExpectedSignerSHA256.ToUpperInvariant() -or (@($manifest.trusted_signer_sha256) | Where-Object { $_ -cnotmatch '^[A-F0-9]{64}\z' })) { throw 'Manifest signer does not match the expected pin.' }
 $server = [uri]$manifest.server_url
 if (-not $server.IsAbsoluteUri -or $server.Scheme -ne 'https' -or -not $server.Host -or $server.UserInfo -or $server.Query -or $server.Fragment -or $server.AbsolutePath -ne '/') { throw 'Invalid manifest enrollment origin.' }
 $names = [ordered]@{ agent='SentinelGridAgent.exe'; updater='SentinelGridUpdater.exe'; rdp_client='SentinelGridRDP.exe'; native_video='SentinelGridVideo.dll'; msi='SentinelGridAgent.msi' }

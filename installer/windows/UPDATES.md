@@ -1,27 +1,213 @@
 # Full-product MSI updates (protocol 2)
 
+## Daily release command and signing setup
+
+Use one orchestrator for all channels. Run signing setup explicitly, not for each
+release. It never builds, publishes, changes organization policy or enables updates.
+
+```powershell
+# Elevated PowerShell for the default LocalMachine Beta certificate/trust store:
+.\scripts\setup-signing.ps1 -Profile Beta
+# Separate Production certificate, default CurrentUser store:
+.\scripts\setup-signing.ps1 -Profile Production
+
+# Daily commands (no setup is called automatically):
+.\scripts\release-agent.ps1 -Channel beta
+.\scripts\release-agent.ps1 -Channel stable -Version 1.0.0
+.\scripts\release-agent.ps1 -Channel dev
+# Optional explicit website origin:
+.\scripts\release-agent.ps1 -Channel beta -WebsiteURL "https://sentinelgrid-one.vercel.app"
+```
+
+| Channel | Signing configuration | Development build | Version policy |
+| --- | --- | --- | --- |
+| beta | Existing certificate discovered by published beta SHA256 pin; `SENTINELGRID_DEV_UPDATE_SIGNER_SHA256` for bootstrap | true | Explicit, or patch after max(local VERSION, published versions in beta) |
+| dev | Explicit development profile; separate organization/channel/artifact paths | true | Explicit, or patch after max(local VERSION, published versions in dev) |
+| stable | `SENTINELGRID_SIGN_CERT_THUMBPRINT`, `SENTINELGRID_UPDATE_SIGNER_SHA256` | false | Explicit only, newer than every published stable version |
+
+Versions must be exact `major.minor.patch`, within MSI limits `255.255.65535`.
+There are no prerelease suffixes: rings are represented by the channel. Stable
+versions are not inferred from beta; an explicit stable version can differ from
+the local VERSION left by another ring. Existing same/older channel versions are
+rejected. Successful releases update `agent\VERSION` atomically after all remote
+checks and confirmed token revocation, under a local release lock.
+
+Beta setup reuses the existing `CN=SentinelGrid DEVELOPMENT ONLY Code Signing`
+certificate, or creates it only if neither certificate nor prior signer configuration
+exists. Production setup uses a separate `CN=SentinelGrid Code Signing` certificate.
+To select an existing CA-issued RSA code-signing certificate, pass
+`-CertificateThumbprint <thumbprint> -CertificateStore CurrentUser|LocalMachine`.
+Ambiguous certificates, stale configured thumbprints, invalid EKU, missing/private
+key access failures, expired/not-yet-valid certificates and pin mismatches abort setup.
+Setup never silently replaces a configured pin. Restore existing keys/configuration
+rather than accidentally rotating the signer that deployed Agents already trust.
+
+New keys are RSA 3072, SHA256 and non-exportable. Setup verifies a private-key signing
+challenge and derives the SHA256 pin from the public certificate. It persists public
+identifiers in the current process and Windows User environment by default (opt out
+with `-SetUserEnvironment $false`). No `.env` file or secret is written. Other open
+terminals retain their old environment. The Beta default is LocalMachine; Production
+is CurrentUser. Both support an explicit store. Only explicit setup adds public trust
+in the selected scope: TrustedPublisher, and Root for self-signed certificates.
+
+**A self-signed Production certificate is not publicly trusted code signing.** It
+requires independently verified public-certificate trust deployment to target
+machines, including SYSTEM, before rollout. CurrentUser build-machine trust does
+not establish fleet trust. For public distribution, select a suitably trusted
+CA-issued certificate. Production requires an HTTPS RFC3161 timestamp endpoint;
+setup defaults to `https://timestamp.digicert.com` when none is configured, or accepts
+`-TimestampUrl`. Development timestamps remain optional. No TLS/Authenticode/origin
+or hash validation is disabled, and signing does not qualify production auto-update.
+
+If Production is missing, stable stops before contacting the backend:
+
+```text
+Production signer not configured.
+Run:
+.\scripts\setup-signing.ps1 -Profile Production
+```
+
+### Backend and verification organization
+
+The orchestrator reads backend/website/organization settings from process variables
+or read-only `.env.local`; explicit signing settings come from the process environment.
+Beta also resolves its existing pin from the latest published beta bundle, as below.
+See `.env.example` for placeholders. Explicit backend `SENTINELGRID_PUBLISH_*`
+settings take priority. The selected administration key can be a legacy service-role
+JWT or a modern `sb_secret_*` key; the latter is not sent as a JWT in PowerShell REST
+calls. Configure the intended key explicitly if old settings are stale: authentication
+errors are not silently ignored. The backend must be an explicit HTTPS origin.
+
+Website discovery preserves the original beta flow for every channel. It tries
+`NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_SITE_URL`, then `APP_URL`,
+skipping ineligible values such as `http://localhost:3000` without upgrading HTTP to
+HTTPS. Eligible HTTPS URLs are reduced to their origin, as in the original
+`Convert-ToHttpsOrigin`; credentials, query strings and fragments are rejected.
+If none qualify, it reads `Server`, `server`, `ServerURL`, `server_url` or `serverUrl`
+from `ProgramData\SentinelGrid\agent.json` (normally
+`C:\ProgramData\SentinelGrid\agent.json`). Missing/unusable config falls through;
+read/JSON errors emit a warning without printing config contents. The final fallback
+is `https://sentinelgrid-one.vercel.app`. No per-release environment setup is needed.
+Optional `-WebsiteURL` overrides discovery and must be an HTTPS origin without a
+path, credentials, query or fragment; an invalid override fails instead of falling
+back. The resolved origin is passed unchanged to build and publisher. The orchestrator
+sets `SENTINELGRID_PUBLISH_WEBSITE_URL` for the low-level publisher, not for discovery.
+
+Set `SENTINELGRID_RELEASE_BETA_ORGANIZATION_ID`,
+`SENTINELGRID_RELEASE_STABLE_ORGANIZATION_ID` and
+`SENTINELGRID_RELEASE_DEV_ORGANIZATION_ID` for deterministic verification contexts,
+or pass `-OrganizationId`. An explicitly selected organization with the wrong
+effective channel fails without trying another organization. Without a configured
+ID, discovery is limited to the requested effective channel and requires an existing
+real client and owner. Missing organization settings mean stable, exactly as on the
+website; beta/dev require their explicit policy. No policy, clients, owners or device
+relationships are created/changed by the release command.
+
+The same build and publisher are used for all three rings:
+
+```text
+release-agent.ps1
+  resolve channel / explicit signing profile for stable or dev
+  resolve verification organization / real client / owner
+  read latest channel bundle; discover existing beta certificate by its pin
+  verify signer continuity and determine version
+  build-agent.ps1 (or fully validate and reuse existing artifacts)
+  recheck organization and create a 30-minute temporary enrollment token
+  publish-agent.mjs
+    verify local signatures, versions, hashes and MSI trust metadata
+    upload immutable channel/version objects and download/verify every object
+    validate the complete downloaded bundle with Windows Authenticode
+    publish_agent_release
+    verify agent_release_channels + agent_releases + agent_release_bundles
+    real /api/agent/download redirect, filename, origin and MSI validation
+    recheck organization/token and channel DB state; write a receipt
+  revoke token in finally, requiring backend confirmation
+  restore previous process environment
+  update agent/VERSION only after success
+```
+
+The token intentionally remains **after the expensive build**, as in the old beta
+flow, rather than expiring during native compilation. Token revocation is attempted
+even when creation may have committed but its response was lost. Revocation failure
+is an error, not a successful release with a warning. Tokens/keys/signed URLs are not
+printed. A hard process termination can prevent cleanup; the token still expires.
+
+### Migration and interrupted publication
+
+`release-beta.ps1` remains a deprecated, thin wrapper around
+`release-agent.ps1 -Channel beta`, including its `-OrganizationId` parameter.
+`setup-dev-code-signing.ps1` similarly delegates to Beta setup and retains its old
+opt-in User-environment persistence. There is no second release implementation.
+Beta reuses the existing private certificate by SHA256, searching `CurrentUser\My`
+then `LocalMachine\My`, as the original beta script did. The latest published beta
+bundle's pin is authoritative; `SENTINELGRID_DEV_UPDATE_SIGNER_SHA256` is used only
+when no beta release exists. Stale DEV pin/thumbprint values produce a warning and
+are not persisted or rotated. No configured thumbprint/store is required for beta
+discovery. Missing matching private keys, invalid EKU, certificate validity failures
+or invalid published signer/profile metadata abort; setup is not invoked.
+
+Publication never reads or executes the installed Agent executable. Its presence,
+channel, Authenticode state and update eligibility are not publication prerequisites.
+Only its optional JSON config is consulted as a website discovery fallback.
+Stable still requires its explicit, separate PROD signer and validates the new
+Agent, Updater, RDP, native video DLL and MSI with valid Authenticode and the PROD
+SHA256 pin. Manifest, embedded Agent/Updater trust and MSI must agree on
+`development_update_build=false`. Installed beta/dev -> stable is a separate VM
+lifecycle exercise, not a release preflight; publication does not qualify upgrades.
+
+Replace old scheduled/manual commands with `release-agent.ps1 -Channel beta`.
+The original website discovery/default remains available; `-WebsiteURL` is optional.
+Configure a verification organization if the old script relied on its hardcoded
+preferred organization. Never replace the development signer just to migrate the
+wrapper. `build-agent.ps1 -Publish` now fails with migration guidance: use the
+orchestrator for publication. Direct build-only commands and development repair
+builds remain available.
+
+New build artifacts live at `dist\agent\<channel>\<version>`. A valid legacy bundle
+at `dist\agent\<version>` can still be reused only for its exact channel, version,
+origin, development profile and pins, after full local validation. Other-channel
+artifacts are never promoted/copied as a release. Incomplete or invalid local builds
+are retained and require deliberate archiving; no stale resources are deleted by
+the orchestrator. Build and release locks prevent competing local operations.
+
+Storage uploads use `upsert: false`. An interrupted pre-commit upload may resume only
+when existing bytes match exactly. Published releases cannot be overwritten or
+recommitted, even if subsequent website validation fails. A failure after the RPC
+may mean the channel is already live: inspect the channel and evidence under
+`dist\validation\publish-<channel>-<version>-<uuid>` before retrying. A success receipt
+is written only after website and final DB verification; token revocation is then
+confirmed by the orchestrator. Failed releases leave VERSION unchanged and retain
+artifacts/evidence. Do not delete remote releases to force a retry or rollback; use
+an explicit newer release after resolving the failure.
+
+No SQL, migrations, RLS or API effective-channel policy changes are required by this
+refactor. The existing schema includes `agent_release_bundles` for product metadata;
+these fields do not belong to `agent_releases`. The SQL files referenced by the
+migration test are absent from this checkout, so hosted RPC/RLS immutability cannot
+be qualified here. Do not interpret local mocked DB checks as hosted SQL proof.
+
 ## Scope and qualification
 
 Auto Update and the dashboard's **Update Agent** command use the same Go
 `WindowsHost.InstallRelease` policy/download/handoff engine. The scheduler supplies
 an empty command ID; Force Update supplies the existing command UUID. Neither
 trigger can select a URL, executable, signer, organization or downgrade policy.
+Both continue to respect the server-derived effective channel and release delay;
+a stable organization does not receive beta, nor beta stable.
 
-The MSI now contains Agent, Updater and RDP with one release version. Their
-`-version` output, PE version resources, manifest entries and MSI File/Product
-versions must agree before publication. Individual EXEs remain diagnostic/build
-artifacts, not remote installation payloads. RDP transport/protocol is unchanged.
+The MSI contains Agent, Updater, RDP and the native video DLL with one release
+version. Executable `-version` output, PE resources, manifest entries and MSI
+File/Product versions must agree before publication. Individual EXEs remain
+diagnostic/build artifacts, not remote installation payloads. RDP is unchanged.
 
 This is not production lifecycle qualification. `Qualified = false` remains in
-place. The existing signed development build uses the existing development tag,
-certificate and embedded pin; it is restricted to beta/dev. No certificate is
-created/replaced, no environment file is written, and no TLS check is relaxed.
+place. Development builds use the existing tag and embedded pin, only in beta/dev.
 A VM lifecycle qualification with signed N -> N+1 -> N+2 is required before
 production enablement. MSI upgrades intentionally restart services: **zero
 interruption of an individual Agent/Terminal session cannot be guaranteed**.
 Schedule rollout outside active remote sessions; do not force fleet reconnections.
 
-## Shared pipeline and security
+## Shared update engine and security
 
 1. Authenticate to the existing check API; select the latest eligible channel/version
    from server inventory and organization policy, including the release delay.
@@ -52,13 +238,8 @@ Schedule rollout outside active remote sessions; do not force fleet reconnection
    authenticated heartbeat for this transaction and the existing one-minute stable-process
    interval. Only then persist/report `succeeded` through the existing HTTP receipt.
 
-The website release/download enrollment flow and temporary enrollment-token
-creation/revocation in `scripts\release-beta.ps1` are unchanged. That script calls
-the strengthened build/publisher/validator and cannot reuse an old EXE-only
-manifest as a protocol-2 release. Reusing a valid immutable build still works.
-
 On the validation host, WiX sometimes materialized only the long output filename's
-8.3 alias. The build now authors `package.msi` and renames that known build output
+8.3 alias. The build authors `package.msi` and renames that known build output
 to `SentinelGridAgent.msi` **before** signing and hashing; it never accepts an
 unexpected artifact name or changes already-published bytes.
 
@@ -95,10 +276,7 @@ existing enrollment/config validation conditions remain in place.
   remain mandatory. No global queue, realtime or Redis delivery changes are required.
 
 Local `awaiting_health` maps to the existing backend `restarting` status if reported;
-terminal receipt semantics and existing SQL status/error enums are preserved. The
-SQL migration files referenced by `scripts\test-agent-migrations.mjs` are absent
-from this checkout, so those RPC implementations must be restored and tested before
-qualifying a hosted rollout. No Supabase migration/RLS/auth changes were made here.
+terminal receipt semantics and existing SQL status/error enums are preserved.
 
 ## Compatibility, bootstrap and rollout rollback
 
@@ -129,10 +307,10 @@ partial updates. It does not migrate protocol-2 journals back to protocol 1.
 
 Use existing signing configuration. Do not run these installation commands on a
 production endpoint as a substitute for qualification. Take a VM snapshot first.
-Build/publish with the existing release flow (no changes to `.env.local`):
+Build/publish with the shared release flow (no changes to `.env.local`):
 
 ```powershell
-.\scripts\release-beta.ps1
+.\scripts\release-agent.ps1 -Channel beta
 # Or build only, using the already configured development signer:
 .\scripts\build-agent.ps1 -Version <N> -Channel beta -DevSign
 ```
@@ -195,6 +373,8 @@ must decide applicability; do not bypass downgrade or same-version guards.
 ## Local checks (no installation/publication)
 
 ```powershell
+.\scripts\test-agent-release.ps1
+.\scripts\test-agent-dev-signing.ps1
 node --test scripts\test-product-update.mjs scripts\test-product-update-api.mjs scripts\test-agent-update.mjs scripts\test-agent-publication.mjs scripts\test-agent-delivery.mjs scripts\test-update-command-feedback.mjs
 npx tsc --noEmit
 Push-Location agent
@@ -206,6 +386,16 @@ Pop-Location
 .\scripts\test-agent-msi.ps1 -BaselineMSI <N-msi> -TargetMSI <N-plus-1-msi>
 ```
 
+The release tests cover channel selection, certificate identity/EKU/private key/time
+and pin rejection, beta certificate discovery in both stores without a configured
+thumbprint, published-pin precedence over stale environment values, publication
+without inspecting the installed Agent executable, website candidate priority and
+localhost rejection, config/default fallbacks, explicit website overrides and origin
+propagation to build/publisher, MSI version bounds, token cleanup,
+environment restoration, failures before/after publication, VERSION persistence and
+lock release. They mock external release boundaries and use in-memory certificates,
+not live credentials. Publication tests verify immutable upload ordering and exact
+DB/channel/bundle checks.
 The Go tests cover durable MSI phases, shared automatic/command handoff, bad hash/
 signature, policy expiry, downgrade/equal-version rejection, failed installation,
 health interlocks, config/journal preservation and restart without relaunch. Native
