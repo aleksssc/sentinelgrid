@@ -44,7 +44,7 @@ export async function createClientAction(
   if (error || !data) {
     console.error("Client creation error:", error);
     return {
-      error: error?.code === "23505"
+      error: error?.message?.includes("LIMIT_REACHED") ? "Client limit reached. Upgrade your plan to add more clients." : error?.code === "23505"
         ? "A client with this name already exists in this organization."
         : "Could not create client.",
     };

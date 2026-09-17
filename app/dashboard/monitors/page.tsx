@@ -15,7 +15,10 @@ import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "@/components/dashboard/dashboard-badges";
 import { AddMonitorButton, type AddMonitorState } from "@/components/dashboard/add-monitor-button";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getUserMonitorCreationAccess } from "@/lib/resource-creation";
+import { getOrganizationResourceCreationAccess } from "@/lib/resource-creation";
+import { getOrganizationContext } from "@/lib/organization-context";
+import { assertOrganizationPermission } from "@/lib/organization-access";
+import { redirect } from "next/navigation";
 import { CompactSummary, EmptyState, PageHeader, SectionHeader, Surface } from "@/components/dashboard/dashboard-primitives";
 import { FormSubmitButton } from "@/components/dashboard/form-submit-button";
 
@@ -53,13 +56,18 @@ export default async function MonitorsPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
-  const monitorCreationAccess = await getUserMonitorCreationAccess(createAdminClient(), user.id);
-  const monitorCreationReason = monitorCreationAccess.reason === "subscription_restricted" ? "Your subscription requires attention before new monitors can be created." : monitorCreationAccess.reason === "limit_reached" ? "Monitor limit reached. Upgrade your plan to add more monitors." : undefined;
+  const { organization } = await getOrganizationContext();
+  if (!organization) redirect("/onboarding");
+  const organizationId = organization.id;
+  const monitorCreationAccess = await getOrganizationResourceCreationAccess(createAdminClient(), organizationId, user.id, "monitors");
+  const monitorCreationReason = monitorCreationAccess.reason === "permission_denied" ? "Only owners and admins can create monitors." : monitorCreationAccess.reason === "subscription_restricted" ? "Your subscription requires attention before new monitors can be created." : monitorCreationAccess.reason === "limit_reached" ? "Monitor limit reached. Upgrade your plan to add more monitors." : undefined;
 
-  const { data: monitors } = await supabase
+  const { data: monitors, error: monitorsError } = await supabase
     .from("monitors")
     .select("*")
+    .eq("organization_id", organizationId)
     .order("created_at", { ascending: false });
+  if (monitorsError) throw new Error("Could not load organization monitors", { cause: monitorsError });
 
   async function addMonitor(_previousState: AddMonitorState, formData: FormData): Promise<AddMonitorState> {
     "use server";
@@ -86,11 +94,11 @@ export default async function MonitorsPage() {
 
     if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") return { error: "Only HTTP and HTTPS endpoints are supported." };
 
-    const currentAccess = await getUserMonitorCreationAccess(createAdminClient(), user.id);
-    if (!currentAccess.allowed) return { error: currentAccess.reason === "subscription_restricted" ? "Your subscription requires attention before new monitors can be created." : "Monitor limit reached. Upgrade your plan to add more monitors." };
+    const currentAccess = await getOrganizationResourceCreationAccess(createAdminClient(), organizationId, user.id, "monitors");
+    if (!currentAccess.allowed) return { error: currentAccess.reason === "permission_denied" ? "Only owners and admins can create monitors." : currentAccess.reason === "subscription_restricted" ? "Your subscription requires attention before new monitors can be created." : "Monitor limit reached. Upgrade your plan to add more monitors." };
 
-    const { error } = await supabase.from("monitors").insert({ user_id: user.id, name, url: parsedUrl.toString() });
-    if (error) { console.error("Monitor creation error:", error); return { error: "Could not create monitor." }; }
+    const { error } = await supabase.from("monitors").insert({ organization_id: organizationId, user_id: user.id, name, url: parsedUrl.toString() });
+    if (error) { console.error("Monitor creation error:", error); return { error: error.message.includes("LIMIT_REACHED") ? "Monitor limit reached. Upgrade your plan to add more monitors." : "Could not create monitor." }; }
     revalidatePath("/dashboard/monitors");
     return { success: "Monitor created." };
   }
@@ -103,16 +111,17 @@ export default async function MonitorsPage() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) return ;
+    if (!user) throw new Error("Authentication required");
+    await assertOrganizationPermission(organizationId, "monitors.manage");
 
     const { data: monitor } = await supabase
       .from("monitors")
       .select("*")
       .eq("id", monitorId)
-      .eq("user_id", user.id)
+      .eq("organization_id", organizationId)
       .single();
 
-    if (!monitor) return;
+    if (!monitor) throw new Error("Monitor not found in this organization");
 
     let online = false;
     let statusCode: number | null = null;
@@ -140,7 +149,7 @@ export default async function MonitorsPage() {
       clearTimeout(timeout);
     }
 
-    await supabase.from("monitor_checks").insert({
+    const { error: checkError } = await supabase.from("monitor_checks").insert({
       monitor_id: monitor.id,
       online,
       status_code: statusCode,
@@ -148,7 +157,8 @@ export default async function MonitorsPage() {
       error_message: errorMessage,
     });
 
-    await supabase
+    if (checkError) throw new Error("Could not save monitor check", { cause: checkError });
+    const { error: updateError } = await supabase
       .from("monitors")
       .update({
         status: online ? "online" : "offline",
@@ -157,6 +167,7 @@ export default async function MonitorsPage() {
         last_checked_at: new Date().toISOString(),
       })
       .eq("id", monitor.id);
+    if (updateError) throw new Error("Could not update monitor", { cause: updateError });
 
     revalidatePath("/dashboard/monitors");
     revalidatePath("/dashboard");
@@ -229,7 +240,7 @@ export default async function MonitorsPage() {
                     <div className="flex items-center justify-between gap-3 lg:block"><p className="sg-meta lg:hidden">Last check</p><p className="text-xs text-surface-muted">{formatLastChecked(monitor.last_checked_at)}</p></div>
                     <div className="flex items-center gap-2 lg:w-36 lg:justify-end">
                       <Link href={`/dashboard/monitors/${monitor.id}`} aria-label={`Open ${monitor.name} details`} className="sg-button sg-button-secondary sg-button-sm">Details<ArrowUpRight size={14} /></Link>
-                      <form action={checkAction}><FormSubmitButton aria-label={`Check ${monitor.name} now`} title="Check now" pendingLabel="" variant="secondary" size="icon"><RefreshCw size={15} /></FormSubmitButton></form>
+                      {monitorCreationAccess.reason !== "permission_denied" && <form action={checkAction}><FormSubmitButton aria-label={`Check ${monitor.name} now`} title="Check now" pendingLabel="" variant="secondary" size="icon"><RefreshCw size={15} /></FormSubmitButton></form>}
                     </div>
                   </div>
                 );

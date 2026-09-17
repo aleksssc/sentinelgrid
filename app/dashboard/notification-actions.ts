@@ -141,3 +141,12 @@ export async function declineInvitationNotification(
       organizationId as string,
   };
 }
+export async function markBillingNotificationRead(id: string): Promise<NotificationActionResult> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Authentication required." };
+  const { error } = await supabase.from("notifications").update({ read: true }).eq("id", id).eq("user_id", user.id);
+  if (error) { console.error("Notification update failed", error); return { error: "Could not mark notification read." }; }
+  revalidatePath("/dashboard", "layout");
+  return { success: true };
+}

@@ -1,3 +1,4 @@
+import { OrganizationSelector } from "@/components/organization/organization-selector";
 import { redirect } from "next/navigation";
 import { BrandLogo } from "@/components/brand-logo";
 import OnboardingShell from "@/components/onboarding/onboarding-shell";
@@ -23,6 +24,7 @@ export default async function OnboardingPage() {
     user,
     organization,
     ownedOrganization,
+    organizations,
   } = await getOrganizationContext();
 
   // ======================================================
@@ -40,6 +42,8 @@ export default async function OnboardingPage() {
   if (organization) {
     redirect("/dashboard");
   }
+
+  if (organizations.some((o) => o.setup_completed)) return <OnboardingShell embedded><h1>Select an organization</h1><OrganizationSelector organizations={organizations} /></OnboardingShell>;
 
   const supabase = await createClient();
 

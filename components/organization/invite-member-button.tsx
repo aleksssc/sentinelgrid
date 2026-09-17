@@ -113,7 +113,7 @@ export function InviteMemberButton({ organizationId, action }: InviteMemberButto
                     <ChevronDown size={14} aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-surface-muted" />
                   </div>
                   <p id={`${id}-role-description`} className="sg-meta mt-2">
-                    Members get standard access. Admins have elevated management permissions.
+                    Members have read-only access. Admins manage infrastructure, but not billing.
                   </p>
                 </div>
               </div>

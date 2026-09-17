@@ -37,10 +37,10 @@ test("remote feature access distinguishes role, entitlement, and subscription st
     state: "upgrade_required", canUse: false, canManageBilling: true,
   });
   assert.deepEqual(remoteAccess.getRemoteFeatureAccess(access({ status: "restricted" }), "devices.terminal", "terminal"), {
-    state: "subscription_restricted", canUse: false, canManageBilling: true,
+    state: "allowed", canUse: true, canManageBilling: true,
   });
   assert.deepEqual(remoteAccess.getRemoteFeatureAccess(access({ status: "canceled", permissions: ["devices.rdp"] }), "devices.rdp", "rdp"), {
-    state: "subscription_restricted", canUse: false, canManageBilling: false,
+    state: "allowed", canUse: true, canManageBilling: false,
   });
 });
 

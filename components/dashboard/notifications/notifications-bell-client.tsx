@@ -20,16 +20,20 @@ import {
 import {
   acceptInvitationNotification,
   declineInvitationNotification,
+  markBillingNotificationRead,
 } from "@/app/dashboard/notification-actions";
 
 import type {
   OrganizationInviteNotification,
+  BillingNotification,
 } from "./notifications-bell";
 
 
 export default function NotificationsBellClient({
   invitations,
+  billingNotifications,
 }: {
+  billingNotifications: BillingNotification[];
   invitations:
     OrganizationInviteNotification[];
 }) {
@@ -269,7 +273,7 @@ export default function NotificationsBellClient({
 
 
   const count =
-    items.length;
+    items.length + billingNotifications.length;
 
 
   return (
@@ -344,6 +348,8 @@ export default function NotificationsBellClient({
             </div>
           )}
 
+
+          {billingNotifications.map((notification) => <div key={notification.id} className="border-b border-white/10 p-4 text-sm"><strong>{notification.title}</strong><p className="my-2 text-xs text-zinc-400">{notification.message}</p><div className="flex gap-3"><a href={"/dashboard/billing?organizationId=" + notification.resource_id} className="text-blue-400">Open billing</a><button disabled={isPending} onClick={() => startTransition(async () => { const result = await markBillingNotificationRead(notification.id); if (result.error) setMessage(result.error); else router.refresh(); })}>Mark read</button></div></div>)}
 
           {/* EMPTY */}
 

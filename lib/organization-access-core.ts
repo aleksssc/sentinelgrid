@@ -6,6 +6,7 @@ import {
   getPlanLimit,
   normalizeSubscriptionStatus,
   planHasFeature,
+  isPlanName,
   type EnterpriseCustomLimits,
   type PlanFeature,
   type PlanName,
@@ -84,8 +85,8 @@ export function roleHasPermission(
   return ROLE_PERMISSIONS[role].has(permission);
 }
 
-export type AccountSubscription = {
-  userId: string;
+export type OrganizationSubscription = {
+  organizationId: string;
   plan: PlanName;
   status: SubscriptionStatus;
   customLimits: EnterpriseCustomLimits;
@@ -96,48 +97,41 @@ export type OrganizationAccess = {
   ownerId: string;
   userId: string;
   role: OrganizationRole;
-  subscription: AccountSubscription;
+  subscription: OrganizationSubscription;
 };
 
-function normalizePlan(plan: unknown): PlanName {
-  if (plan === "pro" || plan === "business" || plan === "enterprise") {
-    return plan;
-  }
-
-  return "free";
-}
-
-export async function getAccountSubscriptionForOwner(
+export async function getOrganizationSubscriptionById(
   admin: SupabaseClient,
-  ownerUserId: string
-): Promise<AccountSubscription> {
+  organizationId: string
+): Promise<OrganizationSubscription> {
   const { data, error } = await admin
-    .from("account_subscriptions")
+    .from("organization_subscriptions")
     .select(`
-      user_id,
+      organization_id,
       plan,
       status,
-      custom_max_members,
-      custom_max_clients,
-      custom_max_devices,
-      custom_max_monitors
+      licensed_members,
+      licensed_clients,
+      licensed_devices,
+      licensed_monitors
     `)
-    .eq("user_id", ownerUserId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   if (error) {
-    console.error("Account subscription access error:", error);
+    throw new Error("Organization subscription lookup failed", { cause: error });
   }
 
+  if (!data || !isPlanName(data.plan)) throw new Error("Organization subscription is missing or invalid");
   return {
-    userId: ownerUserId,
-    plan: normalizePlan(data?.plan),
+    organizationId,
+    plan: data.plan,
     status: normalizeSubscriptionStatus(data?.status),
     customLimits: {
-      members: data?.custom_max_members ?? null,
-      clients: data?.custom_max_clients ?? null,
-      devices: data?.custom_max_devices ?? null,
-      monitors: data?.custom_max_monitors ?? null,
+      members: data?.licensed_members ?? null,
+      clients: data?.licensed_clients ?? null,
+      devices: data?.licensed_devices ?? null,
+      monitors: data?.licensed_monitors ?? null,
     },
   };
 }
@@ -179,7 +173,7 @@ export async function resolveOrganizationAccessForUser(
       return null;
     }
 
-    if (membership && isOrganizationRole(membership.role)) {
+    if (membership && isOrganizationRole(membership.role) && membership.role !== "owner") {
       role = membership.role;
     }
   }
@@ -188,9 +182,9 @@ export async function resolveOrganizationAccessForUser(
     return null;
   }
 
-  const subscription = await getAccountSubscriptionForOwner(
+  const subscription = await getOrganizationSubscriptionById(
     admin,
-    organization.owner_id
+    organizationId
   );
 
   return {

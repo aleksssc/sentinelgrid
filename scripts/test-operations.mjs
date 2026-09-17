@@ -198,15 +198,15 @@ test("device alerts use an inner organization relationship and combine search wi
   assert.match(result.rows[0].description, /not proof of an outage/);
 });
 
-test("personal monitors are strictly user-scoped, preserve zero response and never imply org ownership", async () => {
+test("monitors are strictly organization-scoped and preserve zero response", async () => {
   const h = harness({ monitors: [{ id: "monitor-1", name: "Endpoint", status: "offline", status_code: 503, response_time_ms: 0, last_checked_at: "2026-09-12T15:00:00Z" }] });
   const result = await h.alerts(org, "signed-in-user", defaults("alerts", { source: "monitors" }), now);
   assert.equal(h.calls.length, 1);
-  assert.equal(h.calls[0].searchParams.get("user_id"), "eq.signed-in-user");
-  assert.equal(h.calls[0].searchParams.get("organization_id"), null);
+  assert.equal(h.calls[0].searchParams.get("user_id"), null);
+  assert.equal(h.calls[0].searchParams.get("organization_id"), `eq.${org}`);
   assert.equal(result.rows[0].href, "/dashboard/monitors/monitor-1");
   assert.ok(result.rows[0].details.some((item) => item.value === "0 ms"));
-  assert.match(result.rows[0].context, /Personal monitor/);
+  assert.match(result.rows[0].context, /Organization monitor/);
 });
 
 test("unchecked and offline monitor filters are disjoint", async () => {

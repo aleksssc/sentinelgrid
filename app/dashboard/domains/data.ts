@@ -58,12 +58,12 @@ function latestDate(first: string | null, second: string | null) {
   return new Date(first).getTime() >= new Date(second).getTime() ? first : second;
 }
 
-export async function loadDomains(userId: string): Promise<DomainsData> {
+export async function loadDomains(organizationId: string): Promise<DomainsData> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("monitors")
     .select("id, name, url, status, status_code, response_time_ms, last_checked_at")
-    .eq("user_id", userId)
+    .eq("organization_id", organizationId)
     .order("created_at", { ascending: false });
 
   if (error) {

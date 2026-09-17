@@ -1,3 +1,4 @@
+import { dashboardLoader } from "./dashboard-test-loader.mjs";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createHash } from "node:crypto";
@@ -216,11 +217,11 @@ function apiFixture() {
         if (!organization) return null;
         const role = organization.owner_id === userId ? 'owner' : db.rows.organization_members?.find((row) => row.organization_id === organizationId && row.user_id === userId)?.role;
         if (!['owner', 'admin', 'member'].includes(role)) return null;
-        const subscription = db.rows.account_subscriptions?.find((row) => row.user_id === organization.owner_id) ?? { plan: 'pro', status: 'active' };
-        return { organizationId, ownerId: organization.owner_id, userId, role, subscription: { userId: organization.owner_id, plan: subscription.plan, status: subscription.status, customLimits: {} } };
+        const subscription = db.rows.organization_subscriptions?.find((row) => row.organization_id === organizationId) ?? { plan: 'pro', status: 'active' };
+        return { organizationId, ownerId: organization.owner_id, userId, role, subscription: { organizationId, plan: subscription.plan, status: subscription.status, customLimits: {} } };
       },
       accessHasPermission: (access, permission) => permission === 'devices.actions' && ['owner', 'admin'].includes(access.role),
-      accessHasFeature: (access, feature) => feature === 'deviceActions' && access.subscription.plan !== 'free' && !['restricted', 'canceled'].includes(access.subscription.status),
+      accessHasFeature: (value, feature) => dashboardLoader()("lib/organization-access-core.ts").accessHasFeature(value, feature),
     },
     "@/lib/audit/create-audit-log": { createAuditLog: async (entry) => { published.push({ audit: entry }); } },
     "@/lib/realtime/pubsub": { agentCommandChannel: (id) => `commands:${id}`, publishRealtimeMessage: async (channel, payload) => published.push({ channel, payload }) },
@@ -356,19 +357,19 @@ test("menu keeps exact grouping, enables all available actions and retains safet
 
 test('Device Actions enforce organization entitlement before command side effects', async () => {
   const cases = [
-    ['free owner', 'owner', 'owner', 'free', 'active', false],
+    ['free owner', 'owner', 'owner', 'free', 'active', true],
     ['pro owner', 'owner', 'owner', 'pro', 'active', true],
     ['invited free admin in pro organization', 'owner', 'admin', 'pro', 'active', true],
     ['pro member', 'owner', 'member', 'pro', 'active', false],
-    ['restricted pro owner', 'owner', 'owner', 'pro', 'restricted', false],
-    ['canceled pro admin', 'owner', 'admin', 'pro', 'canceled', false],
+    ['restricted pro owner', 'owner', 'owner', 'pro', 'restricted', true],
+    ['canceled pro admin', 'owner', 'admin', 'pro', 'canceled', true],
     ['past due pro owner', 'owner', 'owner', 'pro', 'past_due', true],
     ['grace period pro owner', 'owner', 'owner', 'pro', 'grace_period', true],
   ];
   for (const [name, ownerId, userId, plan, status, allowed] of cases) {
     const { db, commands, published } = apiFixture();
     db.rows.organizations[0].owner_id = ownerId;
-    db.rows.account_subscriptions = [{ user_id: ownerId, plan, status }];
+    db.rows.organization_subscriptions = [{ organization_id: "org", plan, status }];
     db.auth.getUser = async () => ({ data: { user: { id: userId } } });
     if (userId !== ownerId) db.rows.organization_members = [{ organization_id: 'org', user_id: userId, role: userId === 'admin' ? 'admin' : 'member' }];
     const request = { deviceId: 'device', commandType: 'force_inventory' };

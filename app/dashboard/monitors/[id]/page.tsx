@@ -35,7 +35,6 @@ export default async function MonitorDetailsPage({
     .from("monitors")
     .select("*")
     .eq("id", id)
-    .eq("user_id", user.id)
     .single();
 
   if (!monitor) {

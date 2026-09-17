@@ -4,8 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import {
-  getAccountSubscriptionForOwner,
+  getOrganizationSubscriptionById,
   resolveOrganizationAccessForUser,
+  accessHasPermission,
+  type OrganizationPermission,
 } from "./organization-access-core";
 
 export {
@@ -14,19 +16,19 @@ export {
   accessHasFeature,
   accessHasPermission,
   getAccessResourceLimit,
-  getAccountSubscriptionForOwner,
+  getOrganizationSubscriptionById,
   isOrganizationRole,
   roleHasPermission,
-  type AccountSubscription,
+  type OrganizationSubscription,
   type OrganizationAccess,
   type OrganizationPermission,
   type OrganizationRole,
 } from "./organization-access-core";
 
-export async function getAccountSubscription(ownerUserId: string) {
-  return getAccountSubscriptionForOwner(
+export async function getOrganizationSubscription(organizationId: string) {
+  return getOrganizationSubscriptionById(
     createAdminClient(),
-    ownerUserId
+    organizationId
   );
 }
 
@@ -52,4 +54,10 @@ export async function getOrganizationAccess(organizationId: string) {
   }
 
   return getOrganizationAccessForUser(organizationId, user.id);
+}
+
+export async function assertOrganizationPermission(organizationId: string, permission: OrganizationPermission) {
+  const access = await getOrganizationAccess(organizationId);
+  if (!access || !accessHasPermission(access, permission)) throw new Error("Organization permission denied");
+  return access;
 }

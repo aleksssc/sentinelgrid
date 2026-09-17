@@ -72,6 +72,7 @@ export async function enrollAgent({ token, hostname, os, arch, localIp, macAddre
   if (deviceError || !device) {
     console.error("Device enrollment error:", deviceError);
     await admin.from("agent_enrollment_tokens").update({ used_at: null }).eq("id", enrollmentToken.id);
+    if (deviceError?.message?.includes("LIMIT_REACHED")) throw new ResourceCreationError("LIMIT_REACHED");
     throw new Error("DEVICE_CREATION_FAILED");
   }
   return { deviceId: device.id, agentId: device.agent_id, agentToken };

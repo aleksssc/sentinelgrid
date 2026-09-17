@@ -1,273 +1,52 @@
-export const PLAN_LIMITS = {
-  free: {
-    members: 1,
-    clients: 3,
-    devices: 10,
-    monitors: 10,
-  },
-
-  pro: {
-    members: 5,
-    clients: 25,
-    devices: 100,
-    monitors: 100,
-  },
-
-  business: {
-    members: 20,
-    clients: Infinity,
-    devices: 500,
-    monitors: 500,
-  },
-
-  enterprise: {
-    members: Infinity,
-    clients: Infinity,
-    devices: Infinity,
-    monitors: Infinity,
-  },
+export const PLANS = {
+  free: { name: "Free", monthlyPriceCents: 0, description: "For personal projects and small environments.", limits: { members: 1, clients: 3, devices: 10, monitors: 10 }, custom: false },
+  pro: { name: "Pro", monthlyPriceCents: 4999, description: "For professionals and growing infrastructure.", limits: { members: 5, clients: 25, devices: 100, monitors: 100 }, custom: false },
+  business: { name: "Business", monthlyPriceCents: 17999, description: "For IT teams and managed infrastructure.", limits: { members: 20, clients: 500, devices: 500, monitors: 500 }, custom: false },
+  enterprise: { name: "Enterprise", monthlyPriceCents: null, description: "Custom licensed infrastructure and team capacity.", limits: { members: 0, clients: 0, devices: 0, monitors: 0 }, custom: true },
 } as const;
 
-
-export const PLAN_PRICES = {
-  free: 0,
-  pro: 24.99,
-  business: 59.99,
-  enterprise: null,
-} as const;
-
-
-export const PLAN_LABELS = {
-  free: "Free",
-  pro: "Pro",
-  business: "Business",
-  enterprise: "Enterprise",
-} as const;
-
-
-export type PlanName =
-  keyof typeof PLAN_LIMITS;
-
-
-export type PlanResource =
-  keyof typeof PLAN_LIMITS.free;
-
-
-export type EnterpriseCustomLimits = {
-  members?: number | null;
-  clients?: number | null;
-  devices?: number | null;
-  monitors?: number | null;
-};
-
-
-// =========================================================
-// FEATURES / ENTITLEMENTS
-// =========================================================
-
-export const PLAN_FEATURES = {
-  free: {
-    deviceActions: false,
-    terminal: false,
-    rdp: false,
-  },
-
-  pro: {
-    deviceActions: true,
-    terminal: true,
-    rdp: true,
-  },
-
-  business: {
-    deviceActions: true,
-    terminal: true,
-    rdp: true,
-  },
-
-  enterprise: {
-    deviceActions: true,
-    terminal: true,
-    rdp: true,
-  },
-} as const satisfies Record<
-  PlanName,
-  Record<string, boolean>
->;
-
-
-export type PlanFeature =
-  keyof typeof PLAN_FEATURES.free;
-
-
-export function planHasFeature(
-  plan: PlanName,
-  feature: PlanFeature
-) {
-  return PLAN_FEATURES[plan][feature];
+export type PlanName = keyof typeof PLANS;
+export type PlanResource = keyof typeof PLANS.free.limits;
+export const PLAN_ORDER = ["free", "pro", "business", "enterprise"] as const;
+export const RESOURCES = ["members", "clients", "devices", "monitors"] as const;
+export type EnterpriseCustomLimits = Partial<Record<PlanResource, number | null>>;
+export const PLAN_LIMITS = { free: PLANS.free.limits, pro: PLANS.pro.limits, business: PLANS.business.limits, enterprise: PLANS.enterprise.limits };
+export const PLAN_LABELS = { free: PLANS.free.name, pro: PLANS.pro.name, business: PLANS.business.name, enterprise: PLANS.enterprise.name };
+export const SALES_URL = "mailto:sales@sentinelgrid.com";
+export function isPlanName(value: unknown): value is PlanName { return typeof value === "string" && Object.hasOwn(PLANS, value); }
+export function formatPlanPrice(plan: PlanName) {
+  const cents = PLANS[plan].monthlyPriceCents;
+  return cents === null ? "Custom" : `\u20ac${cents === 0 ? "0" : (cents / 100).toFixed(2)}`;
+}
+export function planMarketingFeatures(plan: PlanName) {
+  return RESOURCES.map((resource) => PLANS[plan].custom ? `Custom licensed ${resource}` : `${PLANS[plan].limits[resource]} ${resource}`);
 }
 
-
-// =========================================================
-// SUBSCRIPTION LIFECYCLE
-// =========================================================
-
-export const SUBSCRIPTION_STATUSES = [
-  "active",
-  "trialing",
-  "past_due",
-  "grace_period",
-  "restricted",
-  "canceled",
-] as const;
-
-
-export type SubscriptionStatus =
-  (typeof SUBSCRIPTION_STATUSES)[number];
-
-
-export type SubscriptionAccessMode =
-  | "full"
-  | "grace"
-  | "restricted";
-
-
-export function normalizeSubscriptionStatus(
-  status: string | null | undefined
-): SubscriptionStatus {
-  if (
-    status &&
-    SUBSCRIPTION_STATUSES.includes(
-      status as SubscriptionStatus
-    )
-  ) {
-    return status as SubscriptionStatus;
-  }
-
-  return "active";
+// Feature entitlements are separate from roles; no feature paywalls in this release.
+const FEATURES = { deviceActions: true, terminal: true, rdp: true, remoteTerminal: true, remoteActions: true, auditLogs: true, alerts: true, apiAccess: true } as const;
+export const PLAN_FEATURES = { free: FEATURES, pro: FEATURES, business: FEATURES, enterprise: FEATURES };
+export type PlanFeature = keyof typeof FEATURES;
+export function planHasFeature(plan: PlanName, feature: PlanFeature) { return PLAN_FEATURES[plan][feature]; }
+export const SUBSCRIPTION_STATUSES = ["active", "trialing", "past_due", "unpaid", "incomplete", "incomplete_expired", "paused", "canceled", "inactive", "grace_period", "restricted"] as const;
+export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
+export type SubscriptionAccessMode = "full" | "grace" | "restricted";
+export function normalizeSubscriptionStatus(status: unknown): SubscriptionStatus {
+  const match = SUBSCRIPTION_STATUSES.find((value) => value === status);
+  if (!match) throw new Error("Invalid subscription status");
+  return match;
 }
-
-
-export function getSubscriptionAccessMode(
-  status: SubscriptionStatus
-): SubscriptionAccessMode {
-  if (
-    status === "restricted" ||
-    status === "canceled"
-  ) {
-    return "restricted";
-  }
-
-  if (
-    status === "past_due" ||
-    status === "grace_period"
-  ) {
-    return "grace";
-  }
-
-  return "full";
+export function getSubscriptionAccessMode(status: SubscriptionStatus): SubscriptionAccessMode {
+  return status === "past_due" || status === "grace_period" ? "grace" : "full";
 }
-
-
-export function canUsePaidFeatures(
-  status: SubscriptionStatus
-) {
-  return getSubscriptionAccessMode(status) !==
-    "restricted";
+export function canUsePaidFeatures(status: SubscriptionStatus) { return getSubscriptionAccessMode(status) !== "restricted"; }
+export function canCreateResources(status: SubscriptionStatus) { return getSubscriptionAccessMode(status) !== "restricted"; }
+export function getPlanLimit(plan: PlanName, resource: PlanResource, customLimits?: EnterpriseCustomLimits) {
+  if (plan !== "enterprise") return PLANS[plan].limits[resource];
+  const value = customLimits?.[resource];
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new Error(`Enterprise ${resource} license is not configured`);
+  return value;
 }
-
-
-export function canCreateResources(
-  status: SubscriptionStatus
-) {
-  return getSubscriptionAccessMode(status) !==
-    "restricted";
+export function canCreateResource({ plan, resource, currentUsage, customLimits }: { plan: PlanName; resource: PlanResource; currentUsage: number; customLimits?: EnterpriseCustomLimits; subscriptionStatus?: SubscriptionStatus }) {
+  return currentUsage < getPlanLimit(plan, resource, customLimits);
 }
-
-
-// =========================================================
-// GET EFFECTIVE LIMIT
-// =========================================================
-
-export function getPlanLimit(
-  plan: PlanName,
-  resource: PlanResource,
-  customLimits?: EnterpriseCustomLimits
-) {
-
-  if (plan !== "enterprise") {
-    return PLAN_LIMITS[plan][resource];
-  }
-
-
-  const customLimit =
-    customLimits?.[resource];
-
-
-  if (
-    typeof customLimit === "number"
-  ) {
-    return customLimit;
-  }
-
-
-  return Infinity;
-}
-
-
-// =========================================================
-// CAN CREATE RESOURCE
-// =========================================================
-
-export function canCreateResource({
-  plan,
-  resource,
-  currentUsage,
-  customLimits,
-  subscriptionStatus = "active",
-}: {
-  plan: PlanName;
-  resource: PlanResource;
-  currentUsage: number;
-  customLimits?: EnterpriseCustomLimits;
-  subscriptionStatus?: SubscriptionStatus;
-}) {
-
-  if (
-    !canCreateResources(
-      subscriptionStatus
-    )
-  ) {
-    return false;
-  }
-
-
-  const limit = getPlanLimit(
-    plan,
-    resource,
-    customLimits
-  );
-
-
-  if (limit === Infinity) {
-    return true;
-  }
-
-
-  return currentUsage < limit;
-}
-
-
-// =========================================================
-// DISPLAY LIMIT
-// =========================================================
-
-export function formatPlanLimit(
-  limit: number
-) {
-
-  if (limit === Infinity) {
-    return "Unlimited";
-  }
-
-  return limit.toString();
-}
+export function formatPlanLimit(limit: number) { return limit.toString(); }

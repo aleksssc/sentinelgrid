@@ -437,7 +437,7 @@ export default async function DashboardPage() {
   } = await supabase
     .from("monitors")
     .select("id, name, status, last_checked_at")
-    .eq("user_id", user.id);
+    .in("organization_id", organizationIds);
 
   if (monitorsError) {
     console.error(

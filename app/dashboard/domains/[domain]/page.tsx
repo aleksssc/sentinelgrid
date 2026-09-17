@@ -22,7 +22,7 @@ export default async function DomainDetailsPage({ params }: { params: Promise<{ 
   const { domain: encodedDomain } = await params;
   let hostname: string;
   try { hostname = decodeURIComponent(encodedDomain).toLowerCase(); } catch { notFound(); }
-  const { domains } = await loadDomains(user.id);
+  const { domains } = await loadDomains(organization.id);
   const domain = domains.find((item) => item.hostname === hostname);
   if (!domain) notFound();
   const overallHealth = health(domain.status);

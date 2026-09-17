@@ -19,7 +19,7 @@ export default async function DomainsPage() {
   const { user, organization } = await getOrganizationContext();
   if (!user) redirect("/auth/login");
   if (!organization) redirect("/onboarding");
-  const { domains, error } = await loadDomains(user.id);
+  const { domains, error } = await loadDomains(organization.id);
 
   return <div className="sg-page-shell"><div className="sg-page">
     <PageHeader title="Domains & DNS" eyebrow="Infrastructure" icon={<Globe2 size={22} />} description="Manage and review monitored domains from one place." actions={<Link href="/dashboard/monitors#add-monitor" className="sg-button sg-button-primary"><Plus size={16} />Add monitor</Link>} />

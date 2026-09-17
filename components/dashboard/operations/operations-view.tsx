@@ -23,20 +23,20 @@ export default function OperationsView({ kind, organizationName, filters, result
   kind: OperationsKind; organizationName: string; filters: OperationsFilters; result: OperationsResult; now: number;
 }) {
   const incidents = kind === "incidents";
-  const personal = filters.source === "monitors";
+  const monitorSource = filters.source === "monitors";
   const title = incidents ? "Incident evidence" : "Alerts";
   const Icon = incidents ? TriangleAlert : Bell;
   const tabs = incidents ? [{ id: "commands", name: "Command failures" }, { id: "audit", name: "Audit exceptions" }] :
     [{ id: "devices", name: "Device signals" }, { id: "monitors", name: "Monitor signals" }];
   const statuses = filters.source === "commands" ? [{ id: "failed", name: "Failed" }, { id: "expired", name: "Expired" }] :
     filters.source === "devices" ? [{ id: "offline", name: "Offline" }, { id: "warning", name: "Warning" }] :
-    personal ? [{ id: "offline", name: "Offline" }, { id: "unchecked", name: "Not checked" }] : [];
+    monitorSource ? [{ id: "offline", name: "Offline" }, { id: "unchecked", name: "Not checked" }] : [];
   const errors = result.rows.filter((row) => row.tone === "error").length;
   const warnings = result.rows.filter((row) => row.tone !== "error").length;
   const unavailable = Boolean(result.error && !result.rows.length);
   const filtered = Boolean(filters.query || filters.status !== "all" || filters.page > 1);
   const placeholder = filters.source === "commands" ? "Search command, error code or message..." :
-    filters.source === "audit" ? "Search action, target or actor..." : personal ? "Search monitor name..." : "Search device name or hostname...";
+    filters.source === "audit" ? "Search action, target or actor..." : monitorSource ? "Search monitor name..." : "Search device name or hostname...";
 
   return (
     <div className="sg-page-shell">
@@ -61,7 +61,7 @@ export default function OperationsView({ kind, organizationName, filters, result
         </header>
 
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 text-xs text-surface-muted">
-          <span className="inline-flex items-center gap-2"><Building2 size={14} />{personal ? "Personal monitor scope" : organizationName}<span className="text-zinc-700">/</span>Read-only evidence</span>
+          <span className="inline-flex items-center gap-2"><Building2 size={14} />{organizationName}<span className="text-zinc-700">/</span>Read-only evidence</span>
           <span className="inline-flex items-center gap-1.5"><Clock3 size={13} />Snapshot {formatOperationsTime(new Date(now).toISOString())} UTC</span>
         </div>
 
@@ -86,7 +86,7 @@ export default function OperationsView({ kind, organizationName, filters, result
             <Info size={14} className="mt-0.5 shrink-0" />
             <p>{filters.source === "commands" ? "One record per command. Confirmed no-newer-version outcomes are excluded; legacy no-eligible-release results remain informational. These are historical outcomes, not open incident tickets." :
               filters.source === "audit" ? "Failed audit events without command or update-transaction correlation. Command lifecycle events are shown in Command failures instead of duplicated here." :
-              personal ? "Monitors currently belong to your account, not an organization. Results reflect the last manual check; use Monitors to run another check." :
+              monitorSource ? "Monitors currently belong to your account, not an organization. Results reflect the last manual check; use Monitors to run another check." :
               "Offline after more than 90 seconds without a heartbeat, or a recorded offline state. Signals are recalculated on refresh; no automatic polling or new alert rules are running."}</p>
           </div>
 
@@ -96,7 +96,7 @@ export default function OperationsView({ kind, organizationName, filters, result
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-surface-edge bg-surface-inset text-surface-muted">{filtered ? <Search size={22} /> : <ShieldCheck size={22} />}</div>
               <h2 className="sg-section-title mt-4 text-white">{filters.page > 1 ? "No more records on this page" : filters.query || filters.status !== "all" ? "No matching records" : incidents ? "No recorded failures in this view" : "No attention signals in this view"}</h2>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-surface-muted">{filtered ? "Try a different search, clear the filters or return to the first page." : incidents ? "Only failures recorded by the existing backend appear here. This does not certify that every operation was successful." : "No matching records are visible to your account. This is not a guarantee that all infrastructure is healthy."}</p>
-              {filtered ? <Link prefetch={false} href={operationsHref(kind, filters, { query: "", status: "all", page: 1 })} className="mt-5 inline-flex items-center gap-2 text-sm text-zinc-300 hover:text-white">Reset view<ArrowUpRight size={14} /></Link> : !incidents && <Link prefetch={false} href={personal ? "/dashboard/monitors" : "/dashboard/organizations"} className="mt-5 inline-flex items-center gap-2 text-sm text-zinc-300 hover:text-white">{personal ? "Open monitors" : "Open infrastructure"}<ArrowUpRight size={14} /></Link>}
+              {filtered ? <Link prefetch={false} href={operationsHref(kind, filters, { query: "", status: "all", page: 1 })} className="mt-5 inline-flex items-center gap-2 text-sm text-zinc-300 hover:text-white">Reset view<ArrowUpRight size={14} /></Link> : !incidents && <Link prefetch={false} href={monitorSource ? "/dashboard/monitors" : "/dashboard/organizations"} className="mt-5 inline-flex items-center gap-2 text-sm text-zinc-300 hover:text-white">{monitorSource ? "Open monitors" : "Open infrastructure"}<ArrowUpRight size={14} /></Link>}
             </div>
           ) : null}
 

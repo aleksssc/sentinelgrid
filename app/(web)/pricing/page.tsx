@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PLANS, formatPlanPrice, planMarketingFeatures, SALES_URL } from "@/lib/plans";
 import "./pricing.css";
 import {
   Check,
@@ -9,92 +10,9 @@ import {
   BadgeEuro,
 } from "lucide-react";
 
-const plans = [
-  {
-    name: "Free",
-    description: "For personal projects and small environments.",
-    price: "€0",
-    period: "/month",
-    icon: Shield,
-    featured: false,
-    button: "Get started",
-    features: [
-      "1 Organization",
-      "1 Team member",
-      "Up to 3 Clients",
-      "10 Devices",
-      "10 Monitors",
-      "5 Minute monitoring checks",
-      "Website, SSL and DNS monitoring",
-      "Email alerts",
-      "7 Days history",
-    ],
-  },
-  {
-    name: "Pro",
-    description: "For professionals and growing infrastructure.",
-    price: "€19,99",
-    period: "/month",
-    icon: Zap,
-    featured: true,
-    button: "Start with Pro",
-    features: [
-      "1 Organization",
-      "Up to 5 Team members",
-      "Up to 25 Clients",
-      "100 Devices",
-      "100 Monitors",
-      "1 Minute monitoring checks",
-      "Website, API, SSL and DNS monitoring",
-      "Advanced alerts and webhooks",
-      "SentinelGrid Agent",
-      "90 Days history",
-    ],
-  },
-  {
-    name: "Business",
-    description: "For IT teams and managed infrastructure.",
-    price: "€49,99",
-    period: "/month",
-    icon: Building2,
-    featured: false,
-    button: "Get Business",
-    features: [
-      "1 Organization",
-      "Up to 20 Team members",
-      "Unlimited Clients and Sites",
-      "500 Devices",
-      "500 Monitors",
-      "30 Second monitoring checks",
-      "Advanced monitoring and alerting",
-      "Roles and permissions",
-      "Audit logs and reports",
-      "SentinelGrid Agent & Remote actions",
-      "1 Year history",
-      "Priority support",
-    ],
-  },
-];
-
-const enterprisePlan = {
-  name: "Enterprise",
-  description:
-    "Custom infrastructure monitoring for large teams and organizations.",
-  price: "Custom",
-  icon: Building2,
-  button: "Contact Sales",
-  features: [
-    "Unlimited Team members",
-    "Unlimited Clients and Sites",
-    "Custom Device limits",
-    "Custom Monitor limits",
-    "Custom Data retention",
-    "Advanced Roles and permissions",
-    "SSO / SAML authentication",
-    "Custom integrations",
-    "SLA and Priority support",
-  ],
-};
+const plans = (["free", "pro", "business"] as const).map((slug) => ({
+  ...PLANS[slug], price: formatPlanPrice(slug), period: "/month", icon: slug === "free" ? Shield : slug === "pro" ? Zap : Building2, featured: slug === "pro", button: slug === "free" ? "Get started" : `Start with ${PLANS[slug].name}`, features: planMarketingFeatures(slug),
+}));
 
 export default function PricingPage() {
   return (
@@ -124,7 +42,7 @@ export default function PricingPage() {
 
         <p>
           Start for free and upgrade when you need more monitors,
-          faster checks and advanced infrastructure insights.
+          clients and team capacity.
         </p>
 
       </section>
@@ -234,10 +152,10 @@ export default function PricingPage() {
     </div>
 
     <div>
-      <h3>Enterprise</h3>
+      <h3>{PLANS.enterprise.name}</h3>
 
       <p>
-        For large teams and complex infrastructure.
+        {PLANS.enterprise.description}
       </p>
     </div>
 
@@ -254,7 +172,7 @@ export default function PricingPage() {
 
       <div>
         <Check size={15} />
-        Unlimited Team members
+        Custom licensed team members
       </div>
 
       <div>
@@ -264,12 +182,12 @@ export default function PricingPage() {
 
       <div>
         <Check size={15} />
-        SSO / SAML authentication
+        Custom licensed device capacity
       </div>
 
       <div>
         <Check size={15} />
-        Custom integrations & SLA
+        Custom licensed monitor capacity
       </div>
 
     </div>
@@ -280,11 +198,11 @@ export default function PricingPage() {
   <div className="enterprise-cta">
 
     <span className="enterprise-custom">
-      Custom
+      {formatPlanPrice("enterprise")}
     </span>
 
     <Link
-      href="/contact"
+      href={SALES_URL}
       className="enterprise-button"
     >
       Contact Sales
@@ -316,7 +234,7 @@ export default function PricingPage() {
           </p>
         </div>
 
-        <Link href="/contact">
+        <Link href={SALES_URL}>
           Contact us
           <ArrowRight size={16} />
         </Link>

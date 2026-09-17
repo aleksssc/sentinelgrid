@@ -21,6 +21,8 @@ export async function updateSession(request: NextRequest) {
   // =========================================
 
 if (
+  pathname === "/api/stripe/webhook" ||
+  pathname.startsWith("/api/billing/") ||
   pathname.startsWith("/api/agent/") ||
   pathname.startsWith("/api/realtime/") ||
   pathname === "/api/remote/rdp/relay" ||

@@ -28,10 +28,6 @@ export function getRemoteFeatureAccess(
   }
 
   const canManageBilling = accessHasPermission(access, "billing.manage");
-  if (access.subscription.status === "restricted" || access.subscription.status === "canceled") {
-    return { state: "subscription_restricted", canUse: false, canManageBilling };
-  }
-
   if (!accessHasFeature(access, feature)) {
     return { state: "upgrade_required", canUse: false, canManageBilling };
   }

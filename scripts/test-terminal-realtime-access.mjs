@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { dashboardLoader } from "./dashboard-test-loader.mjs";
 import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -24,7 +25,7 @@ function browserHandler(access) {
   const core = {
     resolveOrganizationAccessForUser: async (_admin, organizationId, userId) => organizationId === "organization" && userId === access.userId ? access : null,
     accessHasPermission: (value, permission) => (value.role === "owner" || value.role === "admin") && permission === "devices.terminal",
-    accessHasFeature: (value, feature) => value.subscription.plan !== "free" && !["restricted", "canceled"].includes(value.subscription.status) && feature === "terminal",
+    accessHasFeature: (value, feature) => dashboardLoader()("lib/organization-access-core.ts").accessHasFeature(value, feature),
   };
   const dependencies = {
     "@supabase/supabase-js": { createClient: () => admin },
@@ -48,10 +49,10 @@ function browserHandler(access) {
 }
 
 function organizationAccess({ userId, role, plan, status }) {
-  return { organizationId: "organization", ownerId: "owner", userId, role, subscription: { userId: "owner", plan, status, customLimits: {} } };
+  return { organizationId: "organization", ownerId: "owner", userId, role, subscription: { organizationId: "organization", plan, status, customLimits: {} } };
 }
 
-test("Terminal realtime authentication requires the organization owner's entitlement and terminal role", { timeout: 10000 }, async t => {
+test("Terminal realtime authentication requires the organization entitlement and terminal role", { timeout: 10000 }, async t => {
   const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://isolated.example";
@@ -62,12 +63,12 @@ test("Terminal realtime authentication requires the organization owner's entitle
   });
 
   const cases = [
-    ["free owner", organizationAccess({ userId: "owner", role: "owner", plan: "free", status: "active" }), false],
+    ["free owner", organizationAccess({ userId: "owner", role: "owner", plan: "free", status: "active" }), true],
     ["pro owner", organizationAccess({ userId: "owner", role: "owner", plan: "pro", status: "active" }), true],
     ["invited free admin in pro organization", organizationAccess({ userId: "admin", role: "admin", plan: "pro", status: "active" }), true],
     ["pro member", organizationAccess({ userId: "member", role: "member", plan: "pro", status: "active" }), false],
-    ["restricted pro owner", organizationAccess({ userId: "owner", role: "owner", plan: "pro", status: "restricted" }), false],
-    ["canceled pro admin", organizationAccess({ userId: "admin", role: "admin", plan: "pro", status: "canceled" }), false],
+    ["restricted pro owner", organizationAccess({ userId: "owner", role: "owner", plan: "pro", status: "restricted" }), true],
+    ["canceled pro admin", organizationAccess({ userId: "admin", role: "admin", plan: "pro", status: "canceled" }), true],
     ["past due pro owner", organizationAccess({ userId: "owner", role: "owner", plan: "pro", status: "past_due" }), true],
     ["grace period pro owner", organizationAccess({ userId: "owner", role: "owner", plan: "pro", status: "grace_period" }), true],
   ];

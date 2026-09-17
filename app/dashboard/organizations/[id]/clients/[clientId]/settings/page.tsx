@@ -1,3 +1,4 @@
+import { assertOrganizationPermission } from "@/lib/organization-access";
 import Link from "next/link";
 
 import { connection } from "next/server";
@@ -42,6 +43,8 @@ export default async function ClientSettingsPage({
   if (!user) {
     return null;
   }
+
+  await assertOrganizationPermission(id, "clients.manage");
 
   /* =========================================================
                       ORGANIZATION

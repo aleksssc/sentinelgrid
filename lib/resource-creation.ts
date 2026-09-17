@@ -3,12 +3,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   accessCanCreateResource,
   accessHasPermission,
-  getAccountSubscriptionForOwner,
   getOrganizationAccessForUser,
-  type OrganizationAccess,
   type OrganizationPermission,
 } from "./organization-access";
-import { canCreateResource, type PlanResource } from "./plans";
+import { type PlanResource } from "./plans";
 
 export type ResourceCreationBlockReason =
   | "permission_denied"
@@ -33,48 +31,21 @@ export class ResourceCreationError extends Error {
   }
 }
 
-function isRestricted(status: OrganizationAccess["subscription"]["status"]) {
-  return status === "restricted" || status === "canceled";
-}
-
 export async function getOrganizationResourceUsage(
   admin: SupabaseClient,
   organizationId: string,
-  resource: "clients" | "devices"
+  resource: "clients" | "devices" | "monitors"
 ) {
-  if (resource === "clients") {
-    const { count, error } = await admin
-      .from("clients")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId);
-
-    if (error) throw new Error("RESOURCE_USAGE_LOOKUP_FAILED");
-    return count ?? 0;
-  }
-
-  const { data: clients, error: clientsError } = await admin
-    .from("clients")
-    .select("id")
-    .eq("organization_id", organizationId);
-
-  if (clientsError) throw new Error("RESOURCE_USAGE_LOOKUP_FAILED");
-  const clientIds = (clients ?? []).map((client) => client.id);
-  if (!clientIds.length) return 0;
-
-  const { count, error } = await admin
-    .from("devices")
-    .select("id", { count: "exact", head: true })
-    .in("client_id", clientIds);
-
-  if (error) throw new Error("RESOURCE_USAGE_LOOKUP_FAILED");
-  return count ?? 0;
+  const { data, error } = await admin.rpc("organization_billing_usage", { p_organization_id: organizationId });
+  if (error || !data || !Number.isSafeInteger(data[resource])) throw new Error("RESOURCE_USAGE_LOOKUP_FAILED", { cause: error });
+  return Number(data[resource]);
 }
 
 export async function getOrganizationResourceCreationAccess(
   admin: SupabaseClient,
   organizationId: string,
   userId: string,
-  resource: "clients" | "devices"
+  resource: "clients" | "devices" | "monitors"
 ): Promise<ResourceCreationAccess> {
   const access = await getOrganizationAccessForUser(organizationId, userId);
   if (!access || !accessHasPermission(access, CREATE_PERMISSION[resource])) {
@@ -82,9 +53,6 @@ export async function getOrganizationResourceCreationAccess(
   }
 
   const currentUsage = await getOrganizationResourceUsage(admin, organizationId, resource);
-  if (isRestricted(access.subscription.status)) {
-    return { allowed: false, reason: "subscription_restricted", currentUsage };
-  }
 
   if (!accessCanCreateResource(access, resource, currentUsage)) {
     return { allowed: false, reason: "limit_reached", currentUsage };
@@ -97,7 +65,7 @@ export async function requireOrganizationResourceCreation(
   admin: SupabaseClient,
   organizationId: string,
   userId: string,
-  resource: "clients" | "devices"
+  resource: "clients" | "devices" | "monitors"
 ) {
   const result = await getOrganizationResourceCreationAccess(admin, organizationId, userId, resource);
   if (result.allowed) return result;
@@ -109,38 +77,4 @@ export async function requireOrganizationResourceCreation(
         ? "SUBSCRIPTION_RESTRICTED"
         : "FORBIDDEN"
   );
-}
-
-export async function getUserMonitorCreationAccess(
-  admin: SupabaseClient,
-  userId: string
-): Promise<ResourceCreationAccess> {
-  const [{ count, error }, subscription] = await Promise.all([
-    admin.from("monitors").select("id", { count: "exact", head: true }).eq("user_id", userId),
-    getAccountSubscriptionForOwner(admin, userId),
-  ]);
-
-  if (error) throw new Error("RESOURCE_USAGE_LOOKUP_FAILED");
-  const currentUsage = count ?? 0;
-  if (isRestricted(subscription.status)) {
-    return { allowed: false, reason: "subscription_restricted", currentUsage };
-  }
-
-  return {
-    allowed: canCreateResource({
-      plan: subscription.plan,
-      resource: "monitors",
-      currentUsage,
-      customLimits: subscription.customLimits,
-      subscriptionStatus: subscription.status,
-    }),
-    reason: canCreateResource({
-      plan: subscription.plan,
-      resource: "monitors",
-      currentUsage,
-      customLimits: subscription.customLimits,
-      subscriptionStatus: subscription.status,
-    }) ? undefined : "limit_reached",
-    currentUsage,
-  };
 }

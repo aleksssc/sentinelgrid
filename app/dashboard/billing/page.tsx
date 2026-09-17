@@ -1,1111 +1,531 @@
 import Link from "next/link";
+
 import { connection } from "next/server";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import {
-  Check,
+  Activity,
+  Building2,
   CreditCard,
   Crown,
-  Gauge,
-  Infinity as InfinityIcon,
-  ShieldCheck,
-  Sparkles,
+  Monitor,
   Users,
-  Building2,
-  Server,
-  Activity,
-  ArrowUpRight,
 } from "lucide-react";
 
-import { createClient } from "@/lib/supabase/server";
+import { getOrganizationContext } from "@/lib/organization-context";
+import { getOrganizationEntitlements } from "@/lib/billing/entitlements";
 
 import {
-  PLAN_LIMITS,
-  PLAN_LABELS,
-  PLAN_PRICES,
-  type PlanName,
-  type PlanResource,
+  PLANS,
+  RESOURCES,
+  formatPlanPrice,
+  isPlanName,
 } from "@/lib/plans";
 
+import {
+  PageHeader,
+  Surface,
+} from "@/components/dashboard/dashboard-primitives";
 
-// =========================================================
-// TYPES
-// =========================================================
+import BillingControls from "./billing-controls";
 
-type Subscription = {
-  user_id: string;
-  plan: PlanName;
-  status: string;
+function formatDate(value: string | null) {
+  if (!value) {
+    return null;
+  }
 
-  custom_price_monthly: number | null;
+  const parsed = new Date(value);
 
-  custom_max_members: number | null;
-  custom_max_clients: number | null;
-  custom_max_devices: number | null;
-  custom_max_monitors: number | null;
+  if (!Number.isFinite(parsed.getTime())) {
+    return null;
+  }
 
-  current_period_end: string | null;
-  cancel_at_period_end: boolean;
-};
+  return parsed.toLocaleDateString("en-GB", {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
 
-type Usage = {
-  members: number;
-  clients: number;
-  devices: number;
-  monitors: number;
-};
+function resourceIcon(resource: string) {
+  switch (resource) {
+    case "members":
+      return <Users size={18} />;
 
+    case "clients":
+      return <Building2 size={18} />;
 
-// =========================================================
-// PLAN DISPLAY
-// =========================================================
+    case "devices":
+      return <Monitor size={18} />;
 
-const PLAN_ORDER: PlanName[] = [
-  "free",
-  "pro",
-  "business",
-  "enterprise",
-];
+    case "monitors":
+      return <Activity size={18} />;
 
-const PLAN_DESCRIPTIONS: Record<PlanName, string> = {
-  free: "Explore SentinelGrid with the essentials.",
+    default:
+      return <Activity size={18} />;
+  }
+}
 
-  pro: "For small teams managing growing infrastructure.",
+function resourceLabel(resource: string) {
+  return resource.charAt(0).toUpperCase() + resource.slice(1);
+}
 
-  business:
-    "Advanced monitoring for established IT operations.",
-
-  enterprise:
-    "Custom infrastructure, limits and support.",
-};
-
-const PLAN_FEATURES: Record<PlanName, string[]> = {
-  free: [
-    "1 team member",
-    "3 clients",
-    "10 devices",
-    "10 monitors",
-  ],
-
-  pro: [
-    "Up to 5 team members",
-    "Up to 25 clients",
-    "100 devices",
-    "100 monitors",
-  ],
-
-  business: [
-    "Up to 20 team members",
-    "Unlimited clients",
-    "500 devices",
-    "500 monitors",
-  ],
-
-  enterprise: [
-    "Custom team size",
-    "Custom client limits",
-    "Custom device limits",
-    "Custom monitor limits",
-    "Priority support",
-  ],
-};
-
-
-// =========================================================
-// HELPERS
-// =========================================================
-
-function formatPrice(
-  plan: PlanName,
-  customPrice?: number | null
-) {
-  if (plan === "enterprise") {
-    if (
-      customPrice !== null &&
-      customPrice !== undefined
-    ) {
-      return `€${customPrice.toFixed(2)}`;
-    }
-
+function displayLimit(limit: number) {
+  if (!Number.isFinite(limit)) {
     return "Custom";
   }
 
-  const price = PLAN_PRICES[plan];
-
-  if (price === 0) {
-    return "Free";
-  }
-
-  return `€${price.toFixed(2)}`;
+  return limit.toLocaleString("en-GB");
 }
 
-
-function getEffectiveLimit(
-  plan: PlanName,
-  resource: PlanResource,
-  subscription: Subscription | null
-) {
-  if (plan !== "enterprise") {
-    return PLAN_LIMITS[plan][resource];
+function usagePercentage(usage: number, limit: number) {
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return 0;
   }
 
-  const customLimits = {
-    members: subscription?.custom_max_members,
-    clients: subscription?.custom_max_clients,
-    devices: subscription?.custom_max_devices,
-    monitors: subscription?.custom_max_monitors,
-  };
-
-  const customLimit =
-    customLimits[resource];
-
-  if (
-    customLimit === null ||
-    customLimit === undefined
-  ) {
-    return Infinity;
-  }
-
-  return customLimit;
+  return Math.min(100, Math.round((usage / limit) * 100));
 }
 
-
-function getUsagePercentage(
-  usage: number,
-  limit: number
-) {
-  if (limit === Infinity) {
-    return 100;
-  }
-
-  if (limit <= 0) {
-    return 100;
-  }
-
-  return Math.min(
-    (usage / limit) * 100,
-    100
-  );
-}
-
-
-// =========================================================
-// USAGE ROW
-// =========================================================
-
-function UsageRow({
-  label,
-  usage,
-  limit,
-  icon: Icon,
+export default async function BillingPage({
+  searchParams,
 }: {
-  label: string;
-  usage: number;
-  limit: number;
-  icon: React.ElementType;
+  searchParams: Promise<{
+    organizationId?: string;
+    checkout?: string;
+  }>;
 }) {
-  const percentage =
-    getUsagePercentage(
-      usage,
-      limit
-    );
-
-  const atLimit =
-    limit !== Infinity &&
-    usage >= limit;
-
-  return (
-    <div
-      className="group rounded-xl border border-transparent p-2 transition-all duration-200 hover:border-surface-accent-edge hover:bg-surface-hover"
-    >
-      <div className="space-y-2.5">
-
-        <div className="flex items-center justify-between gap-4">
-
-          <div className="flex items-center gap-2.5">
-
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-surface-edge bg-[#1a1c22] transition-all duration-200 group-hover:border-surface-accent-edge group-hover:bg-surface-hover"
-            >
-              <Icon
-                size={15}
-                className="text-zinc-400 transition-colors group-hover:text-white"
-              />
-            </div>
-
-            <span
-              className="text-sm font-medium text-zinc-300 transition-colors group-hover:text-white"
-            >
-              {label}
-            </span>
-
-          </div>
-
-
-          <div className="flex items-center gap-1.5 text-sm">
-
-            <span
-              className={
-                atLimit
-                  ? "font-semibold text-red-400"
-                  : "font-semibold text-white"
-              }
-            >
-              {usage}
-            </span>
-
-            <span className="text-surface-muted">
-              /
-            </span>
-
-            {limit === Infinity ? (
-
-              <span className="flex items-center gap-1 text-zinc-400">
-                <InfinityIcon size={14} />
-                Unlimited
-              </span>
-
-            ) : (
-
-              <span className="text-zinc-400">
-                {limit}
-              </span>
-
-            )}
-
-          </div>
-
-        </div>
-
-
-        <div
-          className="h-1.5 overflow-hidden rounded-full bg-[#22242a]"
-        >
-          <div
-            className={`
-              h-full
-              rounded-full
-              transition-all
-              duration-500
-
-              ${
-                atLimit
-                  ? "bg-red-400"
-                  : "bg-zinc-300"
-              }
-            `}
-            style={{
-              width: `${percentage}%`,
-            }}
-          />
-        </div>
-
-      </div>
-    </div>
-  );
-}
-
-
-// =========================================================
-// PAGE
-// =========================================================
-
-export default async function BillingPage() {
   await connection();
 
-  const supabase =
-    await createClient();
+  const query = await searchParams;
 
+  const context =
+    await getOrganizationContext();
 
-  // =======================================================
-  // AUTH
-  // =======================================================
-
-  const {
-    data: {
-      user,
-    },
-  } =
-    await supabase.auth.getUser();
-
-  if (!user) {
+  if (!context.user) {
     redirect("/auth/login");
   }
 
-
-  // =======================================================
-  // SUBSCRIPTION
-  // =======================================================
-
-  const {
-    data: subscriptionData,
-  } =
-    await supabase
-      .from("account_subscriptions")
-      .select(`
-        user_id,
-        plan,
-        status,
-        custom_price_monthly,
-        custom_max_members,
-        custom_max_clients,
-        custom_max_devices,
-        custom_max_monitors,
-        current_period_end,
-        cancel_at_period_end
-      `)
-      .eq(
-        "user_id",
-        user.id
-      )
-      .maybeSingle();
-
-  const subscription =
-    subscriptionData as
-      | Subscription
-      | null;
-
-  const currentPlan: PlanName =
-    subscription?.plan ??
-    "free";
-
-
-  // =======================================================
-  // ORGANIZATIONS
-  // =======================================================
-
-  const {
-    data: organizations,
-  } =
-    await supabase
-      .from("organizations")
-      .select("id")
-      .eq(
-        "owner_id",
-        user.id
-      );
-
-  const organizationIds =
-    organizations?.map(
-      organization =>
-        organization.id
-    ) ?? [];
-
-
-  // =======================================================
-  // MEMBERS
-  // =======================================================
-
-  let membersUsage = 1;
-
-  if (organizationIds.length > 0) {
-    const {
-      data: members,
-    } =
-      await supabase
-        .from(
-          "organization_members"
+  const organization =
+    query.organizationId
+      ? context.organizations.find(
+          (item) =>
+            item.id ===
+            query.organizationId
         )
-        .select("user_id")
-        .in(
-          "organization_id",
-          organizationIds
-        );
+      : context.organization;
 
-    const uniqueMembers =
-      new Set<string>();
+  if (!organization) {
+    notFound();
+  }
 
-    uniqueMembers.add(user.id);
-
-    members?.forEach(
-      member => {
-        if (member.user_id) {
-          uniqueMembers.add(
-            member.user_id
-          );
-        }
-      }
+  const entitlements =
+    await getOrganizationEntitlements(
+      organization.id
     );
-
-    membersUsage =
-      uniqueMembers.size;
-  }
-
-
-  // =======================================================
-  // CLIENTS
-  // =======================================================
-
-  let clients: {
-    id: string;
-  }[] = [];
-
-  if (organizationIds.length > 0) {
-    const {
-      data,
-    } =
-      await supabase
-        .from("clients")
-        .select("id")
-        .in(
-          "organization_id",
-          organizationIds
-        );
-
-    clients =
-      data ?? [];
-  }
-
-  const clientIds =
-    clients.map(
-      client =>
-        client.id
-    );
-
-
-  // =======================================================
-  // DEVICES
-  // =======================================================
-
-  let devicesUsage = 0;
-
-  if (clientIds.length > 0) {
-    const {
-      count,
-    } =
-      await supabase
-        .from("devices")
-        .select(
-          "id",
-          {
-            count: "exact",
-            head: true,
-          }
-        )
-        .in(
-          "client_id",
-          clientIds
-        );
-
-    devicesUsage =
-      count ?? 0;
-  }
-
-
-  // =======================================================
-  // MONITORS
-  // =======================================================
 
   const {
-    count: monitorsCount,
-  } =
-    await supabase
-      .from("monitors")
-      .select(
-        "id",
-        {
-          count: "exact",
-          head: true,
-        }
-      )
-      .eq(
-        "user_id",
-        user.id
-      );
+    plan,
+    usage,
+    limits,
+    subscription: sub,
+  } = entitlements;
 
+  const paymentIssue =
+    Boolean(sub.payment_issue) ||
+    [
+      "past_due",
+      "unpaid",
+      "incomplete",
+    ].includes(sub.status);
 
-  // =======================================================
-  // USAGE
-  // =======================================================
-
-  const usage: Usage = {
-    members: membersUsage,
-    clients: clients.length,
-    devices: devicesUsage,
-    monitors: monitorsCount ?? 0,
-  };
-
-
-  const memberLimit =
-    getEffectiveLimit(
-      currentPlan,
-      "members",
-      subscription
+  const currentPeriodEnd =
+    formatDate(
+      sub.current_period_end
     );
 
-  const clientLimit =
-    getEffectiveLimit(
-      currentPlan,
-      "clients",
-      subscription
+  const pendingPlanDate =
+    formatDate(
+      sub.pending_plan_at
     );
 
-  const deviceLimit =
-    getEffectiveLimit(
-      currentPlan,
-      "devices",
-      subscription
-    );
-
-  const monitorLimit =
-    getEffectiveLimit(
-      currentPlan,
-      "monitors",
-      subscription
-    );
-
-
-  // =======================================================
-  // RENDER
-  // =======================================================
+  const subscriptionActive =
+    !paymentIssue &&
+    [
+      "active",
+      "trialing",
+    ].includes(sub.status);
 
   return (
-    <div
-      className="sg-page"
-    >
-
-      {/* ===============================================
-          HEADER
-      =============================================== */}
-
-      <div
-        className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between"
-      >
-
-        <div>
-
-          <div
-            className="mb-2 flex items-center gap-2 text-sm text-surface-muted"
-          >
-            <CreditCard size={15} />
-
-            Account
-          </div>
-
-
-          <h1
-            className="sg-page-title"
-          >
-            Billing
-          </h1>
-
-
-          <p
-            className="mt-2 max-w-2xl text-sm leading-6 text-surface-muted"
-          >
-            Manage your SentinelGrid plan,
-            infrastructure limits and subscription.
-          </p>
-
-        </div>
-
-
-        <div
-          className="flex items-center gap-2 rounded-full border border-emerald-500/20 bg-[#10201c] px-3 py-1.5 text-xs font-medium text-emerald-400"
-        >
-          <ShieldCheck size={14} />
-
-          {subscription?.status ===
-          "trialing"
-            ? "Trial"
-            : subscription?.status ===
-                "past_due"
-              ? "Payment required"
-              : "Subscription active"}
-
-        </div>
-
-      </div>
-
-
-
-      {/* ===============================================
-          CURRENT PLAN
-      =============================================== */}
-
-      <div
-        className="sg-surface group mb-10 overflow-hidden bg-[#111318] transition-all duration-300 hover:border-surface-accent-edge hover:shadow-2xl hover:shadow-black/20"
-      >
-
-        <div
-          className="grid gap-8 p-6 lg:grid-cols-[0.8fr_1.2fr] lg:p-8"
-        >
-
-          {/* PLAN */}
-
-          <div
-            className="flex flex-col justify-between border-b border-surface-edge pb-8 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-8"
-          >
-
-            <div>
-
-              <div
-                className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl border border-surface-edge bg-[#1a1c22] transition-all duration-300 group-hover:border-surface-accent-edge group-hover:bg-surface-hover"
-              >
-                <Crown
-                  size={20}
-                  className="text-white"
-                />
-              </div>
-
-
-              <p
-                className="text-xs font-semibold uppercase tracking-[0.16em] text-surface-muted"
-              >
-                Current plan
-              </p>
-
-
-              <div
-                className="mt-2 flex flex-wrap items-end gap-3"
-              >
-
-                <h2
-                  className="sg-section-title text-4xl tracking-tight text-white"
-                >
-                  {
-                    PLAN_LABELS[
-                      currentPlan
-                    ]
-                  }
-                </h2>
-
-
-                {currentPlan ===
-                "business" && (
-
-                  <span
-                    className="sg-badge mb-1 bg-[#202229] text-zinc-300"
-                  >
-                    Most Popular
-                  </span>
-
-                )}
-
-              </div>
-
-
-              <div
-                className="mt-5 flex items-end gap-1"
-              >
-
-                <span
-                  className="text-2xl font-semibold text-white"
-                >
-                  {formatPrice(
-                    currentPlan,
-                    subscription
-                      ?.custom_price_monthly
-                  )}
-                </span>
-
-
-                {currentPlan !==
-                  "free" &&
-                  !(
-                    currentPlan ===
-                      "enterprise" &&
-                    !subscription
-                      ?.custom_price_monthly
-                  ) && (
-
-                    <span
-                      className="pb-1 text-sm text-surface-muted"
-                    >
-                      / month
-                    </span>
-
-                  )}
-
-              </div>
-
-
-              <p
-                className="mt-3 max-w-sm text-sm leading-6 text-surface-muted"
-              >
-                {
-                  PLAN_DESCRIPTIONS[
-                    currentPlan
-                  ]
-                }
-              </p>
-
-            </div>
-
-
-            {subscription
-              ?.cancel_at_period_end && (
-
-              <div
-                className="mt-6 rounded-xl border border-amber-500/20 bg-[#211b10] p-3 text-xs leading-5 text-amber-300"
-              >
-                Your subscription is
-                scheduled to cancel at the
-                end of the current billing
-                period.
-              </div>
-
-            )}
-
-          </div>
-
-
-
-          {/* USAGE */}
-
-          <div>
-
-            <div className="mb-5">
-
-              <div
-                className="flex items-center gap-2"
-              >
-                <Gauge
-                  size={17}
-                  className="text-zinc-400"
-                />
-
-                <h3
-                  className="text-sm font-semibold text-white"
-                >
-                  Plan usage
-                </h3>
-              </div>
-
-
-              <p
-                className="mt-1 text-xs text-surface-muted"
-              >
-                Resources currently assigned
-                to your account.
-              </p>
-
-            </div>
-
-
-            <div
-              className="grid gap-3 sm:grid-cols-2"
-            >
-
-              <UsageRow
-                label="Members"
-                usage={usage.members}
-                limit={memberLimit}
-                icon={Users}
-              />
-
-              <UsageRow
-                label="Clients"
-                usage={usage.clients}
-                limit={clientLimit}
-                icon={Building2}
-              />
-
-              <UsageRow
-                label="Devices"
-                usage={usage.devices}
-                limit={deviceLimit}
-                icon={Server}
-              />
-
-              <UsageRow
-                label="Monitors"
-                usage={usage.monitors}
-                limit={monitorLimit}
-                icon={Activity}
-              />
-
-            </div>
-
-          </div>
-
-        </div>
-
-      </div>
-
-
-
-      {/* ===============================================
-          AVAILABLE PLANS HEADER
-      =============================================== */}
-
-      <div className="mb-5">
-
-        <div
-          className="flex items-center gap-2"
-        >
-          <Sparkles
-            size={17}
-            className="text-zinc-400"
-          />
-
-          <h2
-            className="sg-section-title text-white"
-          >
-            Available plans
-          </h2>
-        </div>
-
-
-        <p
-          className="mt-1 text-sm text-surface-muted"
-        >
-          Scale SentinelGrid as your
-          infrastructure grows.
-        </p>
-
-      </div>
-
-
-
-      {/* ===============================================
-          PLAN CARDS
-      =============================================== */}
-
-      <div
-        className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
-      >
-
-        {PLAN_ORDER.map(
-          plan => {
-
-            const isCurrent =
-              plan === currentPlan;
-
-            const price =
-              PLAN_PRICES[plan];
-
-            const isEnterprise =
-              plan ===
-              "enterprise";
-
-            const isBusiness =
-              plan ===
-              "business";
-
-
-            return (
-
-              <div
-                key={plan}
-                className={`sg-surface
-                  group
-                  relative
-                  flex
-                  min-h-[410px]
-                  flex-col
-                  overflow-hidden
-                  rounded-2xl
-                  border
-                  p-6
-                  transition-all
-                  duration-300
-                  hover:-translate-y-1
-                  hover:shadow-2xl
-                  hover:shadow-black/30
-
-                  ${
-                    isBusiness
-                      ? `
-                        border-white/[0.15]
-                        bg-[#16181e]
-                        hover:border-surface-accent-edge
-                        hover:bg-surface-hover
-                      `
-                      : `
-                        border-surface-edge
-                        bg-[#111318]
-                        hover:border-surface-accent-edge
-                        hover:bg-surface-hover
-                      `
-                  }
-                `}
-              >
-
-                {/* POPULAR */}
-
-                {isBusiness && (
-
-                  <div
-                    className="absolute right-4 top-4 rounded-full border border-white/[0.10] bg-[#24262d] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-300 transition group-hover:border-surface-accent-edge group-hover:text-white"
-                  >
-                    Popular
-                  </div>
-
-                )}
-
-
-                {/* PLAN TITLE */}
-
-                <div>
-
-                  <p
-                    className="text-xs font-semibold uppercase tracking-[0.14em] text-surface-muted transition-colors group-hover:text-zinc-400"
-                  >
-                    {
-                      PLAN_LABELS[
-                        plan
-                      ]
-                    }
-                  </p>
-
-
-                  <div
-                    className="mt-4 flex items-end gap-1"
-                  >
-
-                    <span
-                      className="text-3xl font-semibold tracking-tight text-white"
-                    >
-                      {isEnterprise
-                        ? "Custom"
-                        : price === 0
-                          ? "€0"
-                          : `€${price?.toFixed(
-                              2
-                            )}`}
-                    </span>
-
-
-                    {!isEnterprise &&
-                      price !== 0 && (
-
-                      <span
-                        className="pb-1 text-sm text-surface-muted"
-                      >
-                        /mo
-                      </span>
-
-                    )}
-
-                  </div>
-
-
-                  <p
-                    className="mt-4 min-h-[48px] text-sm leading-6 text-surface-muted transition-colors group-hover:text-zinc-400"
-                  >
-                    {
-                      PLAN_DESCRIPTIONS[
-                        plan
-                      ]
-                    }
-                  </p>
-
-                </div>
-
-
-                {/* SEPARATOR */}
-
-                <div
-                  className="my-6 h-px bg-[#25272d]"
-                />
-
-
-                {/* FEATURES */}
-
-                <div
-                  className="flex-1 space-y-3"
-                >
-
-                  {
-                    PLAN_FEATURES[
-                      plan
-                    ].map(
-                      feature => (
-
-                        <div
-                          key={
-                            feature
-                          }
-                          className="flex items-start gap-2.5 text-sm text-zinc-400 transition-colors duration-200 group-hover:text-zinc-300"
-                        >
-
-                          <Check
-                            size={15}
-                            className="mt-0.5 shrink-0 text-zinc-300"
-                          />
-
-                          {feature}
-
-                        </div>
-
-                      )
-                    )
-                  }
-
-                </div>
-
-
-                {/* BUTTON */}
-
-                <div className="mt-7">
-
-                  {isCurrent ? (
-
-                    <button
-                      disabled
-                      className="flex h-10 w-full cursor-default items-center justify-center rounded-lg border border-surface-edge bg-[#1a1c22] text-sm font-medium text-surface-muted"
-                    >
-                      Current Plan
-                    </button>
-
-                  ) : isEnterprise ? (
-
-                    <Link
-                      href="/contact"
-                      className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.10] bg-[#1b1d23] text-sm font-medium text-white transition-all duration-200 hover:border-surface-accent-edge hover:bg-surface-hover"
-                    >
-                      Contact Sales
-
-                      <ArrowUpRight
-                        size={15}
-                      />
-                    </Link>
-
-                  ) : (
-
-                    <button
-                      type="button"
-                      className="sg-button sg-button-primary w-full"
-                    >
-                      {currentPlan ===
-                      "free"
-                        ? "Upgrade Plan"
-                        : "Change Plan"}
-
-                      <ArrowUpRight
-                        size={15}
-                      />
-                    </button>
-
-                  )}
-
-                </div>
-
-              </div>
-
-            );
-
+    <div className="sg-page-shell">
+      <div className="sg-page space-y-6">
+
+        {/* =====================================================
+            HEADER
+        ====================================================== */}
+
+        <PageHeader
+          eyebrow="Account"
+          title="Billing"
+          description="Manage your SentinelGrid plan, infrastructure limits and subscription."
+          icon={
+            <CreditCard size={22} />
           }
+          actions={
+            <span
+              className={[
+                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium",
+                paymentIssue
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+                  : subscriptionActive
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                    : "border-surface-edge bg-surface text-surface-muted",
+              ].join(" ")}
+            >
+              <span
+                className={[
+                  "h-1.5 w-1.5 rounded-full",
+                  paymentIssue
+                    ? "bg-amber-400"
+                    : subscriptionActive
+                      ? "bg-emerald-400"
+                      : "bg-zinc-500",
+                ].join(" ")}
+              />
+
+              {paymentIssue
+                ? "Payment issue"
+                : subscriptionActive
+                  ? "Subscription active"
+                  : sub.status.replace(
+                      /_/g,
+                      " "
+                    )}
+            </span>
+          }
+        />
+
+        {/* =====================================================
+            ORGANIZATION SELECTOR
+        ====================================================== */}
+
+        {context.organizations.length >
+          1 && (
+          <nav
+            aria-label="Organization billing"
+            className="flex flex-wrap gap-3"
+          >
+            {context.organizations.map(
+              (item) => (
+                <Link
+                  key={item.id}
+                  href={`/dashboard/billing?organizationId=${item.id}`}
+                  aria-current={
+                    item.id ===
+                    organization.id
+                      ? "page"
+                      : undefined
+                  }
+                  className={
+                    item.id ===
+                    organization.id
+                      ? "sg-button sg-button-primary"
+                      : "sg-button sg-button-secondary"
+                  }
+                >
+                  {item.name}
+                </Link>
+              )
+            )}
+          </nav>
         )}
 
+        {/* =====================================================
+            PAYMENT ISSUE
+        ====================================================== */}
+
+        {paymentIssue && (
+          <div
+            role="alert"
+            className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-5 py-4 text-sm text-amber-200"
+          >
+            <div className="font-medium">
+              Payment issue
+            </div>
+
+            <p className="mt-1 text-amber-200/75">
+              We couldn&apos;t process
+              your latest subscription
+              payment. Use Manage billing
+              to review your payment
+              details. Existing data has
+              not been deleted.
+            </p>
+          </div>
+        )}
+
+        {/* =====================================================
+            CURRENT PLAN
+        ====================================================== */}
+
+        <Surface className="overflow-hidden">
+          <div className="grid lg:grid-cols-[0.9fr_1.35fr]">
+
+            {/* LEFT */}
+
+            <div className="flex flex-col justify-between border-b border-surface-edge p-6 lg:border-b-0 lg:border-r">
+              <div>
+                <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-400">
+                  <Crown size={21} />
+                </div>
+
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-surface-muted">
+                  Current plan
+                </p>
+
+                <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
+                  {PLANS[plan].name}
+                </h2>
+
+                <div className="mt-2 flex items-end gap-1">
+                  <span className="text-2xl font-semibold text-white">
+                    {formatPlanPrice(
+                      plan
+                    )}
+                  </span>
+
+                  {plan !==
+                    "enterprise" && (
+                    <span className="pb-0.5 text-sm text-surface-muted">
+                      / month
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-4 max-w-sm text-sm leading-6 text-surface-muted">
+                  {
+                    PLANS[plan]
+                      .description
+                  }
+                </p>
+              </div>
+
+              <div className="mt-8 space-y-1 text-xs text-surface-muted">
+                {sub.cancel_at_period_end &&
+                  currentPeriodEnd && (
+                    <p>
+                      Subscription ends{" "}
+                      <span className="text-white">
+                        {
+                          currentPeriodEnd
+                        }
+                      </span>
+                    </p>
+                  )}
+
+                {!sub.cancel_at_period_end &&
+                  sub.provider_subscription_id &&
+                  currentPeriodEnd && (
+                    <p>
+                      Next renewal{" "}
+                      <span className="text-white">
+                        {
+                          currentPeriodEnd
+                        }
+                      </span>
+                    </p>
+                  )}
+
+                {sub.pending_plan &&
+                  isPlanName(
+                    sub.pending_plan
+                  ) && (
+                    <p className="text-amber-300">
+                      Changes to{" "}
+                      {
+                        PLANS[
+                          sub
+                            .pending_plan
+                        ].name
+                      }
+                      {pendingPlanDate
+                        ? ` on ${pendingPlanDate}`
+                        : ""}
+                    </p>
+                  )}
+              </div>
+            </div>
+
+            {/* RIGHT */}
+
+            <div className="p-6">
+              <div>
+                <h3 className="font-semibold text-white">
+                  Plan usage
+                </h3>
+
+                <p className="mt-1 text-sm text-surface-muted">
+                  Resources currently
+                  assigned to your
+                  organization.
+                </p>
+              </div>
+
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                {RESOURCES.map(
+                  (resource) => {
+                    const current =
+                      usage[resource];
+
+                    const limit =
+                      limits[resource];
+
+                    const percentage =
+                      usagePercentage(
+                        current,
+                        limit
+                      );
+
+                    const atLimit =
+                      Number.isFinite(
+                        limit
+                      ) &&
+                      current >=
+                        limit;
+
+                    return (
+                      <div
+                        key={
+                          resource
+                        }
+                        className="rounded-xl border border-surface-edge bg-black/10 p-4"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-surface-muted">
+                              {resourceIcon(
+                                resource
+                              )}
+                            </span>
+
+                            <span className="text-sm font-medium text-white">
+                              {resourceLabel(
+                                resource
+                              )}
+                            </span>
+                          </div>
+
+                          <span
+                            className={[
+                              "text-sm font-medium",
+                              atLimit
+                                ? "text-amber-300"
+                                : "text-white",
+                            ].join(
+                              " "
+                            )}
+                          >
+                            {current.toLocaleString(
+                              "en-GB"
+                            )}{" "}
+                            /{" "}
+                            {displayLimit(
+                              limit
+                            )}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/5">
+                          <div
+                            className={[
+                              "h-full rounded-full transition-[width]",
+                              atLimit
+                                ? "bg-amber-400"
+                                : "bg-blue-500",
+                            ].join(
+                              " "
+                            )}
+                            style={{
+                              width: `${percentage}%`,
+                            }}
+                          />
+                        </div>
+
+                        {atLimit && (
+                          <p className="mt-2 text-xs text-amber-300">
+                            Limit{" "}
+                            {current >
+                            limit
+                              ? "exceeded"
+                              : "reached"}
+                            .
+                          </p>
+                        )}
+                      </div>
+                    );
+                  }
+                )}
+              </div>
+
+              {entitlements.pendingInvites >
+                0 && (
+                <p className="mt-4 text-xs text-surface-muted">
+                  {
+                    entitlements.pendingInvites
+                  }{" "}
+                  pending{" "}
+                  {entitlements.pendingInvites ===
+                  1
+                    ? "invitation reserves"
+                    : "invitations reserve"}{" "}
+                  member{" "}
+                  {entitlements.pendingInvites ===
+                  1
+                    ? "seat"
+                    : "seats"}
+                  . The owner counts
+                  once.
+                </p>
+              )}
+            </div>
+          </div>
+        </Surface>
+
+        {/* =====================================================
+            BILLING CONTROLS / AVAILABLE PLANS
+        ====================================================== */}
+
+        <BillingControls
+          key={organization.id}
+          organizationId={
+            organization.id
+          }
+          plan={plan}
+          owner={
+            entitlements.role ===
+            "owner"
+          }
+          hasSubscription={Boolean(
+            sub.provider_subscription_id
+          )}
+          hasCustomer={Boolean(
+            sub.provider_customer_id
+          )}
+          cancelAtPeriodEnd={
+            sub.cancel_at_period_end
+          }
+          confirming={
+            query.checkout ===
+              "success" &&
+            (!sub.provider_subscription_id ||
+              sub.status ===
+                "incomplete")
+          }
+          pendingPlan={
+            sub.pending_plan
+          }
+        />
       </div>
-
-
-
-      {/* ===============================================
-          FOOTNOTE
-      =============================================== */}
-
-      <div
-        className="mt-6 flex items-center gap-2 text-xs text-surface-muted"
-      >
-        <CreditCard size={13} />
-
-        Payments and subscription management
-        will be securely processed through Stripe.
-      </div>
-
     </div>
   );
 }

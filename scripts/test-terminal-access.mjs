@@ -8,7 +8,7 @@ function effectiveAccess({ userId, role, plan, status }) {
     ownerId: "owner",
     userId,
     role,
-    subscription: { userId: "owner", plan, status, customLimits: {} },
+    subscription: { organizationId: "organization", plan, status, customLimits: {} },
   };
 }
 
@@ -43,7 +43,7 @@ function loadSessions(access) {
     "@/lib/organization-access": {
       getOrganizationAccessForUser: async () => access,
       accessHasPermission: (value, permission) => (value.role === "owner" || value.role === "admin") && permission === "devices.terminal",
-      accessHasFeature: (value, feature) => value.subscription.plan !== "free" && !["restricted", "canceled"].includes(value.subscription.status) && feature === "terminal",
+      accessHasFeature: (value, feature) => dashboardLoader()("lib/organization-access-core.ts").accessHasFeature(value, feature),
     },
     "@/lib/remote/rate-limit": { enforceRemoteRateLimit: async () => {} },
     "@/lib/realtime/redis": { getRedis: () => ({ set: async (...args) => tickets.push(args) }) },
@@ -52,14 +52,14 @@ function loadSessions(access) {
   return { sessions: load("lib/remote/sessions.ts"), inserted, audits, tickets };
 }
 
-test("Terminal HTTP sessions require the owner subscription entitlement and terminal role permission", async () => {
+test("Terminal HTTP sessions require the organization entitlement and terminal role permission", async () => {
   const cases = [
-    ["free owner", effectiveAccess({ userId: "owner", role: "owner", plan: "free", status: "active" }), false],
+    ["free owner", effectiveAccess({ userId: "owner", role: "owner", plan: "free", status: "active" }), true],
     ["pro owner", effectiveAccess({ userId: "owner", role: "owner", plan: "pro", status: "active" }), true],
     ["invited free admin in pro organization", effectiveAccess({ userId: "admin", role: "admin", plan: "pro", status: "active" }), true],
     ["pro member", effectiveAccess({ userId: "member", role: "member", plan: "pro", status: "active" }), false],
-    ["restricted pro owner", effectiveAccess({ userId: "owner", role: "owner", plan: "pro", status: "restricted" }), false],
-    ["canceled pro admin", effectiveAccess({ userId: "admin", role: "admin", plan: "pro", status: "canceled" }), false],
+    ["restricted pro owner", effectiveAccess({ userId: "owner", role: "owner", plan: "pro", status: "restricted" }), true],
+    ["canceled pro admin", effectiveAccess({ userId: "admin", role: "admin", plan: "pro", status: "canceled" }), true],
     ["past due pro owner", effectiveAccess({ userId: "owner", role: "owner", plan: "pro", status: "past_due" }), true],
     ["grace period pro owner", effectiveAccess({ userId: "owner", role: "owner", plan: "pro", status: "grace_period" }), true],
   ];

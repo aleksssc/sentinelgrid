@@ -27,7 +27,7 @@ function access({ userId, role, plan, status }) {
     ownerId: "owner",
     userId,
     role,
-    subscription: { userId: "owner", plan, status, customLimits: {} },
+    subscription: { organizationId: "organization", plan, status, customLimits: {} },
   };
 }
 
@@ -45,13 +45,13 @@ function loadCommands(result) {
     "@/lib/organization-access": {
       getOrganizationAccessForUser: async () => { accessLookups += 1; return result; },
       accessHasPermission: (value, permission) => (value.role === "owner" || value.role === "admin") && permission === "devices.actions",
-      accessHasFeature: (value, feature) => value.subscription.plan !== "free" && !["restricted", "canceled"].includes(value.subscription.status) && feature === "deviceActions",
+      accessHasFeature: (value, feature) => dashboardLoader()("lib/organization-access-core.ts").accessHasFeature(value, feature),
     },
   });
   return { commands: load("lib/remote/commands.ts"), accessLookups: () => accessLookups };
 }
 
-test("organization access resolves membership against the owner's subscription", async () => {
+test("organization access resolves membership against the organization subscription", async () => {
   const db = database({
     organizations: [{ id: "organization", owner_id: "owner" }],
     organization_members: [
@@ -59,7 +59,7 @@ test("organization access resolves membership against the owner's subscription",
       { organization_id: "organization", user_id: "member", role: "member" },
       { organization_id: "organization", user_id: "invalid", role: "invalid" },
     ],
-    account_subscriptions: [{ user_id: "owner", plan: "pro", status: "active" }],
+    organization_subscriptions: [{ organization_id: "organization", plan: "pro", status: "active" }],
   });
   const load = dashboardLoader({
     "server-only": {},
@@ -75,17 +75,17 @@ test("organization access resolves membership against the owner's subscription",
   assert.equal((await organizationAccess.getOrganizationAccessForUser("organization", "member"))?.role, "member");
   assert.equal(await organizationAccess.getOrganizationAccessForUser("organization", "missing"), null);
   assert.equal(await organizationAccess.getOrganizationAccessForUser("organization", "invalid"), null);
-  assert.equal(organizationAccess.accessHasFeature({ ...admin, subscription: { ...admin.subscription, status: "restricted" } }, "deviceActions"), false);
+  assert.equal(organizationAccess.accessHasFeature({ ...admin, subscription: { ...admin.subscription, status: "restricted" } }, "deviceActions"), true);
 });
 
-test("Device Actions require role permission and the organization owner's paid entitlement", async () => {
+test("Device Actions require role permission and the organization entitlement", async () => {
   const cases = [
-    ["free owner", access({ userId: "owner", role: "owner", plan: "free", status: "active" }), false],
+    ["free owner", access({ userId: "owner", role: "owner", plan: "free", status: "active" }), true],
     ["pro owner", access({ userId: "owner", role: "owner", plan: "pro", status: "active" }), true],
     ["invited free admin in pro organization", access({ userId: "admin", role: "admin", plan: "pro", status: "active" }), true],
     ["pro member", access({ userId: "member", role: "member", plan: "pro", status: "active" }), false],
-    ["restricted pro owner", access({ userId: "owner", role: "owner", plan: "pro", status: "restricted" }), false],
-    ["canceled pro admin", access({ userId: "admin", role: "admin", plan: "pro", status: "canceled" }), false],
+    ["restricted pro owner", access({ userId: "owner", role: "owner", plan: "pro", status: "restricted" }), true],
+    ["canceled pro admin", access({ userId: "admin", role: "admin", plan: "pro", status: "canceled" }), true],
     ["past due pro owner", access({ userId: "owner", role: "owner", plan: "pro", status: "past_due" }), true],
     ["grace period pro owner", access({ userId: "owner", role: "owner", plan: "pro", status: "grace_period" }), true],
   ];
