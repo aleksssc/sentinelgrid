@@ -14,7 +14,6 @@ import {
 import {
   ArrowRight,
   Check,
-  RefreshCw,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -120,6 +119,19 @@ export default function BillingControls({
     useState(
       confirming
     );
+
+  useEffect(() => {
+    if (
+      hasSubscription &&
+      !confirming
+    ) {
+      setWaiting(false);
+      setMessage(null);
+    }
+  }, [
+    hasSubscription,
+    confirming,
+  ]);
 
   const [
     busy,
@@ -374,130 +386,6 @@ export default function BillingControls({
 
   return (
     <>
-      {/* =====================================================
-          BILLING ACTIONS
-      ====================================================== */}
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-3">
-
-          {owner &&
-            hasCustomer && (
-              <button
-                type="button"
-                disabled={
-                  busy
-                }
-                className="sg-button sg-button-secondary"
-                onClick={() =>
-                  submit(
-                    {
-                      action:
-                        "portal",
-
-                      title:
-                        "Manage billing",
-                    }
-                  )
-                }
-              >
-                Manage billing
-              </button>
-            )}
-
-          {owner &&
-            hasSubscription && (
-              <button
-                type="button"
-                disabled={
-                  busy
-                }
-                className="sg-button sg-button-secondary"
-                onClick={() =>
-                  openSelection(
-                    {
-                      action:
-                        cancelAtPeriodEnd
-                          ? "resume"
-                          : "cancel",
-
-                      title:
-                        cancelAtPeriodEnd
-                          ? "Resume subscription?"
-                          : "Cancel subscription?",
-                    }
-                  )
-                }
-              >
-                {cancelAtPeriodEnd
-                  ? "Resume subscription"
-                  : "Cancel subscription"}
-              </button>
-            )}
-        </div>
-
-        {/* REFRESH */}
-
-        <button
-          type="button"
-          disabled={
-            busy
-          }
-          aria-label="Refresh billing"
-          title="Refresh billing"
-          className="
-            inline-flex
-            h-9
-            w-9
-            items-center
-            justify-center
-            border
-            text-[var(--sg-muted)]
-            transition
-            hover:text-white
-            disabled:opacity-50
-          "
-          style={{
-            borderColor:
-              "var(--sg-border)",
-
-            background:
-              "var(--sg-surface)",
-
-            borderRadius:
-              "var(--sg-control-radius)",
-          }}
-          onMouseEnter={(event) => {
-            event.currentTarget.style.background =
-              "var(--sg-raised)";
-
-            event.currentTarget.style.borderColor =
-              "var(--sg-accent-edge)";
-          }}
-          onMouseLeave={(event) => {
-            event.currentTarget.style.background =
-              "var(--sg-surface)";
-
-            event.currentTarget.style.borderColor =
-              "var(--sg-border)";
-          }}
-          onClick={() =>
-            router.refresh()
-          }
-        >
-          <RefreshCw
-            size={
-              16
-            }
-            className={
-              busy
-                ? "animate-spin"
-                : ""
-            }
-          />
-        </button>
-      </div>
-
       {/* =====================================================
           STATUS
       ====================================================== */}

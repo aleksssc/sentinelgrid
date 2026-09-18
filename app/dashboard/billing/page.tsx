@@ -1,7 +1,13 @@
 import Link from "next/link";
 
-import { connection } from "next/server";
-import { notFound, redirect } from "next/navigation";
+import {
+  connection,
+} from "next/server";
+
+import {
+  notFound,
+  redirect,
+} from "next/navigation";
 
 import {
   Activity,
@@ -12,8 +18,13 @@ import {
   Users,
 } from "lucide-react";
 
-import { getOrganizationContext } from "@/lib/organization-context";
-import { getOrganizationEntitlements } from "@/lib/billing/entitlements";
+import {
+  getOrganizationContext,
+} from "@/lib/organization-context";
+
+import {
+  getOrganizationEntitlements,
+} from "@/lib/billing/entitlements";
 
 import {
   PLANS,
@@ -29,93 +40,201 @@ import {
 
 import BillingControls from "./billing-controls";
 
-function formatDate(value: string | null) {
-  if (!value) {
+import EmbeddedBillingManager from "./embedded-billing-manager";
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function formatDate(
+  value:
+    | string
+    | null
+) {
+  if (
+    !value
+  ) {
     return null;
   }
 
-  const parsed = new Date(value);
+  const parsed =
+    new Date(
+      value
+    );
 
-  if (!Number.isFinite(parsed.getTime())) {
+  if (
+    !Number.isFinite(
+      parsed.getTime()
+    )
+  ) {
     return null;
   }
 
-  return parsed.toLocaleDateString("en-GB", {
-    timeZone: "UTC",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return parsed.toLocaleDateString(
+    "en-GB",
+    {
+      timeZone:
+        "UTC",
+
+      day:
+        "2-digit",
+
+      month:
+        "short",
+
+      year:
+        "numeric",
+    }
+  );
 }
 
-function resourceIcon(resource: string) {
-  switch (resource) {
+function resourceIcon(
+  resource:
+    string
+) {
+  switch (
+    resource
+  ) {
     case "members":
-      return <Users size={18} />;
+      return (
+        <Users
+          size={18}
+        />
+      );
 
     case "clients":
-      return <Building2 size={18} />;
+      return (
+        <Building2
+          size={18}
+        />
+      );
 
     case "devices":
-      return <Monitor size={18} />;
+      return (
+        <Monitor
+          size={18}
+        />
+      );
 
     case "monitors":
-      return <Activity size={18} />;
+      return (
+        <Activity
+          size={18}
+        />
+      );
 
     default:
-      return <Activity size={18} />;
+      return (
+        <Activity
+          size={18}
+        />
+      );
   }
 }
 
-function resourceLabel(resource: string) {
-  return resource.charAt(0).toUpperCase() + resource.slice(1);
+function resourceLabel(
+  resource:
+    string
+) {
+  return (
+    resource
+      .charAt(0)
+      .toUpperCase() +
+    resource.slice(
+      1
+    )
+  );
 }
 
-function displayLimit(limit: number) {
-  if (!Number.isFinite(limit)) {
+function displayLimit(
+  limit:
+    number
+) {
+  if (
+    !Number.isFinite(
+      limit
+    )
+  ) {
     return "Custom";
   }
 
-  return limit.toLocaleString("en-GB");
+  return limit.toLocaleString(
+    "en-GB"
+  );
 }
 
-function usagePercentage(usage: number, limit: number) {
-  if (!Number.isFinite(limit) || limit <= 0) {
+function usagePercentage(
+  usage:
+    number,
+
+  limit:
+    number
+) {
+  if (
+    !Number.isFinite(
+      limit
+    ) ||
+    limit <= 0
+  ) {
     return 0;
   }
 
-  return Math.min(100, Math.round((usage / limit) * 100));
+  return Math.min(
+    100,
+
+    Math.round(
+      (
+        usage /
+        limit
+      ) *
+        100
+    )
+  );
 }
+
+/* =========================================================
+   PAGE
+========================================================= */
 
 export default async function BillingPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    organizationId?: string;
-    checkout?: string;
-  }>;
+  searchParams:
+    Promise<{
+      organizationId?: string;
+      checkout?: string;
+    }>;
 }) {
   await connection();
 
-  const query = await searchParams;
+  const query =
+    await searchParams;
 
   const context =
     await getOrganizationContext();
 
-  if (!context.user) {
-    redirect("/auth/login");
+  if (
+    !context.user
+  ) {
+    redirect(
+      "/auth/login"
+    );
   }
 
   const organization =
     query.organizationId
       ? context.organizations.find(
-          (item) =>
+          (
+            item
+          ) =>
             item.id ===
             query.organizationId
         )
       : context.organization;
 
-  if (!organization) {
+  if (
+    !organization
+  ) {
     notFound();
   }
 
@@ -128,16 +247,49 @@ export default async function BillingPage({
     plan,
     usage,
     limits,
-    subscription: sub,
-  } = entitlements;
+    subscription:
+      sub,
+  } =
+    entitlements;
+
+  /* =========================================================
+     SUBSCRIPTION STATE
+  ========================================================== */
+
+  const hasSubscription =
+    Boolean(
+      sub.provider_subscription_id
+    );
+
+  const hasCustomer =
+    Boolean(
+      sub.provider_customer_id
+    );
 
   const paymentIssue =
-    Boolean(sub.payment_issue) ||
+    hasSubscription &&
+    (
+      Boolean(
+        sub.payment_issue
+      ) ||
+      [
+        "past_due",
+        "unpaid",
+        "incomplete",
+      ].includes(
+        sub.status
+      )
+    );
+
+  const subscriptionActive =
+    hasSubscription &&
+    !paymentIssue &&
     [
-      "past_due",
-      "unpaid",
-      "incomplete",
-    ].includes(sub.status);
+      "active",
+      "trialing",
+    ].includes(
+      sub.status
+    );
 
   const currentPeriodEnd =
     formatDate(
@@ -149,12 +301,32 @@ export default async function BillingPage({
       sub.pending_plan_at
     );
 
-  const subscriptionActive =
-    !paymentIssue &&
-    [
-      "active",
-      "trialing",
-    ].includes(sub.status);
+  /* =========================================================
+     HEADER BADGE
+  ========================================================== */
+
+  const subscriptionLabel =
+    paymentIssue
+      ? "Payment issue"
+
+      : subscriptionActive
+        ? "Subscription active"
+
+        : hasSubscription
+          ? sub.status.replace(
+              /_/g,
+              " "
+            )
+
+          : plan ===
+              "free"
+            ? "Free plan"
+
+            : "No subscription";
+
+  /* =========================================================
+     RENDER
+  ========================================================== */
 
   return (
     <div className="sg-page-shell">
@@ -169,38 +341,45 @@ export default async function BillingPage({
           title="Billing"
           description="Manage your SentinelGrid plan, infrastructure limits and subscription."
           icon={
-            <CreditCard size={22} />
+            <CreditCard
+              size={22}
+            />
           }
           actions={
             <span
               className={[
                 "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium",
+
                 paymentIssue
                   ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+
                   : subscriptionActive
                     ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+
                     : "border-surface-edge bg-surface text-surface-muted",
-              ].join(" ")}
+              ].join(
+                " "
+              )}
             >
               <span
                 className={[
                   "h-1.5 w-1.5 rounded-full",
+
                   paymentIssue
                     ? "bg-amber-400"
+
                     : subscriptionActive
                       ? "bg-emerald-400"
+
                       : "bg-zinc-500",
-                ].join(" ")}
+                ].join(
+                  " "
+                )}
               />
 
-              {paymentIssue
-                ? "Payment issue"
-                : subscriptionActive
-                  ? "Subscription active"
-                  : sub.status.replace(
-                      /_/g,
-                      " "
-                    )}
+              {
+                subscriptionLabel
+              }
             </span>
           }
         />
@@ -216,9 +395,13 @@ export default async function BillingPage({
             className="flex flex-wrap gap-3"
           >
             {context.organizations.map(
-              (item) => (
+              (
+                item
+              ) => (
                 <Link
-                  key={item.id}
+                  key={
+                    item.id
+                  }
                   href={`/dashboard/billing?organizationId=${item.id}`}
                   aria-current={
                     item.id ===
@@ -233,7 +416,9 @@ export default async function BillingPage({
                       : "sg-button sg-button-secondary"
                   }
                 >
-                  {item.name}
+                  {
+                    item.name
+                  }
                 </Link>
               )
             )}
@@ -254,12 +439,14 @@ export default async function BillingPage({
             </div>
 
             <p className="mt-1 text-amber-200/75">
-              We couldn&apos;t process
-              your latest subscription
-              payment. Use Manage billing
-              to review your payment
-              details. Existing data has
-              not been deleted.
+              We couldn&apos;t
+              process your latest
+              subscription payment.
+              Use Manage billing to
+              review your billing
+              information. Existing
+              data has not been
+              deleted.
             </p>
           </div>
         )}
@@ -271,23 +458,50 @@ export default async function BillingPage({
         <Surface className="overflow-hidden">
           <div className="grid lg:grid-cols-[0.9fr_1.35fr]">
 
-            {/* LEFT */}
+            {/* =================================================
+                LEFT
+            ================================================== */}
 
             <div className="flex flex-col justify-between border-b border-surface-edge p-6 lg:border-b-0 lg:border-r">
+
               <div>
-                <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-400">
-                  <Crown size={21} />
+                <div className="flex items-start justify-between gap-4">
+
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-400">
+                    <Crown
+                      size={21}
+                    />
+                  </div>
+
+                  {/* ===========================================
+                      EMBEDDED BILLING MANAGER
+                  ============================================ */}
+
+                  {entitlements.role ===
+                    "owner" &&
+                    hasCustomer && (
+                      <EmbeddedBillingManager
+                        organizationId={
+                          organization.id
+                        }
+                      />
+                    )}
                 </div>
 
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-surface-muted">
+                <p className="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-surface-muted">
                   Current plan
                 </p>
 
                 <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
-                  {PLANS[plan].name}
+                  {
+                    PLANS[
+                      plan
+                    ].name
+                  }
                 </h2>
 
                 <div className="mt-2 flex items-end gap-1">
+
                   <span className="text-2xl font-semibold text-white">
                     {formatPlanPrice(
                       plan
@@ -304,17 +518,26 @@ export default async function BillingPage({
 
                 <p className="mt-4 max-w-sm text-sm leading-6 text-surface-muted">
                   {
-                    PLANS[plan]
+                    PLANS[
+                      plan
+                    ]
                       .description
                   }
                 </p>
               </div>
 
+              {/* ===============================================
+                  SUBSCRIPTION INFO
+              ================================================ */}
+
               <div className="mt-8 space-y-1 text-xs text-surface-muted">
+
                 {sub.cancel_at_period_end &&
+                  hasSubscription &&
                   currentPeriodEnd && (
                     <p>
-                      Subscription ends{" "}
+                      Subscription
+                      ends{" "}
                       <span className="text-white">
                         {
                           currentPeriodEnd
@@ -324,7 +547,7 @@ export default async function BillingPage({
                   )}
 
                 {!sub.cancel_at_period_end &&
-                  sub.provider_subscription_id &&
+                  subscriptionActive &&
                   currentPeriodEnd && (
                     <p>
                       Next renewal{" "}
@@ -348,6 +571,7 @@ export default async function BillingPage({
                             .pending_plan
                         ].name
                       }
+
                       {pendingPlanDate
                         ? ` on ${pendingPlanDate}`
                         : ""}
@@ -356,9 +580,12 @@ export default async function BillingPage({
               </div>
             </div>
 
-            {/* RIGHT */}
+            {/* =================================================
+                RIGHT
+            ================================================== */}
 
             <div className="p-6">
+
               <div>
                 <h3 className="font-semibold text-white">
                   Plan usage
@@ -372,13 +599,20 @@ export default async function BillingPage({
               </div>
 
               <div className="mt-6 grid gap-4 sm:grid-cols-2">
+
                 {RESOURCES.map(
-                  (resource) => {
+                  (
+                    resource
+                  ) => {
                     const current =
-                      usage[resource];
+                      usage[
+                        resource
+                      ];
 
                     const limit =
-                      limits[resource];
+                      limits[
+                        resource
+                      ];
 
                     const percentage =
                       usagePercentage(
@@ -401,7 +635,9 @@ export default async function BillingPage({
                         className="rounded-xl border border-surface-edge bg-black/10 p-4"
                       >
                         <div className="flex items-center justify-between gap-4">
+
                           <div className="flex items-center gap-2.5">
+
                             <span className="text-surface-muted">
                               {resourceIcon(
                                 resource
@@ -418,6 +654,7 @@ export default async function BillingPage({
                           <span
                             className={[
                               "text-sm font-medium",
+
                               atLimit
                                 ? "text-amber-300"
                                 : "text-white",
@@ -439,6 +676,7 @@ export default async function BillingPage({
                           <div
                             className={[
                               "h-full rounded-full transition-[width]",
+
                               atLimit
                                 ? "bg-amber-400"
                                 : "bg-blue-500",
@@ -446,7 +684,8 @@ export default async function BillingPage({
                               " "
                             )}
                             style={{
-                              width: `${percentage}%`,
+                              width:
+                                `${percentage}%`,
                             }}
                           />
                         </div>
@@ -492,34 +731,40 @@ export default async function BillingPage({
         </Surface>
 
         {/* =====================================================
-            BILLING CONTROLS / AVAILABLE PLANS
+            AVAILABLE PLANS
         ====================================================== */}
 
         <BillingControls
-          key={organization.id}
+          key={
+            organization.id
+          }
           organizationId={
             organization.id
           }
-          plan={plan}
+          plan={
+            plan
+          }
           owner={
             entitlements.role ===
             "owner"
           }
-          hasSubscription={Boolean(
-            sub.provider_subscription_id
-          )}
-          hasCustomer={Boolean(
-            sub.provider_customer_id
-          )}
+          hasSubscription={
+            hasSubscription
+          }
+          hasCustomer={
+            hasCustomer
+          }
           cancelAtPeriodEnd={
             sub.cancel_at_period_end
           }
           confirming={
             query.checkout ===
               "success" &&
-            (!sub.provider_subscription_id ||
+            (
+              !hasSubscription ||
               sub.status ===
-                "incomplete")
+                "incomplete"
+            )
           }
           pendingPlan={
             sub.pending_plan

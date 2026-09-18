@@ -1,13 +1,203 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Building2, MonitorDot, Server, Users } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { CompactSummary, PageHeader, SectionHeader, Surface } from "@/components/dashboard/dashboard-primitives";
+import {
+  AdminDefinitionGrid,
+  AdminMetricStrip,
+  AdminPageHeader,
+  AdminSection,
+} from "@/components/admin/admin-primitives";
 
-type Organization = { id: string; name: string; owner_id: string; created_at: string | null };
+type Organization = {
+  id: string;
+  name: string;
+  owner_id: string;
+  created_at: string | null;
+};
+
 type Client = { id: string };
 type Member = { user_id: string; role: string | null };
-export default async function AdminOrganizationPage({ params }: { params: Promise<{ id: string }> }) {
- const { id } = await params; const admin = createAdminClient(); const { data: organization } = await admin.from("organizations").select("id, name, owner_id, created_at").eq("id", id).maybeSingle<Organization>(); if (!organization) notFound(); const [{ data: allUsers }, { data: members }, { data: clients }, { count: devices }, { data: policy }] = await Promise.all([admin.auth.admin.listUsers({ page: 1, perPage: 1000 }), admin.from("organization_members").select("user_id, role").eq("organization_id", id).returns<Member[]>(), admin.from("clients").select("id").eq("organization_id", id).returns<Client[]>(), admin.from("devices").select("id, clients!inner(organization_id)", { count: "exact", head: true }).eq("clients.organization_id", id), admin.from("organization_agent_update_settings").select("channel, automatic_updates, update_delay_hours").eq("organization_id", id).maybeSingle()]); const clientIds = (clients ?? []).map((client) => client.id); const [{ count: sites }, { count: monitors }] = await Promise.all([clientIds.length ? admin.from("sites").select("id", { count: "exact", head: true }).in("client_id", clientIds) : Promise.resolve({ count: 0 }), admin.from("monitors").select("id", { count: "exact", head: true }).eq("organization_id", id)]); const users = new Map((allUsers?.users ?? []).map((user) => [user.id, user])); const owner = users.get(organization.owner_id);
- return <><PageHeader title={organization.name} eyebrow="Platform administration / organization" icon={<Building2 size={22} />} description={`Organization ID: ${organization.id}`} /><CompactSummary label="Organization overview" items={[{ label: "Members", value: (members?.length ?? 0) + 1, icon: <Users size={14} /> }, { label: "Clients", value: clients?.length ?? 0, icon: <MonitorDot size={14} /> }, { label: "Sites", value: sites ?? "--", icon: <MonitorDot size={14} /> }, { label: "Devices", value: devices ?? "--", icon: <Server size={14} /> }, { label: "Monitors", value: monitors ?? "--", icon: <MonitorDot size={14} /> }]} /><div className="sg-admin-detail-grid"><div className="grid gap-4"><Surface className="mt-5"><SectionHeader title="Organization details" description="Administrative inventory. Organization suspension and deletion are intentionally not enabled." icon={<Building2 size={17} />} /><dl className="sg-version-list"><div><dt>Owner</dt><dd>{owner ? <Link className="text-surface-accent hover:underline" href={`/admin/users/${owner.id}`}>{owner.email ?? owner.id}</Link> : "Unknown user"}</dd></div><div><dt>Created</dt><dd>{organization.created_at ? new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(new Date(organization.created_at)) : "Not available"}</dd></div><div><dt>Release channel</dt><dd>{policy?.channel ?? "Unknown"}</dd></div><div><dt>Automatic updates</dt><dd>{typeof policy?.automatic_updates === "boolean" ? policy.automatic_updates ? "Enabled" : "Disabled" : "Unknown"}</dd></div><div><dt>Update delay</dt><dd>{typeof policy?.update_delay_hours === "number" ? `${policy.update_delay_hours} hours` : "Unknown"}</dd></div></dl></Surface><Surface><SectionHeader title="Members" description="Links open the platform user record." icon={<Users size={17} />} /><div className="divide-y divide-surface-edge"><Link href={`/admin/users/${organization.owner_id}`} className="flex items-center justify-between gap-4 px-5 py-3 text-sm text-zinc-100 hover:bg-surface-hover"><span>{owner?.email ?? "Unknown owner"}</span><span className="text-xs text-surface-muted">owner</span></Link>{(members ?? []).map((member) => { const user = users.get(member.user_id); return <Link key={member.user_id} href={`/admin/users/${member.user_id}`} className="flex items-center justify-between gap-4 px-5 py-3 text-sm text-zinc-100 hover:bg-surface-hover"><span>{user?.email ?? member.user_id}</span><span className="text-xs text-surface-muted">{member.role ?? "member"}</span></Link>; })}</div></Surface></div><aside className="grid content-start gap-4 mt-5"><Surface><SectionHeader title="Quick access" description="Organization resources remain in their normal protected workspace." icon={<Server size={17} />} /><nav className="sg-admin-quick-links"><Link href={`/dashboard/organizations/${organization.id}`}><Building2 size={16} />View workspace</Link><Link href="/admin/agent-releases"><Server size={16} />View Agent fleet</Link></nav></Surface></aside></div></>;
+
+export default async function AdminOrganizationPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const admin = createAdminClient();
+
+  const { data: organization } = await admin
+    .from("organizations")
+    .select("id, name, owner_id, created_at")
+    .eq("id", id)
+    .maybeSingle<Organization>();
+
+  if (!organization) notFound();
+
+  const [
+    { data: allUsers },
+    { data: members },
+    { data: clients },
+    { count: devices },
+    { data: policy },
+  ] = await Promise.all([
+    admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    admin
+      .from("organization_members")
+      .select("user_id, role")
+      .eq("organization_id", id)
+      .returns<Member[]>(),
+    admin.from("clients").select("id").eq("organization_id", id).returns<Client[]>(),
+    admin
+      .from("devices")
+      .select("id, clients!inner(organization_id)", { count: "exact", head: true })
+      .eq("clients.organization_id", id),
+    admin
+      .from("organization_agent_update_settings")
+      .select("channel, automatic_updates, update_delay_hours")
+      .eq("organization_id", id)
+      .maybeSingle(),
+  ]);
+
+  const clientIds = (clients ?? []).map((client) => client.id);
+
+  const [{ count: sites }, { count: monitors }] = await Promise.all([
+    clientIds.length
+      ? admin
+          .from("sites")
+          .select("id", { count: "exact", head: true })
+          .in("client_id", clientIds)
+      : Promise.resolve({ count: 0 }),
+    admin
+      .from("monitors")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", id),
+  ]);
+
+  const users = new Map((allUsers?.users ?? []).map((user) => [user.id, user]));
+  const owner = users.get(organization.owner_id);
+
+  const memberMap = new Map<string, { userId: string; role: string }>();
+  memberMap.set(organization.owner_id, {
+    userId: organization.owner_id,
+    role: "owner",
+  });
+
+  for (const member of members ?? []) {
+    if (member.user_id === organization.owner_id) continue;
+    memberMap.set(member.user_id, {
+      userId: member.user_id,
+      role: member.role ?? "member",
+    });
+  }
+
+  const displayMembers = Array.from(memberMap.values());
+
+  const created = organization.created_at
+    ? new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(
+        new Date(organization.created_at),
+      )
+    : "Not available";
+
+  return (
+    <>
+      <AdminPageHeader
+        eyebrow="Organization"
+        title={organization.name}
+        description={<span className="font-mono">{organization.id}</span>}
+        backHref="/admin/organizations"
+        backLabel="Organizations"
+      />
+
+      <AdminMetricStrip
+        label="Organization usage"
+        items={[
+          { label: "Members", value: displayMembers.length },
+          { label: "Clients", value: clients?.length ?? 0 },
+          { label: "Sites", value: sites ?? "—" },
+          { label: "Devices", value: devices ?? "—" },
+          { label: "Monitors", value: monitors ?? "—" },
+        ]}
+      />
+
+      <AdminSection title="Organization" description="Ownership and Agent update policy.">
+        <div className="sg-admin-two-column">
+          <div>
+            <p className="sg-admin-subsection-title">Account</p>
+            <AdminDefinitionGrid
+              columns={1}
+              items={[
+                {
+                  label: "Owner",
+                  value: owner ? (
+                    <Link
+                      href={`/admin/users/${owner.id}`}
+                      className="text-surface-accent hover:underline"
+                    >
+                      {owner.email ?? owner.id}
+                    </Link>
+                  ) : (
+                    "Unknown user"
+                  ),
+                },
+                { label: "Created", value: created },
+                { label: "Organization ID", value: organization.id, mono: true },
+              ]}
+            />
+          </div>
+
+          <div>
+            <p className="sg-admin-subsection-title">Agent policy</p>
+            <AdminDefinitionGrid
+              columns={1}
+              items={[
+                { label: "Release channel", value: policy?.channel ?? "Unknown" },
+                {
+                  label: "Automatic updates",
+                  value:
+                    typeof policy?.automatic_updates === "boolean"
+                      ? policy.automatic_updates
+                        ? "Enabled"
+                        : "Disabled"
+                      : "Unknown",
+                },
+                {
+                  label: "Update delay",
+                  value:
+                    typeof policy?.update_delay_hours === "number"
+                      ? `${policy.update_delay_hours} hours`
+                      : "Unknown",
+                },
+              ]}
+            />
+          </div>
+        </div>
+      </AdminSection>
+
+      <AdminSection
+        title="Members"
+        description={`${displayMembers.length} account${displayMembers.length === 1 ? "" : "s"} with organization access.`}
+      >
+        <div className="sg-admin-member-list">
+          {displayMembers.map((member) => {
+            const user = users.get(member.userId);
+
+            return (
+              <Link
+                key={member.userId}
+                href={`/admin/users/${member.userId}`}
+                className="sg-admin-member-row"
+              >
+                <div className="min-w-0">
+                  <strong>{user?.email ?? member.userId}</strong>
+                  <p className="font-mono">{member.userId}</p>
+                </div>
+                <span className="sg-admin-member-role">{member.role}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </AdminSection>
+    </>
+  );
 }

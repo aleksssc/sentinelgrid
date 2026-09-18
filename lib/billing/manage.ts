@@ -44,12 +44,13 @@ import {
  * changes in a way that requires a fresh Stripe Session.
  */
 const CHECKOUT_VERSION =
-  "custom-dark-v1";
+  "custom-dark-v2";
 
 export type BillingAction =
   | "checkout"
   | "change"
   | "cancel"
+  | "cancel_now"
   | "resume"
   | "portal";
 
@@ -58,6 +59,7 @@ export const BILLING_ACTIONS:
     "checkout",
     "change",
     "cancel",
+    "cancel_now",
     "resume",
     "portal",
   ];
@@ -197,7 +199,7 @@ export async function manageBilling(
                   metadata:
                     {
                       sentinelgrid:
-                        "payment-only-v1",
+                        "payment-only-v2",
                     },
 
                   features:
@@ -230,13 +232,13 @@ export async function manageBilling(
                       subscription_cancel:
                         {
                           enabled:
-                            false,
+                            true,
                         },
 
                       subscription_update:
                         {
                           enabled:
-                            false,
+                            true,
                         },
                     },
                 },
@@ -594,6 +596,9 @@ export async function manageBilling(
                  */
                 ui_mode:
                   "custom",
+                
+                locale:
+                  "en-GB",
 
                 line_items:
                   [

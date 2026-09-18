@@ -49,7 +49,7 @@
 .sg-client-skeleton > div { height: 64px; background: var(--sg-inset); }
 
 /* Browser-local interface preferences. */
-.sg-interface-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; min-width: 0; padding: var(--sg-panel-padding); border-bottom: 1px solid var(--sg-border); }
+.sg-interface-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; min-width: 0; padding: var(--sg-panel-padding); padding: 18px var(--sg-panel-padding); border-bottom: 0;}
 .sg-interface-row:last-child { border-bottom: 0; }
 .sg-interface-row > div:first-of-type { flex: 1 1 260px; }
 .sg-preference-options { display: flex; flex: 0 1 auto; width: fit-content; max-width: 100%; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px; border: 1px solid var(--sg-border); border-radius: var(--sg-control-radius); background: var(--sg-inset); }

@@ -329,28 +329,12 @@ function CheckoutForm({
       return;
     }
 
-    setSubmitting(
-      true
-    );
-
-    setError(
-      null
-    );
+    setSubmitting(true);
+    setError(null);
 
     try {
-      const returnUrl =
-        `${window.location.origin}/dashboard/billing` +
-        `?organizationId=${encodeURIComponent(
-          organizationId
-        )}` +
-        `&checkout=success`;
-
       const confirmation =
-        await checkout.confirm(
-          {
-            returnUrl,
-          }
-        );
+        await checkout.confirm();
 
       if (
         confirmation.type ===
@@ -362,30 +346,24 @@ function CheckoutForm({
             "Payment could not be confirmed."
         );
 
-        setSubmitting(
-          false
-        );
+        setSubmitting(false);
 
         return;
       }
 
       /*
-       * Stripe webhook remains the billing source of truth.
-       */
+      * Stripe webhook remains
+      * the billing source of truth.
+      */
       onComplete();
-    } catch (
-      cause
-    ) {
+    } catch (cause) {
       setError(
-        cause instanceof
-          Error
+        cause instanceof Error
           ? cause.message
           : "Payment could not be confirmed."
       );
 
-      setSubmitting(
-        false
-      );
+      setSubmitting(false);
     }
   }
 
