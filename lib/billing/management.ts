@@ -328,38 +328,40 @@ export async function getBillingManagementSummary(
     paymentMethod,
 
     invoices:
-      invoices.data.map(
+    invoices.data.map(
         (invoice) => ({
-          id:
+        id:
             invoice.id,
 
-          number:
+        number:
             invoice.number,
 
-          status:
+        status:
             invoice.status,
 
-          amount:
+        amount:
             invoice.status ===
-              "paid"
-              ? invoice.amount_paid
-              : invoice.amount_due,
+            "paid"
+            ? invoice.amount_paid
+            : invoice.amount_due,
 
-          currency:
+        currency:
             invoice.currency,
 
-          createdAt:
+        createdAt:
             new Date(
-              invoice.created *
+            invoice.created *
                 1000
             ).toISOString(),
 
-          url:
-            invoice.hosted_invoice_url,
+        url:
+            invoice.hosted_invoice_url ??
+            null,
 
-          pdf:
-            invoice.invoice_pdf,
+        pdf:
+            invoice.invoice_pdf ??
+            null,
         })
-      ),
+    ),
   };
 }

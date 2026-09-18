@@ -19,7 +19,10 @@ type SidebarLink = { name: string; href: string; icon: ElementType; exact?: bool
 export default function DashboardSidebar({ organizationId }: { organizationId: string }) {
   const pathname = usePathname();
   const { preferences, toggleSidebar, ready } = useAppearance();
-  const expanded = preferences.sidebar === "remember" ? preferences.sidebarExpanded : preferences.sidebar === "expanded";
+  const expanded =
+  preferences.rememberSidebar
+    ? preferences.sidebarExpanded
+    : preferences.sidebar === "expanded";
   const [mobileOpen, setMobileOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
