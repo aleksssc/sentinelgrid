@@ -1,7 +1,12 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
-import { revalidatePath } from "next/cache";
+import {
+  randomUUID,
+} from "node:crypto";
+
+import {
+  revalidatePath,
+} from "next/cache";
 
 import {
   assertOrganizationPermission,
@@ -44,13 +49,16 @@ import {
  * changes in a way that requires a fresh Stripe Session.
  */
 const CHECKOUT_VERSION =
-  "custom-dark-v2";
+  "custom-dark-v3";
+
+/* =========================================================
+   TYPES
+========================================================= */
 
 export type BillingAction =
   | "checkout"
   | "change"
   | "cancel"
-  | "cancel_now"
   | "resume"
   | "portal";
 
@@ -59,10 +67,13 @@ export const BILLING_ACTIONS:
     "checkout",
     "change",
     "cancel",
-    "cancel_now",
     "resume",
     "portal",
   ];
+
+/* =========================================================
+   HELPERS
+========================================================= */
 
 function idOf(
   value:
@@ -75,6 +86,35 @@ function idOf(
     : value.id;
 }
 
+function isStripeResourceMissing(
+  error: unknown
+) {
+  if (
+    !error ||
+    typeof error !==
+      "object"
+  ) {
+    return false;
+  }
+
+  const candidate =
+    error as {
+      code?: unknown;
+      statusCode?: unknown;
+    };
+
+  return (
+    candidate.code ===
+      "resource_missing" ||
+    candidate.statusCode ===
+      404
+  );
+}
+
+/* =========================================================
+   MANAGE BILLING
+========================================================= */
+
 export async function manageBilling(
   organizationId: string,
   action: BillingAction,
@@ -86,12 +126,20 @@ export async function manageBilling(
       "billing.manage"
     );
 
+  /* =========================================================
+     VALIDATE REQUEST
+  ========================================================== */
+
   if (
     (
-      action === "checkout" ||
-      action === "change"
+      action ===
+        "checkout" ||
+      action ===
+        "change"
     ) &&
-    !isPaidPlan(plan)
+    !isPaidPlan(
+      plan
+    )
   ) {
     throw new BillingError(
       "Invalid plan",
@@ -99,10 +147,17 @@ export async function manageBilling(
     );
   }
 
+  /* =========================================================
+     BILLING LOCK
+  ========================================================== */
+
   const result =
     await withBillingLock(
       organizationId,
-      async (token) => {
+
+      async (
+        token
+      ) => {
         const state =
           await loadBillingSubscription(
             organizationId
@@ -111,8 +166,15 @@ export async function manageBilling(
         const stripe =
           getStripe();
 
+        const admin =
+          createAdminClient();
+
         const returnURL =
           `${siteURL()}/dashboard/billing?organizationId=${organizationId}`;
+
+        /* =====================================================
+           AUDIT
+        ====================================================== */
 
         const audit =
           async (
@@ -121,7 +183,7 @@ export async function manageBilling(
             const {
               error,
             } =
-              await createAdminClient()
+              await admin
                 .from(
                   "audit_logs"
                 )
@@ -145,7 +207,9 @@ export async function manageBilling(
                     "success",
                 });
 
-            if (error) {
+            if (
+              error
+            ) {
               throw new Error(
                 "Could not record billing audit",
                 {
@@ -156,9 +220,167 @@ export async function manageBilling(
             }
           };
 
-        /* =================================================
+        /* =====================================================
+           RESET STALE STRIPE REFERENCES
+        ====================================================== */
+
+        const resetMissingCustomer =
+          async () => {
+            const now =
+              new Date()
+                .toISOString();
+
+            const {
+              data,
+              error,
+            } =
+              await admin
+                .from(
+                  "organization_subscriptions"
+                )
+                .update({
+                  plan:
+                    "free",
+
+                  status:
+                    "active",
+
+                  provider:
+                    "manual",
+
+                  payment_issue:
+                    false,
+
+                  provider_customer_id:
+                    null,
+
+                  provider_subscription_id:
+                    null,
+
+                  provider_price_id:
+                    null,
+
+                  provider_schedule_id:
+                    null,
+
+                  current_period_start:
+                    null,
+
+                  current_period_end:
+                    null,
+
+                  cancel_at_period_end:
+                    false,
+
+                  pending_plan:
+                    null,
+
+                  pending_plan_at:
+                    null,
+
+                  checkout_session_id:
+                    null,
+
+                  checkout_attempt_id:
+                    null,
+
+                  checkout_attempt_at:
+                    null,
+
+                  updated_at:
+                    now,
+                })
+                .eq(
+                  "organization_id",
+                  organizationId
+                )
+                .eq(
+                  "billing_lock_token",
+                  token
+                )
+                .gt(
+                  "billing_lock_until",
+                  now
+                )
+                .select(
+                  "organization_id"
+                )
+                .single();
+
+            if (
+              error ||
+              !data
+            ) {
+              throw new Error(
+                "Could not reconcile deleted Stripe customer",
+                {
+                  cause:
+                    error,
+                }
+              );
+            }
+
+            /*
+             * Keep our in-memory state aligned
+             * with the database update.
+             */
+            state.plan =
+              "free";
+
+            state.status =
+              "active";
+
+            state.provider =
+              "manual";
+
+            state.payment_issue =
+              false;
+
+            state.provider_customer_id =
+              null;
+
+            state.provider_subscription_id =
+              null;
+
+            state.provider_price_id =
+              null;
+
+            state.provider_schedule_id =
+              null;
+
+            state.current_period_start =
+              null;
+
+            state.current_period_end =
+              null;
+
+            state.cancel_at_period_end =
+              false;
+
+            state.pending_plan =
+              null;
+
+            state.pending_plan_at =
+              null;
+
+            state.checkout_session_id =
+              null;
+
+            state.checkout_attempt_id =
+              null;
+
+            state.checkout_attempt_at =
+              null;
+
+            await audit(
+              "billing.customer_reconciled"
+            );
+          };
+
+        /* =====================================================
            CUSTOMER PORTAL
-        ================================================= */
+           Legacy/fallback path.
+        ====================================================== */
 
         if (
           action ===
@@ -170,6 +392,46 @@ export async function manageBilling(
             throw new BillingError(
               "No billing customer exists yet."
             );
+          }
+
+          /*
+           * Never silently recreate a Customer
+           * while trying to open the portal.
+           */
+          try {
+            const customer =
+              await stripe.customers.retrieve(
+                state.provider_customer_id
+              );
+
+            if (
+              customer.deleted
+            ) {
+              throw new BillingError(
+                "The Stripe billing customer no longer exists."
+              );
+            }
+          } catch (
+            error
+          ) {
+            if (
+              error instanceof
+              BillingError
+            ) {
+              throw error;
+            }
+
+            if (
+              isStripeResourceMissing(
+                error
+              )
+            ) {
+              throw new BillingError(
+                "The Stripe billing customer no longer exists."
+              );
+            }
+
+            throw error;
           }
 
           const configs =
@@ -185,66 +447,66 @@ export async function manageBilling(
 
           let config =
             configs.data.find(
-              (item) =>
+              (
+                item
+              ) =>
                 item
                   .metadata
                   ?.sentinelgrid ===
-                "payment-only-v1"
+                "payment-only-v2"
             );
 
-          if (!config) {
+          if (
+            !config
+          ) {
             config =
               await stripe.billingPortal.configurations.create(
                 {
-                  metadata:
-                    {
-                      sentinelgrid:
-                        "payment-only-v2",
+                  metadata: {
+                    sentinelgrid:
+                      "payment-only-v2",
+                  },
+
+                  features: {
+                    customer_update: {
+                      enabled:
+                        true,
+
+                      allowed_updates: [
+                        "address",
+                        "name",
+                        "tax_id",
+                      ],
                     },
 
-                  features:
-                    {
-                      customer_update:
-                        {
-                          enabled:
-                            true,
-
-                          allowed_updates:
-                            [
-                              "address",
-                              "name",
-                              "tax_id",
-                            ],
-                        },
-
-                      invoice_history:
-                        {
-                          enabled:
-                            true,
-                        },
-
-                      payment_method_update:
-                        {
-                          enabled:
-                            true,
-                        },
-
-                      subscription_cancel:
-                        {
-                          enabled:
-                            true,
-                        },
-
-                      subscription_update:
-                        {
-                          enabled:
-                            true,
-                        },
+                    invoice_history: {
+                      enabled:
+                        true,
                     },
+
+                    payment_method_update: {
+                      enabled:
+                        true,
+                    },
+
+                    /*
+                     * Subscription lifecycle is
+                     * managed inside SentinelGrid.
+                     */
+                    subscription_cancel: {
+                      enabled:
+                        false,
+                    },
+
+                    subscription_update: {
+                      enabled:
+                        false,
+                    },
+                  },
                 },
                 {
                   idempotencyKey:
-                    "sentinelgrid-payment-portal-v1",
+                    "sentinelgrid-payment-portal-v2",
                 }
               );
           }
@@ -269,9 +531,9 @@ export async function manageBilling(
           };
         }
 
-        /* =================================================
+        /* =====================================================
            ENTERPRISE
-        ================================================= */
+        ====================================================== */
 
         if (
           state.plan ===
@@ -282,14 +544,173 @@ export async function manageBilling(
           );
         }
 
-        /* =================================================
-           STRIPE CUSTOMER
-        ================================================= */
+        /* =====================================================
+           VALIDATE STORED STRIPE CUSTOMER
+        ====================================================== */
 
         let customerId =
           state.provider_customer_id;
 
-        if (!customerId) {
+        if (
+          customerId
+        ) {
+          let missing =
+            false;
+
+          try {
+            const customer =
+              await stripe.customers.retrieve(
+                customerId
+              );
+
+            if (
+              customer.deleted
+            ) {
+              missing =
+                true;
+            }
+          } catch (
+            error
+          ) {
+            /*
+             * Only an explicit missing resource
+             * is safe to reconcile.
+             *
+             * Network failures, Stripe 5xx,
+             * rate limits, etc. MUST NOT mutate
+             * billing state.
+             */
+            if (
+              isStripeResourceMissing(
+                error
+              )
+            ) {
+              missing =
+                true;
+            } else {
+              throw error;
+            }
+          }
+
+          if (
+            missing
+          ) {
+            await resetMissingCustomer();
+
+            customerId =
+              null;
+
+            /*
+             * A missing Stripe Customer can only
+             * recover automatically through a new
+             * checkout.
+             */
+            if (
+              action !==
+              "checkout"
+            ) {
+              throw new BillingError(
+                "The previous Stripe billing customer no longer exists. Start a new subscription."
+              );
+            }
+          }
+        }
+
+        /* =====================================================
+           CHECKOUT ATTEMPT
+        ====================================================== */
+
+        let checkoutAttemptId:
+          string | null =
+            null;
+
+        const ensureCheckoutAttempt =
+          async (
+            forceNew =
+              false
+          ) => {
+            if (
+              checkoutAttemptId &&
+              !forceNew
+            ) {
+              return checkoutAttemptId;
+            }
+
+            const recentAttempt =
+              Boolean(
+                state.checkout_attempt_at
+              ) &&
+              Date.now() -
+                Date.parse(
+                  state.checkout_attempt_at!
+                ) <
+                23 *
+                  60 *
+                  60 *
+                  1000;
+
+            const canReuse =
+              !forceNew &&
+              !state.checkout_session_id &&
+              recentAttempt &&
+              Boolean(
+                state.checkout_attempt_id
+              );
+
+            const attempt =
+              canReuse
+                ? state.checkout_attempt_id!
+                : randomUUID();
+
+            const now =
+              new Date()
+                .toISOString();
+
+            await saveBillingReferences(
+              organizationId,
+              token,
+              {
+                checkout_attempt_id:
+                  attempt,
+
+                checkout_attempt_at:
+                  now,
+
+                ...(forceNew
+                  ? {
+                      checkout_session_id:
+                        null,
+                    }
+                  : {}),
+              }
+            );
+
+            state.checkout_attempt_id =
+              attempt;
+
+            state.checkout_attempt_at =
+              now;
+
+            if (
+              forceNew
+            ) {
+              state.checkout_session_id =
+                null;
+            }
+
+            checkoutAttemptId =
+              attempt;
+
+            return attempt;
+          };
+
+        /* =====================================================
+           CREATE STRIPE CUSTOMER
+        ====================================================== */
+
+        if (
+          !customerId
+        ) {
           if (
             action !==
             "checkout"
@@ -299,23 +720,36 @@ export async function manageBilling(
             );
           }
 
+          /*
+           * Customer creation and Checkout Session
+           * share the same persistent attempt ID.
+           *
+           * A retry after a network timeout therefore
+           * receives the same Customer instead of
+           * accidentally creating duplicates.
+           */
+          const attempt =
+            await ensureCheckoutAttempt();
+
           const customer =
             await stripe.customers.create(
               {
-                metadata:
-                  {
-                    organization_id:
-                      organizationId,
-                  },
+                metadata: {
+                  organization_id:
+                    organizationId,
+                },
               },
               {
                 idempotencyKey:
-                  `sentinelgrid-customer-${organizationId}`,
+                  `sentinelgrid-customer-${organizationId}-${attempt}`,
               }
             );
 
           customerId =
             customer.id;
+
+          state.provider_customer_id =
+            customerId;
 
           await saveBillingReferences(
             organizationId,
@@ -327,9 +761,9 @@ export async function manageBilling(
           );
         }
 
-        /* =================================================
+        /* =====================================================
            EXISTING SUBSCRIPTIONS
-        ================================================= */
+        ====================================================== */
 
         const all =
           await stripe.subscriptions.list(
@@ -389,10 +823,10 @@ export async function manageBilling(
           );
         }
 
-        /* =================================================
+        /* =====================================================
            NEW SUBSCRIPTION
-           CUSTOM CHECKOUT + ELEMENTS
-        ================================================= */
+           CUSTOM CHECKOUT
+        ====================================================== */
 
         if (
           action ===
@@ -403,7 +837,7 @@ export async function manageBilling(
             state.provider_subscription_id
           ) {
             throw new BillingError(
-              "A subscription already exists. Refresh billing or use Manage billing."
+              "A subscription already exists."
             );
           }
 
@@ -422,6 +856,10 @@ export async function manageBilling(
             await validatePrice(
               plan
             );
+
+          /* ===================================================
+             CHECKOUT HISTORY
+          ==================================================== */
 
           const sessions =
             await stripe.checkout.sessions.list(
@@ -442,12 +880,10 @@ export async function manageBilling(
             );
           }
 
-          /*
-           * Completed Checkout exists but the subscription
-           * hasn't appeared in the subscription list yet.
-           *
-           * Do not create another charge.
-           */
+          /* ===================================================
+             COMPLETED SESSION RECONCILIATION
+          ==================================================== */
+
           const orphanedComplete =
             sessions.data.some(
               (
@@ -475,6 +911,10 @@ export async function manageBilling(
             );
           }
 
+          /* ===================================================
+             OPEN SESSION
+          ==================================================== */
+
           const open =
             sessions.data.find(
               (
@@ -486,11 +926,9 @@ export async function manageBilling(
                   "subscription"
             );
 
-          /*
-           * Reuse only Custom Checkout Sessions created
-           * by the current SentinelGrid checkout version.
-           */
-          if (open) {
+          if (
+            open
+          ) {
             const reusable =
               open.metadata
                 ?.requested_plan ===
@@ -508,6 +946,19 @@ export async function manageBilling(
               reusable &&
               open.client_secret
             ) {
+              /*
+               * Keep the DB reference aligned even
+               * if a previous response was lost.
+               */
+              await saveBillingReferences(
+                organizationId,
+                token,
+                {
+                  checkout_session_id:
+                    open.id,
+                }
+              );
+
               return {
                 clientSecret:
                   open.client_secret,
@@ -518,69 +969,42 @@ export async function manageBilling(
             }
 
             /*
-             * Expire old Embedded/Hosted/Custom sessions
-             * that no longer match this implementation.
+             * Old or incompatible checkout.
              */
             await stripe.checkout.sessions.expire(
               open.id
             );
+
+            await ensureCheckoutAttempt(
+              true
+            );
           }
 
-          /* =================================================
+          /* ===================================================
              CHECKOUT ATTEMPT
-          ================================================= */
-
-          const recentAttempt =
-            Boolean(
-              state.checkout_attempt_at
-            ) &&
-            Date.now() -
-              Date.parse(
-                state.checkout_attempt_at!
-              ) <
-              23 *
-                60 *
-                60 *
-                1000;
+          ==================================================== */
 
           const attempt =
-            !open &&
-            !state.checkout_session_id &&
-            recentAttempt &&
-            state.checkout_attempt_id
-              ? state.checkout_attempt_id
-              : randomUUID();
+            checkoutAttemptId ??
+            await ensureCheckoutAttempt();
 
-          await saveBillingReferences(
-            organizationId,
-            token,
-            {
-              checkout_attempt_id:
-                attempt,
+          const metadata = {
+            organization_id:
+              organizationId,
 
-              checkout_attempt_at:
-                new Date().toISOString(),
-            }
-          );
+            requested_plan:
+              plan,
 
-          const metadata =
-            {
-              organization_id:
-                organizationId,
+            checkout_attempt_id:
+              attempt,
 
-              requested_plan:
-                plan,
+            checkout_version:
+              CHECKOUT_VERSION,
+          };
 
-              checkout_attempt_id:
-                attempt,
-
-              checkout_version:
-                CHECKOUT_VERSION,
-            };
-
-          /* =================================================
-             CREATE CUSTOM CHECKOUT SESSION
-          ================================================= */
+          /* ===================================================
+             CREATE CHECKOUT SESSION
+          ==================================================== */
 
           const session =
             await stripe.checkout.sessions.create(
@@ -591,41 +1015,38 @@ export async function manageBilling(
                 mode:
                   "subscription",
 
-                /*
-                 * Custom Checkout Sessions + Stripe Elements.
-                 */
                 ui_mode:
                   "custom",
-                
+
                 locale:
                   "en-GB",
 
-                line_items:
-                  [
-                    {
-                      price:
-                        resolvedPrice,
+                line_items: [
+                  {
+                    price:
+                      resolvedPrice,
 
-                      quantity:
-                        1,
-                    },
-                  ],
+                    quantity:
+                      1,
+                  },
+                ],
 
                 client_reference_id:
                   organizationId,
 
                 metadata,
 
-                subscription_data:
-                  {
-                    metadata,
-                  },
+                subscription_data: {
+                  metadata,
+                },
 
                 /*
-                 * Used by redirect-based payment methods.
+                 * Redirect-based payment methods
+                 * use this URL.
                  *
-                 * For normal card payments our React flow can
-                 * complete without leaving the application.
+                 * The client must call
+                 * checkout.confirm() without
+                 * supplying another returnUrl.
                  */
                 return_url:
                   `${returnURL}&checkout=success&session_id={CHECKOUT_SESSION_ID}`,
@@ -644,6 +1065,9 @@ export async function manageBilling(
                 session.id,
             }
           );
+
+          state.checkout_session_id =
+            session.id;
 
           await audit(
             "billing.checkout_started"
@@ -666,9 +1090,9 @@ export async function manageBilling(
           };
         }
 
-        /* =================================================
+        /* =====================================================
            EXISTING SUBSCRIPTION REQUIRED
-        ================================================= */
+        ====================================================== */
 
         if (
           !existing ||
@@ -679,7 +1103,7 @@ export async function manageBilling(
           )
         ) {
           throw new BillingError(
-            "No current subscription was found. Refresh billing."
+            "No current subscription was found."
           );
         }
 
@@ -699,6 +1123,10 @@ export async function manageBilling(
                 sub.schedule
               )
             : null;
+
+        /* =====================================================
+           RELEASE SCHEDULE
+        ====================================================== */
 
         const releaseSchedule =
           async () => {
@@ -726,9 +1154,9 @@ export async function manageBilling(
             );
           };
 
-        /* =================================================
+        /* =====================================================
            CANCEL / RESUME
-        ================================================= */
+        ====================================================== */
 
         if (
           action ===
@@ -748,8 +1176,22 @@ export async function manageBilling(
 
           if (
             action ===
-            "cancel"
+              "cancel" &&
+            sub.cancel_at_period_end
           ) {
+            throw new BillingError(
+              "Cancellation is already scheduled."
+            );
+          }
+
+          /*
+           * Moving to Free takes precedence over
+           * a scheduled paid-plan downgrade.
+           */
+          if (
+            action ===
+            "cancel"
+        ) {
             await releaseSchedule();
           }
 
@@ -764,13 +1206,16 @@ export async function manageBilling(
 
           return {
             message:
-              "Stripe accepted the request. Confirming subscription state.",
+              action ===
+              "cancel"
+                ? "Cancellation scheduled. Confirming with Stripe."
+                : "Subscription resumed. Confirming with Stripe.",
           };
         }
 
-        /* =================================================
+        /* =====================================================
            PLAN CHANGE
-        ================================================= */
+        ====================================================== */
 
         if (
           !isPaidPlan(
@@ -797,6 +1242,19 @@ export async function manageBilling(
           );
         }
 
+        /*
+         * A subscription scheduled for cancellation
+         * must be resumed before another paid plan
+         * can be selected.
+         */
+        if (
+          sub.cancel_at_period_end
+        ) {
+          throw new BillingError(
+            "Resume your subscription before changing plans."
+          );
+        }
+
         const currentPlan =
           planForPrice(
             item.price.id
@@ -806,6 +1264,10 @@ export async function manageBilling(
           await validatePrice(
             plan
           );
+
+        /* =====================================================
+           REMOVE SCHEDULED DOWNGRADE
+        ====================================================== */
 
         if (
           currentPlan ===
@@ -827,9 +1289,10 @@ export async function manageBilling(
           };
         }
 
-        /* =================================================
+        /* =====================================================
            BUSINESS -> PRO
-        ================================================= */
+           DOWNGRADE AT PERIOD END
+        ====================================================== */
 
         if (
           currentPlan ===
@@ -837,14 +1300,6 @@ export async function manageBilling(
           plan ===
             "pro"
         ) {
-          if (
-            sub.cancel_at_period_end
-          ) {
-            throw new BillingError(
-              "Resume your subscription before scheduling a downgrade."
-            );
-          }
-
           const scheduled =
             await scheduleSubscriptionDowngrade(
               sub,
@@ -869,37 +1324,44 @@ export async function manageBilling(
           await audit(
             "billing.plan_downgrade_scheduled"
           );
-        } else {
-          /* ===============================================
-             PRO -> BUSINESS
-          ================================================ */
 
-          if (
-            sub.cancel_at_period_end
-          ) {
-            throw new BillingError(
-              "Resume your subscription before upgrading."
-            );
-          }
-
-          await releaseSchedule();
-
-          await upgradeSubscription(
-            sub,
-            resolvedPrice
-          );
-
-          /*
-           * Webhook remains the source of truth.
-           */
+          return {
+            message:
+              "Downgrade scheduled. Confirming with Stripe.",
+          };
         }
+
+        /* =====================================================
+           PRO -> BUSINESS
+           IMMEDIATE UPGRADE + PRORATION
+        ====================================================== */
+
+        await releaseSchedule();
+
+        await upgradeSubscription(
+          sub,
+          resolvedPrice
+        );
+
+        /*
+         * Webhook remains the source of truth.
+         *
+         * If Stripe requires additional payment
+         * authentication, that state is preserved
+         * by pending_if_incomplete and can be
+         * handled by the payment confirmation UI.
+         */
 
         return {
           message:
-            "Stripe accepted the plan change. Confirming your subscription.",
+            "Stripe accepted the plan upgrade. Confirming your subscription.",
         };
       }
     );
+
+  /* =========================================================
+     REVALIDATE
+  ========================================================== */
 
   revalidatePath(
     "/dashboard",
