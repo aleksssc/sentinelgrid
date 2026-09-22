@@ -219,7 +219,7 @@ export function attachAgentSocket(ws: WebSocket) {
             ),
             connectionId,
             {
-              ex: 45,
+              ex: 75,
             },
           );
         } catch (error) {
@@ -439,7 +439,7 @@ export function attachAgentSocket(ws: WebSocket) {
                   () => {
                     void refreshPresence();
                   },
-                  15_000,
+                  30_000,
                 );
 
               /* =============================
