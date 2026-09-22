@@ -53,7 +53,7 @@
 .sg-interface-row:last-child { border-bottom: 0; }
 .sg-interface-row > div:first-of-type { flex: 1 1 260px; }
 .sg-preference-options { display: flex; flex: 0 1 auto; width: fit-content; max-width: 100%; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px; border: 1px solid var(--sg-border); border-radius: var(--sg-control-radius); background: var(--sg-inset); }
-.sg-preference-option { position: relative; cursor: pointer; }
+.sg-preference-option { position: relidempotencyKey:ative; cursor: pointer; }
 .sg-preference-option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .sg-preference-option > span { display: flex; align-items: center; min-height: 32px; padding: 6px 10px; border-radius: max(4px, calc(var(--sg-control-radius) - 3px)); color: var(--sg-muted); font-size: 0.75rem; font-weight: 500; line-height: 1.5; transition: background-color 200ms, color 200ms; }
 .sg-preference-option:hover > span { background: var(--sg-hover); }
