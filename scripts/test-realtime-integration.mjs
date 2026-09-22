@@ -131,7 +131,7 @@ test("compiled handlers share Redis across hosts, preserve all actions and recov
   }
   let agent=await socket(0,"agent");await agent.take("authenticated");
   const browser=await socket(1,"browser"),auth=await browser.take("browser_authenticated");
-  assert.equal(auth.online,true);assert.ok(ttls.every(ttl=>ttl === 75));
+  assert.equal(auth.online,true);assert.ok(ttls.every(ttl=>ttl === 150));
   await until(()=>channels.has(agentCommandChannel("device")) && channels.has(browserResultChannel(auth.session_id)));
   assert.ok(queries.some(query=>query.search.includes("agent_token_hash=eq."+createHash("sha256").update("synthetic-agent-token").digest("hex"))));
   for(const shell of ["cmd","powershell"]) {
