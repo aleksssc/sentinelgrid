@@ -88,6 +88,12 @@ func (v *viewer) layoutShell(hwnd uintptr) {
 }
 
 func (v *viewer) shellAction(action string) {
+	v.mu.RLock()
+	state := v.sessionState
+	v.mu.RUnlock()
+	if state != viewerStateConnected && action != "disconnect" {
+		return
+	}
 	switch action {
 	case "fit":
 		v.mu.Lock()
@@ -229,6 +235,7 @@ func (v *viewer) drawToolbar(hdc uintptr, client rect) {
 	for _, item := range []struct{ name, label string }{{"fit", "Fit"}, {"fullscreen", "Fullscreen"}, {"stats", "Stats"}, {"disconnect", "Disconnect"}} {
 		area := layout.buttons[item.name]
 		fill, border, text := rgb(18, 21, 26), rgb(37, 42, 50), rgb(226, 232, 240)
+		disabled := state != viewerStateConnected && item.name != "disconnect"
 
 		if item.name == "disconnect" && state.terminal() {
 			item.label = "Close"
@@ -236,14 +243,16 @@ func (v *viewer) drawToolbar(hdc uintptr, client rect) {
 		if item.name == "disconnect" && !state.terminal() {
 			fill, border, text = rgb(57, 25, 31), rgb(116, 47, 57), rgb(241, 152, 161)
 		}
-		if item.name == "fit" && mode == viewerScaleFit || item.name == "stats" && statsOpen || item.name == "fullscreen" && fullscreen {
+		if disabled {
+			fill, border, text = rgb(15, 17, 21), rgb(29, 34, 41), rgb(83, 91, 103)
+		} else if item.name == "fit" && mode == viewerScaleFit || item.name == "stats" && statsOpen || item.name == "fullscreen" && fullscreen {
 			fill, border, text = rgb(17, 30, 50), rgb(43, 70, 106), rgb(147, 197, 253)
 		}
-		if hover == item.name {
+		if !disabled && hover == item.name {
 			border = rgb(96, 165, 250)
 			fill = rgb(27, 35, 47)
 		}
-		if pressed == item.name && hover == item.name {
+		if !disabled && pressed == item.name && hover == item.name {
 			fill = rgb(43, 70, 106)
 		}
 		drawStatusRoundRect(hdc, area.toRect(), 16, fill, border)
