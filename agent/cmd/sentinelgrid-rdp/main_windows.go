@@ -114,6 +114,8 @@ type viewer struct {
 	screenWidth, screenHeight  int
 	lastKeyframeRequest        time.Time
 	input                      *viewerInputSender
+	inputMode                  string
+	blockLocalInput            bool
 
 	socketReceived, decodeStarted, decodedCompleted     uint64
 	frameBytes                                          uint64
@@ -325,7 +327,7 @@ func runViewerConnecting(connect viewerConnect) error {
 	defer logger.close()
 	logger.event("VIEWER_START")
 	started := time.Now()
-	v := &viewer{logger: logger, status: "Connecting to remote device...", sessionState: viewerStateConnecting, done: make(chan struct{}), statsStarted: started, statsReported: started, compressed: newLatestCompressedFrame(), decodeMetrics: newDurationWindow(120), conversionMetrics: newDurationWindow(120), bufferCopyMetrics: newDurationWindow(120), presentMetrics: newDurationWindow(120), loadingAnimationStarted: started}
+	v := &viewer{logger: logger, status: "Connecting to remote device...", sessionState: viewerStateConnecting, done: make(chan struct{}), statsStarted: started, statsReported: started, compressed: newLatestCompressedFrame(), decodeMetrics: newDurationWindow(120), conversionMetrics: newDurationWindow(120), bufferCopyMetrics: newDurationWindow(120), presentMetrics: newDurationWindow(120), loadingAnimationStarted: started, inputMode: "full"}
 	v.input = newViewerInputSender(v)
 	activeViewer = v
 	sessionCtx, cancelSession := context.WithCancel(context.Background())
@@ -350,6 +352,9 @@ func runViewerConnecting(connect viewerConnect) error {
 		v.ws = ws
 		v.mu.Unlock()
 		v.logger.event("VIEWER_RELAY_CONNECTED")
+		if err := v.sendInputControl(); err != nil {
+			v.logger.event("VIEWER_INPUT_CONTROL_SEND_FAILED stage=initial")
+		}
 		v.setSessionState(viewerStateNegotiatingVideo)
 		decodeDone := make(chan struct{})
 		go func() { defer close(decodeDone); v.decodeFrames() }()
@@ -625,7 +630,7 @@ func (r *byteReader) Read(p []byte) (int, error) {
 func (v *viewer) inputEnabled() bool {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
-	return v.ws != nil && !v.sessionClosed && v.sessionState == viewerStateConnected
+	return v.ws != nil && !v.sessionClosed && v.sessionState == viewerStateConnected && v.inputMode == "full"
 }
 
 func (v *viewer) queueInput(input rdp.Input) {
@@ -637,6 +642,24 @@ func (v *viewer) queueInput(input rdp.Input) {
 		return
 	}
 	v.input.enqueueCritical(input)
+}
+
+func (v *viewer) sendInputControl() error {
+	v.mu.RLock()
+	settings := rdp.InputControl{Mode: v.inputMode, BlockLocalInput: v.blockLocalInput}
+	ws := v.ws
+	closed := v.sessionClosed || v.closeRequested
+	v.mu.RUnlock()
+	if ws == nil || closed {
+		return errors.New("viewer input control session is closed")
+	}
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	v.writeMu.Lock()
+	defer v.writeMu.Unlock()
+	return rdp.WritePacket(ws, append([]byte{rdp.PacketInputControl}, data...))
 }
 
 func (v *viewer) writeInput(input rdp.Input) error {

@@ -29,7 +29,7 @@ func TestVideoSelectionRequiresExplicitCapability(t *testing.T) {
 }
 func TestVideoPacketTypesDoNotCollide(t *testing.T) {
 	seen := map[byte]bool{}
-	for _, kind := range []byte{PacketFrame, PacketInput, PacketInfo, PacketVideoCapabilities, PacketVideoSelected, PacketH264Config, PacketH264AccessUnit, PacketVideoKeyframe} {
+	for _, kind := range []byte{PacketFrame, PacketInput, PacketInfo, PacketVideoCapabilities, PacketVideoSelected, PacketH264Config, PacketH264AccessUnit, PacketVideoKeyframe, PacketInputControl} {
 		if seen[kind] {
 			t.Fatalf("collision %d", kind)
 		}
@@ -66,5 +66,29 @@ func TestH264GOPQueueDropsDependentFramesUntilIDR(t *testing.T) {
 	q.enqueue([]byte("p4"), 0)
 	if drops, _, forced := q.stats(); drops == 0 || forced == 0 {
 		t.Fatalf("drops=%d forced=%d", drops, forced)
+	}
+}
+
+
+func TestInputControlValidation(t *testing.T) {
+	for _, mode := range []string{"full", "view"} {
+		packet, err := videoControlPacket(PacketInputControl, InputControl{Mode: mode, BlockLocalInput: mode == "full"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		control, err := parseInputControl(packet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if control.Mode != mode {
+			t.Fatalf("mode = %q, want %q", control.Mode, mode)
+		}
+	}
+	packet, err := videoControlPacket(PacketInputControl, InputControl{Mode: "invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseInputControl(packet); err == nil {
+		t.Fatal("invalid input mode was accepted")
 	}
 }

@@ -7,7 +7,7 @@ func TestViewerLayoutReservesToolbarAndVideoHost(t *testing.T) {
 	if layout.toolbar.height != viewerToolbarHeight || layout.video.y != viewerToolbarHeight || layout.video.height != 750 {
 		t.Fatalf("layout = %#v", layout)
 	}
-	if layout.actionAt(10, 10) != "" || layout.actionAt(layout.buttons["fit"].x+1, 11) != "fit" {
+	if layout.actionAt(10, 10) != "" || layout.actionAt(layout.buttons["fit"].x+1, 11) != "fit" || layout.actionAt(layout.buttons["input"].x+1, 11) != "input" {
 		t.Fatalf("toolbar hit testing is incorrect: %#v", layout.buttons)
 	}
 }

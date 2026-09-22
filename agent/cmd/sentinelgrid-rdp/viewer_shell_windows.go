@@ -40,6 +40,11 @@ var (
 	setWindowPlacement    = viewerUser32.NewProc("SetWindowPlacement")
 	monitorFromWindow     = viewerUser32.NewProc("MonitorFromWindow")
 	getMonitorInfo        = viewerUser32.NewProc("GetMonitorInfoW")
+	createPopupMenu        = viewerUser32.NewProc("CreatePopupMenu")
+	appendMenu             = viewerUser32.NewProc("AppendMenuW")
+	trackPopupMenu         = viewerUser32.NewProc("TrackPopupMenu")
+	destroyMenu            = viewerUser32.NewProc("DestroyMenu")
+	getCursorPosShell      = viewerUser32.NewProc("GetCursorPos")
 )
 
 type windowPlacement struct {
@@ -110,6 +115,8 @@ func (v *viewer) shellAction(action string) {
 		hwnd := v.hwnd
 		v.mu.Unlock()
 		v.layoutShell(hwnd)
+	case "input":
+		v.showInputMenu()
 	case "disconnect":
 		v.beginShutdown()
 		v.mu.RLock()
@@ -123,6 +130,79 @@ func (v *viewer) shellAction(action string) {
 		invalidateRect.Call(v.hwnd, 0, 0, 0)
 	}
 }
+
+const (
+	remoteInputMenuFull       = 4101
+	remoteInputMenuView       = 4102
+	remoteInputMenuBlockLocal = 4103
+	mfString                  = 0x0000
+	mfChecked                 = 0x0008
+	mfSeparator               = 0x0800
+	tpmReturnCmd              = 0x0100
+	tpmRightButton            = 0x0002
+)
+
+func appendInputMenuItem(menu uintptr, id uintptr, label string, checked bool) {
+	text, _ := syscall.UTF16PtrFromString(label)
+	flags := uintptr(mfString)
+	if checked {
+		flags |= mfChecked
+	}
+	appendMenu.Call(menu, flags, id, uintptr(unsafe.Pointer(text)))
+}
+
+func (v *viewer) showInputMenu() {
+	v.mu.RLock()
+	hwnd := v.hwnd
+	mode := v.inputMode
+	blocked := v.blockLocalInput
+	connected := v.sessionState == viewerStateConnected
+	v.mu.RUnlock()
+	if hwnd == 0 || !connected {
+		return
+	}
+
+	menu, _, _ := createPopupMenu.Call()
+	if menu == 0 {
+		return
+	}
+	defer destroyMenu.Call(menu)
+
+	appendInputMenuItem(menu, remoteInputMenuFull, "Full control", mode == "full")
+	appendInputMenuItem(menu, remoteInputMenuView, "View only", mode == "view")
+	appendMenu.Call(menu, mfSeparator, 0, 0)
+	appendInputMenuItem(menu, remoteInputMenuBlockLocal, "Block local keyboard && mouse", blocked)
+
+	var p point
+	if ok, _, _ := getCursorPosShell.Call(uintptr(unsafe.Pointer(&p))); ok == 0 {
+		return
+	}
+	selected, _, _ := trackPopupMenu.Call(menu, tpmReturnCmd|tpmRightButton, uintptr(p.X), uintptr(p.Y), 0, hwnd, 0)
+	if selected == 0 {
+		return
+	}
+
+	v.mu.Lock()
+	switch selected {
+	case remoteInputMenuFull:
+		v.inputMode = "full"
+	case remoteInputMenuView:
+		v.inputMode = "view"
+		v.blockLocalInput = false
+	case remoteInputMenuBlockLocal:
+		v.blockLocalInput = !v.blockLocalInput
+	}
+	v.mu.Unlock()
+
+	if v.input != nil && selected == remoteInputMenuView {
+		v.input.releaseOnFocusLoss()
+	}
+	if err := v.sendInputControl(); err != nil {
+		v.logger.event("VIEWER_INPUT_CONTROL_SEND_FAILED stage=menu")
+	}
+	invalidateRect.Call(hwnd, 0, 0, 0)
+}
+
 
 func (v *viewer) toggleFullscreen() {
 	v.mu.Lock()
@@ -199,6 +279,7 @@ func (v *viewer) drawToolbar(hdc uintptr, client rect) {
 	v.mu.RLock()
 	layout, state, statsOpen, mode := v.shell, v.sessionState, v.showStats, v.scaleMode
 	hover, pressed, fullscreen := v.hoverAction, v.pressedAction, v.fullscreen
+	inputMode, blockLocal := v.inputMode, v.blockLocalInput
 	v.mu.RUnlock()
 
 	fillStatusRect(hdc, layout.toolbarRect(), rgb(18, 21, 26))
@@ -267,6 +348,26 @@ func (v *viewer) drawToolbar(hdc uintptr, client rect) {
 			fillStatusRect(hdc, rect{Left: dividerX - 1, Top: group.Top + 7, Right: dividerX, Bottom: group.Bottom - 7}, rgb(38, 44, 53))
 		}
 	}
+
+	inputArea := layout.buttons["input"].toRect()
+	inputActive := inputMode == "view" || blockLocal
+	inputFill, inputBorder, inputText := rgb(14, 17, 21), rgb(31, 36, 43), rgb(210, 216, 225)
+	if state != viewerStateConnected {
+		inputText = rgb(78, 86, 98)
+	} else if inputActive {
+		inputFill, inputBorder, inputText = rgb(20, 35, 56), rgb(43, 70, 106), rgb(151, 198, 253)
+	} else if hover == "input" {
+		inputFill, inputBorder, inputText = rgb(24, 29, 36), rgb(52, 61, 73), rgb(244, 247, 250)
+	}
+	if state == viewerStateConnected && pressed == "input" && hover == "input" {
+		inputFill = rgb(31, 49, 73)
+	}
+	drawStatusRoundRect(hdc, inputArea, 18, inputFill, inputBorder)
+	inputLabel := "Input"
+	if inputMode == "view" {
+		inputLabel = "View"
+	}
+	drawCenteredStatusText(hdc, inputLabel+"  ▾", inputArea, inputText, 13, fontWeightSemiBold)
 
 	disconnectArea := layout.buttons["disconnect"].toRect()
 	disconnectLabel := "Disconnect"

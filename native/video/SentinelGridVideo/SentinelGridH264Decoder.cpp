@@ -35,7 +35,7 @@ __declspec(dllexport) UINT64 WINAPI SGVideo_GetH264DecoderStreamChangeCount(void
 }
 
 namespace {
-constexpr size_t kMaxPendingFrames = 16;
+constexpr size_t kMaxPendingFrames = 2;
 
 class MFPlatform {
 public:
@@ -114,6 +114,12 @@ public:
                 if ((pass == 0 && !hardware) || (pass == 1 && hardware)) { if (friendly) CoTaskMemFree(friendly); continue; }
                 ComPtr<IMFTransform> candidateTransform;
                 hr = activates[i]->ActivateObject(IID_PPV_ARGS(&candidateTransform));
+                if (SUCCEEDED(hr)) {
+                    ComPtr<IMFAttributes> attributes;
+                    if (SUCCEEDED(candidateTransform.As(&attributes)) && attributes) {
+                        (void)attributes->SetUINT32(MF_LOW_LATENCY, TRUE);
+                    }
+                }
                 if (SUCCEEDED(hr)) hr = SetInputType(candidateTransform.Get());
                 if (SUCCEEDED(hr)) hr = SelectOutputType(candidateTransform.Get(), false);
                 if (SUCCEEDED(hr)) hr = candidateTransform->GetOutputStreamInfo(0, &outputStreamInfo_);
@@ -191,7 +197,10 @@ private:
     }
 
     HRESULT ProcessOneOutput(UINT64 sequence, UINT64 started) {
-        if (pending_.size() >= kMaxPendingFrames) return MF_E_NOTACCEPTING;
+        if (pending_.size() >= kMaxPendingFrames) {
+            stats_.discardedOutputFrames += pending_.size();
+            pending_.clear();
+        }
         for (UINT32 attempt = 0; attempt < 4; ++attempt) {
             MFT_OUTPUT_DATA_BUFFER data{};
             ComPtr<IMFSample> providedSample;
@@ -285,7 +294,10 @@ private:
     }
 
     HRESULT PreserveOutput(IMFSample* sample, UINT64 sequence, UINT64 started) {
-        if (pending_.size() >= kMaxPendingFrames) return HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
+        if (!pending_.empty()) {
+            stats_.discardedOutputFrames += pending_.size();
+            pending_.clear();
+        }
         ComPtr<IMFMediaBuffer> contiguous;
         HRESULT hr = sample->ConvertToContiguousBuffer(&contiguous);
         if (FAILED(hr)) return hr;
@@ -308,8 +320,9 @@ private:
 
     HRESULT DeliverPending(BYTE* output, UINT32 outputBytes, SGDecodedFrame* frame) {
         if (pending_.empty()) return SetError("need_more_input", S_FALSE);
-        PendingFrame pending = std::move(pending_.front());
-        pending_.pop_front();
+        PendingFrame pending = std::move(pending_.back());
+        if (pending_.size() > 1) stats_.discardedOutputFrames += pending_.size() - 1;
+        pending_.clear();
         if (pending.pixels.size() > outputBytes) return Fail("output_bgra_buffer", HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER));
         std::memcpy(output, pending.pixels.data(), pending.pixels.size());
         *frame = pending.metadata;
