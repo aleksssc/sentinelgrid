@@ -67,7 +67,7 @@ func TestViewerShutdownUnblocksWriterAndReaderWithinSingleGrace(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ws.Close()
-	v := &viewer{ws: ws, sessionState: viewerStateConnected, compressed: newLatestCompressedFrame()}
+	v := &viewer{ws: ws, sessionState: viewerStateConnected, compressed: newLatestCompressedFrame(), inputMode: "full"}
 	v.input = newViewerInputSender(v)
 	readerDone := make(chan struct{})
 	go func() { defer close(readerDone); v.receive() }()

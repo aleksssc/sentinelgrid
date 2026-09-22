@@ -122,13 +122,13 @@ func TestTerminalCloseHitTargetAndToolbarIsolation(t *testing.T) {
 			t.Fatal("terminal Close target mismatch")
 		}
 		layout := viewerLayoutForClient(size[0], size[1])
-		for _, name := range []string{"fit", "fullscreen", "stats", "disconnect"} {
+		for _, name := range []string{"fit", "fullscreen", "stats", "input", "disconnect"} {
 			button := layout.buttons[name]
 			if button.y+button.height > layout.video.y || layout.actionAt(button.x+1, button.y+1) != name {
 				t.Fatalf("toolbar/video overlap: %s", name)
 			}
 		}
-		if len(layout.buttons) != 4 {
+		if len(layout.buttons) != 5 {
 			t.Fatal("nonfunctional toolbar controls returned")
 		}
 	}
