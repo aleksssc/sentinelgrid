@@ -1,4 +1,5 @@
 import type { WebSocket, RawData as WebSocketData } from "ws";
+import type { LocalPresence } from "./local-presence";
 import { acceptTypedResult, pendingTypedCommands, recoverTypedCommands } from "./typed-commands";
 
 
@@ -132,7 +133,7 @@ export function startCommandRecovery() {
   void recover();
   return () => clearInterval(timer);
 }
-export function attachAgentSocket(ws: WebSocket) {
+export function attachAgentSocket(ws: WebSocket, localPresence?: LocalPresence) {
       let authenticated =
         false;
 
@@ -219,7 +220,7 @@ export function attachAgentSocket(ws: WebSocket) {
             ),
             connectionId,
             {
-              ex: 45,
+              ex: 150,
             },
           );
         } catch (error) {
@@ -237,6 +238,7 @@ export function attachAgentSocket(ws: WebSocket) {
       let closed = false;
 
       function cleanup() {
+        if (deviceId) localPresence?.disconnect(deviceId, connectionId);
         if (commandTimer) clearInterval(commandTimer);
         closed = true;
         authenticated = false;
@@ -431,6 +433,7 @@ export function attachAgentSocket(ws: WebSocket) {
                  PRESENCE
               ============================= */
 
+              localPresence?.connect(deviceId, connectionId);
               await refreshPresence();
               if (closed || ws.readyState !== ws.OPEN) return;
 
@@ -439,7 +442,7 @@ export function attachAgentSocket(ws: WebSocket) {
                   () => {
                     void refreshPresence();
                   },
-                  15_000,
+                  60_000,
                 );
 
               /* =============================

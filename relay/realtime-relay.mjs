@@ -78,12 +78,15 @@ export function createRealtimeRelay({ agent, browser, allowedOrigin, tls, trustP
 async function main() {
   loadRealtimeEnvironment();
   const config = realtimeConfiguration();
-  const [{ attachAgentSocket, startCommandRecovery }, { attachBrowserSocket }] = await Promise.all([
+  const [{ attachAgentSocket, startCommandRecovery }, { attachBrowserSocket }, { createLocalPresence }] = await Promise.all([
     import("../dist/realtime/lib/realtime/agent-socket.js"),
     import("../dist/realtime/lib/realtime/browser-socket.js"),
+    import("../dist/realtime/lib/realtime/local-presence.js"),
   ]);
+  const localPresence = createLocalPresence();
   const relay = createRealtimeRelay({
-    agent: attachAgentSocket, browser: attachBrowserSocket,
+    agent: (ws) => attachAgentSocket(ws, localPresence),
+    browser: (ws) => attachBrowserSocket(ws, localPresence),
     allowedOrigin: config.allowedOrigin,
     allowDevelopmentOrigin: config.allowDevelopmentOrigin,
     trustProxy: config.trustProxy,
