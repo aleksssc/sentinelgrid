@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"unsafe"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -19,17 +21,13 @@ func installRemoteViewer() (string, error) {
 		return "", fmt.Errorf("resolve Remote executable: %w", err)
 	}
 
-	localAppData, err := os.UserCacheDir()
-	if err != nil || localAppData == "" {
-		localAppData = os.Getenv("LOCALAPPDATA")
-	}
+	localAppData := os.Getenv("LOCALAPPDATA")
 	if localAppData == "" {
-		return "", fmt.Errorf("LOCALAPPDATA unavailable")
-	}
-	// UserCacheDir normally resolves to LocalAppData on Windows, but install
-	// beside it rather than inside the browser/cache namespace.
-	if filepath.Base(localAppData) == "Cache" {
-		localAppData = filepath.Dir(localAppData)
+		var err error
+		localAppData, err = os.UserCacheDir()
+		if err != nil || localAppData == "" {
+			return "", fmt.Errorf("LOCALAPPDATA unavailable")
+		}
 	}
 
 	directory := filepath.Join(localAppData, remoteInstallDirectoryName)
@@ -83,6 +81,10 @@ func copyExecutable(source, target string) error {
 	_ = os.Remove(temp)
 	if err := copyFile(source, temp); err != nil {
 		return fmt.Errorf("copy Remote executable: %w", err)
+	}
+	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+		_ = os.Remove(temp)
+		return fmt.Errorf("replace Remote executable: %w", err)
 	}
 	if err := os.Rename(temp, target); err != nil {
 		_ = os.Remove(temp)
@@ -146,4 +148,29 @@ func registerRemoteProtocol(executable string) error {
 	}
 	defer command.Close()
 	return command.SetStringValue("", `"`+executable+`" -uri "%1"`)
+}
+
+
+var (
+	user32RemoteInstaller = windows.NewLazySystemDLL("user32.dll")
+	messageBoxWRemote      = user32RemoteInstaller.NewProc("MessageBoxW")
+)
+
+func showRemoteInstallResult(installed string, err error) {
+	title, _ := windows.UTF16PtrFromString("SentinelGrid Remote")
+	message := "SentinelGrid Remote is installed and ready. Return to the browser and click Open Remote."
+	flags := uintptr(0x00000040) // MB_ICONINFORMATION
+	if err != nil {
+		message = "SentinelGrid Remote could not be installed or repaired."
+		flags = 0x00000010 // MB_ICONERROR
+	} else if installed != "" {
+		message += "\n\nInstalled to:\n" + installed
+	}
+	body, _ := windows.UTF16PtrFromString(message)
+	messageBoxWRemote.Call(
+		0,
+		uintptr(unsafe.Pointer(body)),
+		uintptr(unsafe.Pointer(title)),
+		flags,
+	)
 }
