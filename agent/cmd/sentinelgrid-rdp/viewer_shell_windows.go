@@ -88,12 +88,6 @@ func (v *viewer) layoutShell(hwnd uintptr) {
 }
 
 func (v *viewer) shellAction(action string) {
-	v.mu.RLock()
-	state := v.sessionState
-	v.mu.RUnlock()
-	if state != viewerStateConnected && action != "disconnect" {
-		return
-	}
 	switch action {
 	case "fit":
 		v.mu.Lock()
