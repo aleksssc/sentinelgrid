@@ -135,7 +135,6 @@ const (
 	remoteInputMenuFull       = 4101
 	remoteInputMenuView       = 4102
 	remoteInputMenuBlockLocal = 4103
-	remoteInputMenuCursor     = 4104
 	mfString                  = 0x0000
 	mfChecked                 = 0x0008
 	mfSeparator               = 0x0800
@@ -157,7 +156,6 @@ func (v *viewer) showInputMenu() {
 	hwnd := v.hwnd
 	mode := v.inputMode
 	blocked := v.blockLocalInput
-	cursor := v.showRemoteCursor
 	connected := v.sessionState == viewerStateConnected
 	v.mu.RUnlock()
 	if hwnd == 0 || !connected {
@@ -174,7 +172,6 @@ func (v *viewer) showInputMenu() {
 	appendInputMenuItem(menu, remoteInputMenuView, "View only", mode == "view")
 	appendMenu.Call(menu, mfSeparator, 0, 0)
 	appendInputMenuItem(menu, remoteInputMenuBlockLocal, "Block local keyboard && mouse", blocked)
-	appendInputMenuItem(menu, remoteInputMenuCursor, "Show Remote cursor", cursor)
 
 	var p point
 	if ok, _, _ := getCursorPosShell.Call(uintptr(unsafe.Pointer(&p))); ok == 0 {
@@ -191,10 +188,9 @@ func (v *viewer) showInputMenu() {
 		v.inputMode = "full"
 	case remoteInputMenuView:
 		v.inputMode = "view"
+		v.blockLocalInput = false
 	case remoteInputMenuBlockLocal:
 		v.blockLocalInput = !v.blockLocalInput
-	case remoteInputMenuCursor:
-		v.showRemoteCursor = !v.showRemoteCursor
 	}
 	v.mu.Unlock()
 
