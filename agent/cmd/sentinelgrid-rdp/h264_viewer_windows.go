@@ -11,7 +11,7 @@ import (
 
 func (v *viewer) configureVideoCapabilities(width, height int) {
 	v.mu.RLock()
-	if v.videoCodec != "" || v.ws == nil || v.renderer == nil || v.sessionClosed || v.closeRequested {
+	if v.videoCodec != "" || v.ws == nil || v.sessionClosed || v.closeRequested {
 		v.mu.RUnlock()
 		return
 	}
@@ -42,7 +42,10 @@ func (v *viewer) configureVideoCapabilities(width, height int) {
 	if decoder != nil {
 		v.logger.event("VIEWER_VIDEO_CAPABILITIES h264=true jpeg=true")
 	}
-	packet, packetErr := json.Marshal(rdp.VideoCapabilities{Version: 1, Codecs: codecs, Renderer: []string{"d3d11"}})
+	v.mu.RLock()
+	rendererBackend := v.rendererBackend
+	v.mu.RUnlock()
+	packet, packetErr := json.Marshal(rdp.VideoCapabilities{Version: 1, Codecs: codecs, Renderer: []string{rendererBackend}})
 	if packetErr != nil {
 		return
 	}
