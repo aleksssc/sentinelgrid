@@ -150,10 +150,9 @@ func registerRemoteProtocol(executable string) error {
 	return command.SetStringValue("", `"`+executable+`" -uri "%1"`)
 }
 
-
 var (
 	user32RemoteInstaller = windows.NewLazySystemDLL("user32.dll")
-	messageBoxWRemote      = user32RemoteInstaller.NewProc("MessageBoxW")
+	messageBoxWRemote     = user32RemoteInstaller.NewProc("MessageBoxW")
 )
 
 func showRemoteInstallResult(installed string, err error) {
