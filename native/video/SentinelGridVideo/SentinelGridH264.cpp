@@ -78,7 +78,14 @@ public:
   }
   ReleaseActivates(activates, count);
   if (!transform_) return SetError(lastCandidateError_ == S_OK ? MF_E_TOPO_CODEC_NOT_FOUND : lastCandidateError_);
-  transform_.As(&codecApi_); forceKeyframeSupported_ = codecApi_ && SUCCEEDED(codecApi_->IsSupported(&CODECAPI_AVEncVideoForceKeyFrame));
+  transform_.As(&codecApi_);
+  if (codecApi_) {
+   VARIANT lowLatency; VariantInit(&lowLatency); lowLatency.vt = VT_BOOL; lowLatency.boolVal = VARIANT_TRUE;
+   (void)codecApi_->SetValue(&CODECAPI_AVLowLatencyMode, &lowLatency);
+   (void)codecApi_->SetValue(&CODECAPI_AVEncCommonRealTime, &lowLatency);
+   VariantClear(&lowLatency);
+  }
+  forceKeyframeSupported_ = codecApi_ && SUCCEEDED(codecApi_->IsSupported(&CODECAPI_AVEncVideoForceKeyFrame));
   std::fprintf(stderr, "ENCODER_CANDIDATE name=%s hardware=%u async=%u activation_ok=1 output_type_ok=1 input_type_ok=1 codecapi_ok=%u begin_streaming_ok=1\n", name_, hardware_, async_, forceKeyframeSupported_ ? 1 : 0);
   stats_.width = width; stats_.height = height; stats_.fps = fps; stats_.bitrate = bitrate; return SetError(S_OK);
  }
@@ -99,7 +106,7 @@ private:
  HRESULT ConfigureCandidate(IMFActivate* activate, const char* candidateName, bool hardware) {
   std::fprintf(stderr, "ENCODER_CANDIDATE name=%s hardware=%u", candidateName, hardware ? 1 : 0);
   ComPtr<IMFTransform> candidate; HRESULT hr = activate->ActivateObject(IID_PPV_ARGS(&candidate)); if (FAILED(hr)) { std::fprintf(stderr, " activation_ok=0\n"); LogHR("ActivateObject", hr); lastCandidateError_ = hr; return hr; }
-  ComPtr<IMFAttributes> attributes; candidate.As(&attributes); UINT32 async = 0; if (attributes) attributes->GetUINT32(MF_TRANSFORM_ASYNC, &async); std::fprintf(stderr, " async=%u activation_ok=1", async ? 1 : 0);
+  ComPtr<IMFAttributes> attributes; candidate.As(&attributes); UINT32 async = 0; if (attributes) { attributes->GetUINT32(MF_TRANSFORM_ASYNC, &async); (void)attributes->SetUINT32(MF_LOW_LATENCY, TRUE); } std::fprintf(stderr, " async=%u activation_ok=1", async ? 1 : 0);
   if (async && attributes) { hr = attributes->SetUINT32(MF_TRANSFORM_ASYNC_UNLOCK, TRUE); if (FAILED(hr)) { std::fprintf(stderr, " output_type_ok=0\n"); LogHR("Set MF_TRANSFORM_ASYNC_UNLOCK", hr); lastCandidateError_ = hr; return hr; } }
   hr = SetAdvertisedType(candidate.Get(), true); if (FAILED(hr)) { std::fprintf(stderr, " output_type_ok=0\n"); LogHR("SetOutputType", hr); lastCandidateError_ = hr; candidate->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0); return hr; }
   std::fprintf(stderr, " output_type_ok=1");
