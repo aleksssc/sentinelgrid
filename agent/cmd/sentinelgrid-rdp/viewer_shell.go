@@ -28,6 +28,9 @@ func viewerLayoutForClient(width, height int) viewerShellLayout {
 	x -= 90
 	layout.buttons["disconnect"] = imageRect{x: x, y: 9, width: 90, height: 32}
 	x -= 10
+	x -= 72
+	layout.buttons["input"] = imageRect{x: x, y: 9, width: 72, height: 32}
+	x -= 10
 	for _, item := range []struct {
 		name  string
 		width int
@@ -39,7 +42,7 @@ func viewerLayoutForClient(width, height int) viewerShellLayout {
 }
 
 func (l viewerShellLayout) actionAt(x, y int) string {
-	for _, name := range []string{"fit", "fullscreen", "stats", "disconnect"} {
+	for _, name := range []string{"fit", "fullscreen", "stats", "input", "disconnect"} {
 		area := l.buttons[name]
 		if x >= area.x && y >= area.y && x < area.x+area.width && y < area.y+area.height {
 			return name
