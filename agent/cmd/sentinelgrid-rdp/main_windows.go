@@ -116,7 +116,6 @@ type viewer struct {
 	input                      *viewerInputSender
 	inputMode                  string
 	blockLocalInput            bool
-	showRemoteCursor           bool
 
 	socketReceived, decodeStarted, decodedCompleted     uint64
 	frameBytes                                          uint64
@@ -328,7 +327,7 @@ func runViewerConnecting(connect viewerConnect) error {
 	defer logger.close()
 	logger.event("VIEWER_START")
 	started := time.Now()
-	v := &viewer{logger: logger, status: "Connecting to remote device...", sessionState: viewerStateConnecting, done: make(chan struct{}), statsStarted: started, statsReported: started, compressed: newLatestCompressedFrame(), decodeMetrics: newDurationWindow(120), conversionMetrics: newDurationWindow(120), bufferCopyMetrics: newDurationWindow(120), presentMetrics: newDurationWindow(120), loadingAnimationStarted: started, inputMode: "full", showRemoteCursor: true}
+	v := &viewer{logger: logger, status: "Connecting to remote device...", sessionState: viewerStateConnecting, done: make(chan struct{}), statsStarted: started, statsReported: started, compressed: newLatestCompressedFrame(), decodeMetrics: newDurationWindow(120), conversionMetrics: newDurationWindow(120), bufferCopyMetrics: newDurationWindow(120), presentMetrics: newDurationWindow(120), loadingAnimationStarted: started, inputMode: "full"}
 	v.input = newViewerInputSender(v)
 	activeViewer = v
 	sessionCtx, cancelSession := context.WithCancel(context.Background())
@@ -647,7 +646,7 @@ func (v *viewer) queueInput(input rdp.Input) {
 
 func (v *viewer) sendInputControl() error {
 	v.mu.RLock()
-	settings := rdp.InputControl{Mode: v.inputMode, BlockLocalInput: v.blockLocalInput, ShowRemoteCursor: v.showRemoteCursor}
+	settings := rdp.InputControl{Mode: v.inputMode, BlockLocalInput: v.blockLocalInput}
 	ws := v.ws
 	closed := v.sessionClosed || v.closeRequested
 	v.mu.RUnlock()
