@@ -114,6 +114,12 @@ public:
                 if ((pass == 0 && !hardware) || (pass == 1 && hardware)) { if (friendly) CoTaskMemFree(friendly); continue; }
                 ComPtr<IMFTransform> candidateTransform;
                 hr = activates[i]->ActivateObject(IID_PPV_ARGS(&candidateTransform));
+                if (SUCCEEDED(hr)) {
+                    ComPtr<IMFAttributes> attributes;
+                    if (SUCCEEDED(candidateTransform.As(&attributes)) && attributes) {
+                        (void)attributes->SetUINT32(MF_LOW_LATENCY, TRUE);
+                    }
+                }
                 if (SUCCEEDED(hr)) hr = SetInputType(candidateTransform.Get());
                 if (SUCCEEDED(hr)) hr = SelectOutputType(candidateTransform.Get(), false);
                 if (SUCCEEDED(hr)) hr = candidateTransform->GetOutputStreamInfo(0, &outputStreamInfo_);
