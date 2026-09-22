@@ -7,7 +7,7 @@ import (
 )
 
 func TestInputIsDisabledAfterRelayClose(t *testing.T) {
-	viewer := &viewer{ws: &websocket.Conn{}, sessionState: viewerStateConnected}
+	viewer := &viewer{ws: &websocket.Conn{}, sessionState: viewerStateConnected, inputMode: "full"}
 	if !viewer.inputEnabled() {
 		t.Fatal("connected viewer rejected input")
 	}
