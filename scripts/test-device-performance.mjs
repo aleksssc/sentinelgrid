@@ -50,7 +50,7 @@ test("all four ranges enforce exact windows, ordering, sample bounds and respons
     assert.equal(metrics.isPerformanceHistory({ ...data, samples: [sample(now), sample(now)] }, range), false);
     assert.equal(metrics.isPerformanceHistory({ ...data, interval: 1 }, range), false);
   }
-  assert.equal(capacity, 1108);
+  assert.equal(capacity, 526);
   for (const range of ["constructor", "__proto__", "all", ""]) assert.equal(metrics.isPerformanceRange(range), false);
 });
 
@@ -67,35 +67,38 @@ test("charts preserve missing measurements and offline gaps instead of drawing i
   assert.doesNotMatch(html, /NaN|Infinity/);
 });
 
-test("real Upstash SDK serializes one atomic bounded write and decodes time-scoped history", async (t) => {
-  const commands = [];
-  let result = 1;
+test("performance history only writes due buckets, batches maintenance and decodes time-scoped history", async (t) => {
+  const requests = [];
+  let result = [];
   t.mock.method(globalThis, "fetch", async (_url, init) => {
-    commands.push(JSON.parse(init.body));
-    return Response.json({ result });
+    requests.push(JSON.parse(init.body));
+    return Response.json(Array.isArray(JSON.parse(init.body)?.[0]) ? JSON.parse(init.body).map(() => ({ result: 1 })) : { result });
   });
   const redis = new Redis({ url: "https://redis.example.test", token: "test-only", retry: false, enableAutoPipelining: false });
   const storage = load("../lib/performance/history.ts", { "server-only": {}, "./metrics": metrics, "@/lib/realtime/redis": { getRedis: () => redis } });
+
   await storage.storePerformanceSample(deviceId, sample());
-  assert.equal(commands.length, 1);
-  const [operation, script, count, ...args] = commands[0];
-  assert.equal(operation, "eval"); assert.equal(count, 4);
-  const ranges = Object.keys(metrics.PERFORMANCE_RANGES);
-  assert.deepEqual(args.slice(0, 4), ranges.map((range) => `sentinelgrid:device:{${deviceId}}:performance:${range}`));
-  assert.deepEqual(JSON.parse(args[4]), sample());
-  assert.equal(Number(args[5]), now);
-  assert.deepEqual(args.slice(6).map(Number), Object.values(metrics.PERFORMANCE_RANGES).flatMap((config) => [config.duration, config.interval]));
-  assert.match(script, /cjson\.decode\(previous\[1\]\)\.timestamp\) < now/);
-  assert.match(script, /ZREMRANGEBYRANK/); assert.match(script, /EXPIRE/);
-  for (const range of ranges) {
+  assert.equal(requests.length, 1);
+  const pipeline = requests[0];
+  assert.ok(Array.isArray(pipeline));
+  const operations = pipeline.map((command) => String(command[0]).toLowerCase());
+  assert.equal(operations.filter((operation) => operation === "zadd").length, 3);
+  assert.equal(operations.filter((operation) => operation === "zremrangebyscore").length, 4);
+  assert.equal(operations.filter((operation) => operation === "expire").length, 4);
+
+  await storage.storePerformanceSample(deviceId, sample(now + 30_000));
+  assert.equal(requests.length, 1, "a heartbeat outside every storage bucket must not touch Redis");
+
+  for (const range of Object.keys(metrics.PERFORMANCE_RANGES)) {
     const config = metrics.PERFORMANCE_RANGES[range];
-    result = [JSON.stringify(sample(now - config.duration - 1)), JSON.stringify(sample(now - 30_000)), JSON.stringify(sample())];
+    result = [JSON.stringify(sample(now - config.duration - 1)), JSON.stringify(sample(now - config.interval)), JSON.stringify(sample())];
     const data = await storage.readPerformanceHistory(deviceId, range, now);
-    assert.deepEqual(data, history(range, [sample(now - 30_000), sample()]));
-    const call = commands.at(-1);
-    assert.equal(call[0], "zrange"); assert.ok(call.includes("byscore"));
-    assert.equal(call.at(-1), config.duration / config.interval + 1);
+    assert.deepEqual(data, history(range, [sample(now - config.interval), sample()]));
+    const call = requests.at(-1);
+    assert.equal(call[0], "zrange");
+    assert.ok(call.includes("byscore"));
   }
+
   result = [JSON.stringify({ cpu_usage: 1000 })];
   await assert.rejects(storage.readPerformanceHistory(deviceId, "1h", now), /INVALID_PERFORMANCE_HISTORY/);
 });
