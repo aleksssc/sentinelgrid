@@ -1334,6 +1334,14 @@ func (v *viewer) paintStatus(hdc uintptr, client rect, status string) {
 }
 
 func main() {
+	if len(os.Args) == 1 {
+		installed, err := installRemoteViewer()
+		showRemoteInstallResult(installed, err)
+		if err != nil {
+			log.Print("SentinelGrid Remote install/repair failed: ", err)
+		}
+		return
+	}
 	if len(os.Args) == 3 && os.Args[1] == "-uri" {
 		if err := runURI(os.Args[2]); err != nil {
 			log.Print("SentinelGrid Remote could not start: ", err)
