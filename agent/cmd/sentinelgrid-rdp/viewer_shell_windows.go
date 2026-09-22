@@ -200,12 +200,15 @@ func (v *viewer) drawToolbar(hdc uintptr, client rect) {
 	layout, state, statsOpen, mode := v.shell, v.sessionState, v.showStats, v.scaleMode
 	hover, pressed, fullscreen := v.hoverAction, v.pressedAction, v.fullscreen
 	v.mu.RUnlock()
+
 	fillStatusRect(hdc, layout.toolbarRect(), rgb(18, 21, 26))
-	fillStatusRect(hdc, rect{Left: 0, Top: int32(layout.toolbar.height - 1), Right: client.Right, Bottom: int32(layout.toolbar.height)}, rgb(37, 42, 50))
+	fillStatusRect(hdc, rect{Left: 0, Top: int32(layout.toolbar.height - 1), Right: client.Right, Bottom: int32(layout.toolbar.height)}, rgb(31, 36, 43))
+
 	if layout.buttons["fit"].x >= 400 {
 		drawStatusMark(hdc, 16, 13, 24, rgb(18, 21, 26))
 		drawStatusText(hdc, "SentinelGrid Remote", rect{Left: 48, Top: 9, Right: 245, Bottom: 39}, rgb(244, 245, 247), 16, fontWeightSemiBold)
 	}
+
 	stateLabel, color := state.label(), rgb(96, 165, 250)
 	switch state {
 	case viewerStateConnected:
@@ -217,41 +220,69 @@ func (v *viewer) drawToolbar(hdc uintptr, client rect) {
 	case viewerStateConnectionLost:
 		color = rgb(241, 152, 161)
 	}
+
 	chipLeft := int32(250)
 	if layout.buttons["fit"].x < 400 {
 		chipLeft = 12
 	}
-	if int(chipLeft)+140 < layout.buttons["fit"].x {
-		drawStatusRoundRect(hdc, rect{Left: chipLeft, Top: 12, Right: chipLeft + 140, Bottom: 38}, 12, rgb(9, 11, 14), rgb(37, 42, 50))
-		fillStatusEllipse(hdc, rect{Left: chipLeft + 10, Top: 22, Right: chipLeft + 16, Bottom: 28}, color)
-		drawStatusText(hdc, stateLabel, rect{Left: chipLeft + 24, Top: 12, Right: chipLeft + 135, Bottom: 38}, color, 13, fontWeightSemiBold)
+	if int(chipLeft)+138 < layout.buttons["fit"].x {
+		chip := rect{Left: chipLeft, Top: 11, Right: chipLeft + 138, Bottom: 39}
+		drawStatusRoundRect(hdc, chip, 18, rgb(11, 14, 17), rgb(31, 36, 43))
+		fillStatusEllipse(hdc, rect{Left: chip.Left + 11, Top: chip.Top + 11, Right: chip.Left + 17, Bottom: chip.Top + 17}, color)
+		drawStatusText(hdc, stateLabel, rect{Left: chip.Left + 25, Top: chip.Top, Right: chip.Right - 10, Bottom: chip.Bottom}, color, 13, fontWeightSemiBold)
 	}
-	for _, item := range []struct{ name, label string }{{"fit", "Fit"}, {"fullscreen", "Fullscreen"}, {"stats", "Stats"}, {"disconnect", "Disconnect"}} {
-		area := layout.buttons[item.name]
-		fill, border, text := rgb(18, 21, 26), rgb(37, 42, 50), rgb(226, 232, 240)
-		disabled := state != viewerStateConnected && item.name != "disconnect"
 
-		if item.name == "disconnect" && state.terminal() {
-			item.label = "Close"
-		}
-		if item.name == "disconnect" && !state.terminal() {
-			fill, border, text = rgb(57, 25, 31), rgb(116, 47, 57), rgb(241, 152, 161)
-		}
+	group := rect{
+		Left:   int32(layout.buttons["fit"].x),
+		Top:    int32(layout.buttons["fit"].y),
+		Right:  int32(layout.buttons["stats"].x + layout.buttons["stats"].width),
+		Bottom: int32(layout.buttons["fit"].y + layout.buttons["fit"].height),
+	}
+	drawStatusRoundRect(hdc, group, 18, rgb(14, 17, 21), rgb(31, 36, 43))
+
+	for _, item := range []struct{ name, label string }{{"fit", "Fit"}, {"fullscreen", "Fullscreen"}, {"stats", "Stats"}} {
+		area := layout.buttons[item.name].toRect()
+		disabled := state != viewerStateConnected
+		active := item.name == "fit" && mode == viewerScaleFit || item.name == "stats" && statsOpen || item.name == "fullscreen" && fullscreen
+
+		fill, text := rgb(14, 17, 21), rgb(210, 216, 225)
 		if disabled {
-			fill, border, text = rgb(15, 17, 21), rgb(29, 34, 41), rgb(83, 91, 103)
-		} else if item.name == "fit" && mode == viewerScaleFit || item.name == "stats" && statsOpen || item.name == "fullscreen" && fullscreen {
-			fill, border, text = rgb(17, 30, 50), rgb(43, 70, 106), rgb(147, 197, 253)
-		}
-		if !disabled && hover == item.name {
-			border = rgb(96, 165, 250)
-			fill = rgb(27, 35, 47)
+			text = rgb(78, 86, 98)
+		} else if active {
+			fill, text = rgb(20, 35, 56), rgb(151, 198, 253)
+		} else if hover == item.name {
+			fill, text = rgb(24, 29, 36), rgb(244, 247, 250)
 		}
 		if !disabled && pressed == item.name && hover == item.name {
-			fill = rgb(43, 70, 106)
+			fill = rgb(31, 49, 73)
 		}
-		drawStatusRoundRect(hdc, area.toRect(), 16, fill, border)
-		drawCenteredStatusText(hdc, item.label, area.toRect(), text, 13, fontWeightSemiBold)
+
+		if fill != rgb(14, 17, 21) {
+			drawStatusRoundRect(hdc, area, 14, fill, fill)
+		}
+		drawCenteredStatusText(hdc, item.label, area, text, 13, fontWeightSemiBold)
+
+		if item.name != "stats" {
+			dividerX := area.Right
+			fillStatusRect(hdc, rect{Left: dividerX - 1, Top: group.Top + 7, Right: dividerX, Bottom: group.Bottom - 7}, rgb(38, 44, 53))
+		}
 	}
+
+	disconnectArea := layout.buttons["disconnect"].toRect()
+	disconnectLabel := "Disconnect"
+	if state.terminal() {
+		disconnectLabel = "Close"
+	}
+	disconnectFill, disconnectBorder, disconnectText := rgb(56, 24, 31), rgb(96, 41, 50), rgb(242, 159, 168)
+	if hover == "disconnect" {
+		disconnectFill, disconnectBorder = rgb(70, 29, 37), rgb(125, 51, 63)
+	}
+	if pressed == "disconnect" && hover == "disconnect" {
+		disconnectFill = rgb(88, 35, 45)
+	}
+	drawStatusRoundRect(hdc, disconnectArea, 18, disconnectFill, disconnectBorder)
+	drawCenteredStatusText(hdc, disconnectLabel, disconnectArea, disconnectText, 13, fontWeightSemiBold)
+
 	if statsOpen {
 		v.drawStatsPopover(hdc, layout)
 	}

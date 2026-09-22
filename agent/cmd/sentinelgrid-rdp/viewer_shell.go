@@ -22,16 +22,18 @@ func viewerLayoutForClient(width, height int) viewerShellLayout {
 		video:   imageRect{y: toolbarHeight, width: max(0, width), height: max(0, height-toolbarHeight)},
 		buttons: make(map[string]imageRect),
 	}
-	// Compact controls are placed from the right edge so the product and device
-	// labels retain priority in narrow windows.
+	// Keep Disconnect visually separate, while Fit / Fullscreen / Stats form one
+	// compact segmented control. Hit targets remain individual.
 	x := width - 12
+	x -= 90
+	layout.buttons["disconnect"] = imageRect{x: x, y: 9, width: 90, height: 32}
+	x -= 10
 	for _, item := range []struct {
 		name  string
 		width int
-	}{{"disconnect", 86}, {"stats", 52}, {"fullscreen", 82}, {"fit", 42}} {
+	}{{"stats", 54}, {"fullscreen", 84}, {"fit", 44}} {
 		x -= item.width
 		layout.buttons[item.name] = imageRect{x: x, y: 9, width: item.width, height: 32}
-		x -= 6
 	}
 	return layout
 }
