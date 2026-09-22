@@ -28,7 +28,7 @@ type h264Writer struct {
 }
 
 func newH264Writer(ws *websocket.Conn, force func() error) *h264Writer {
-	w := &h264Writer{ws: ws, queue: newH264GOPQueue(32), wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}), writes: make(chan time.Duration, 1), failures: make(chan frameWriteResult, 1), force: force, now: time.Now}
+	w := &h264Writer{ws: ws, queue: newH264GOPQueue(4), wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}), writes: make(chan time.Duration, 1), failures: make(chan frameWriteResult, 1), force: force, now: time.Now}
 	go w.run()
 	return w
 }
