@@ -40,11 +40,11 @@ var (
 	setWindowPlacement    = viewerUser32.NewProc("SetWindowPlacement")
 	monitorFromWindow     = viewerUser32.NewProc("MonitorFromWindow")
 	getMonitorInfo        = viewerUser32.NewProc("GetMonitorInfoW")
-	createPopupMenu        = viewerUser32.NewProc("CreatePopupMenu")
-	appendMenu             = viewerUser32.NewProc("AppendMenuW")
-	trackPopupMenu         = viewerUser32.NewProc("TrackPopupMenu")
-	destroyMenu            = viewerUser32.NewProc("DestroyMenu")
-	getCursorPosShell      = viewerUser32.NewProc("GetCursorPos")
+	createPopupMenu       = viewerUser32.NewProc("CreatePopupMenu")
+	appendMenu            = viewerUser32.NewProc("AppendMenuW")
+	trackPopupMenu        = viewerUser32.NewProc("TrackPopupMenu")
+	destroyMenu           = viewerUser32.NewProc("DestroyMenu")
+	getCursorPosShell     = viewerUser32.NewProc("GetCursorPos")
 )
 
 type windowPlacement struct {
@@ -202,7 +202,6 @@ func (v *viewer) showInputMenu() {
 	}
 	invalidateRect.Call(hwnd, 0, 0, 0)
 }
-
 
 func (v *viewer) toggleFullscreen() {
 	v.mu.Lock()

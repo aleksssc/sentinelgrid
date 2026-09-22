@@ -69,7 +69,6 @@ func TestH264GOPQueueDropsDependentFramesUntilIDR(t *testing.T) {
 	}
 }
 
-
 func TestInputControlValidation(t *testing.T) {
 	for _, mode := range []string{"full", "view"} {
 		packet, err := videoControlPacket(PacketInputControl, InputControl{Mode: mode, BlockLocalInput: mode == "full"})

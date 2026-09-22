@@ -81,8 +81,8 @@ type Input struct {
 }
 
 type InputControl struct {
-	Mode             string `json:"mode"`
-	BlockLocalInput  bool   `json:"block_local_input"`
+	Mode            string `json:"mode"`
+	BlockLocalInput bool   `json:"block_local_input"`
 }
 
 func packet(kind byte, value []byte) ([]byte, error) {
