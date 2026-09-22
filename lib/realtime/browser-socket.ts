@@ -1,4 +1,5 @@
 import type { WebSocket, RawData as WebSocketData } from "ws";
+import type { LocalPresence } from "./local-presence";
 
 import { randomUUID } from "crypto";
 import { createClient } from "@supabase/supabase-js";
@@ -70,7 +71,7 @@ async function userCanControlDevice(userId: string, deviceId: string) {
   );
 }
 
-export function attachBrowserSocket(ws: WebSocket) {
+export function attachBrowserSocket(ws: WebSocket, localPresence?: LocalPresence) {
   let authenticated = false;
   let authenticating = false;
   let deviceId = "";
@@ -145,8 +146,9 @@ export function attachBrowserSocket(ws: WebSocket) {
           try { ws.close(1011, "Realtime broker unavailable"); } catch { /* Ignore. */ }
         });
 
-        const redis = getRedis();
-        const presence = await redis.get<string>(agentPresenceKey(deviceId));
+        const presence = localPresence?.has(deviceId)
+          ? true
+          : Boolean(await getRedis().get<string>(agentPresenceKey(deviceId)));
         ws.send(JSON.stringify({
           type: "browser_authenticated",
           device_id: deviceId,
@@ -159,8 +161,9 @@ export function attachBrowserSocket(ws: WebSocket) {
       }
 
       if (message.type === "ping") {
-        const redis = getRedis();
-        const presence = await redis.get<string>(agentPresenceKey(deviceId));
+        const presence = localPresence?.has(deviceId)
+          ? true
+          : Boolean(await getRedis().get<string>(agentPresenceKey(deviceId)));
         ws.send(JSON.stringify({ type: "pong", online: Boolean(presence), server_time: new Date().toISOString() }));
         return;
       }
@@ -177,8 +180,9 @@ export function attachBrowserSocket(ws: WebSocket) {
           ws.send(JSON.stringify({ type: "error", code: "COMMAND_TOO_LARGE", message: "Command is too large." }));
           return;
         }
-        const redis = getRedis();
-        const presence = await redis.get<string>(agentPresenceKey(deviceId));
+        const presence = localPresence?.has(deviceId)
+          ? true
+          : Boolean(await getRedis().get<string>(agentPresenceKey(deviceId)));
         if (!presence) {
           ws.send(JSON.stringify({ type: "error", code: "DEVICE_OFFLINE", message: "Device is offline." }));
           return;
