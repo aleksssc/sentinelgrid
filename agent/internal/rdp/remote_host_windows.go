@@ -10,6 +10,7 @@ import (
 	"image/jpeg"
 	"log"
 	"os"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -536,8 +537,19 @@ func sendScreenInfo(ws *websocket.Conn) error {
 }
 
 func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remoteInputResult, options ...any) {
+	// BlockInput only guarantees injected input from the thread that owns the
+	// block. Keep all Remote input handling pinned to one Windows thread.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	injected := newInjectedInputState()
 	defer injected.releaseAll()
+	localBlocked := false
+	defer func() {
+		if localBlocked {
+			blockInput.Call(0)
+		}
+	}()
+	inputMode := "full"
 	var control chan<- remoteControl
 	var watchdog *remoteHostLoopWatchdog
 	for _, option := range options {
@@ -593,11 +605,36 @@ func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remote
 					return
 				}
 			}
+		case PacketInputControl:
+			settings, e := parseInputControl(data)
+			if e != nil {
+				done <- remoteInputResult{err: remoteHostFailure("input-control-invalid", e)}
+				return
+			}
+			inputMode = settings.Mode
+			if inputMode == "view" {
+				injected.releaseAll()
+			}
+			if settings.BlockLocalInput != localBlocked {
+				want := uintptr(0)
+				if settings.BlockLocalInput {
+					want = 1
+				}
+				result, _, callErr := blockInput.Call(want)
+				if result == 0 {
+					log.Printf("[RDP] local input policy rejected: %s", sanitizeRemoteLogError(callErr))
+				} else {
+					localBlocked = settings.BlockLocalInput
+				}
+			}
 		case PacketInput:
 			in, e := parseInput(data)
 			if e != nil {
 				done <- remoteInputResult{err: remoteHostFailure("input-invalid", e)}
 				return
+			}
+			if inputMode == "view" {
+				continue
 			}
 			if e = injected.inject(in); e != nil {
 				log.Printf("[RDP] remote input rejected: %s", sanitizeRemoteLogError(e))
@@ -615,6 +652,7 @@ var getDC = user32.NewProc("GetDC")
 var releaseDC = user32.NewProc("ReleaseDC")
 var getSystemMetrics = user32.NewProc("GetSystemMetrics")
 var sendInput = user32.NewProc("SendInput")
+var blockInput = user32.NewProc("BlockInput")
 var createCompatibleDC = gdi32.NewProc("CreateCompatibleDC")
 var selectObject = gdi32.NewProc("SelectObject")
 var deleteObject = gdi32.NewProc("DeleteObject")
