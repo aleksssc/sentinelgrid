@@ -1,8 +1,8 @@
 export const PERFORMANCE_RANGES = {
-  "1h": { label: "1 hour", duration: 3_600_000, interval: 30_000 },
-  "24h": { label: "24 hours", duration: 86_400_000, interval: 300_000 },
-  "7d": { label: "7 days", duration: 604_800_000, interval: 1_800_000 },
-  "30d": { label: "30 days", duration: 2_592_000_000, interval: 7_200_000 },
+  "1h": { label: "1 hour", duration: 3_600_000, interval: 120_000 },
+  "24h": { label: "24 hours", duration: 86_400_000, interval: 600_000 },
+  "7d": { label: "7 days", duration: 604_800_000, interval: 3_600_000 },
+  "30d": { label: "30 days", duration: 2_592_000_000, interval: 14_400_000 },
 } as const;
 
 export type PerformanceRange = keyof typeof PERFORMANCE_RANGES;
