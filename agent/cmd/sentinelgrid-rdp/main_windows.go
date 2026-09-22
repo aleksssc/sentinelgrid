@@ -1213,30 +1213,124 @@ func (v *viewer) paintStatus(hdc uintptr, client rect, status string) {
 	if status == "" {
 		status = "Connecting to remote device..."
 	}
-	fillStatusRect(hdc, client, rgb(10, 10, 12))
+
+	fillStatusRect(hdc, client, rgb(7, 9, 12))
+
 	v.mu.RLock()
 	state := v.sessionState
+	started := v.loadingAnimationStarted
 	v.mu.RUnlock()
-	secure := rgb(96, 165, 250)
+
+	stageLabel := loadingStatusLabel(status)
+	stageColor := rgb(96, 165, 250)
+	secureColor := rgb(96, 165, 250)
+	videoColor := rgb(91, 98, 111)
+	controlColor := rgb(91, 98, 111)
+
 	if state == viewerStateNegotiatingVideo {
-		secure = rgb(130, 201, 167)
-		status = "Secure session established. Starting video..."
+		stageLabel = "Starting video"
+		stageColor = rgb(96, 165, 250)
+		secureColor = rgb(130, 201, 167)
+		videoColor = rgb(96, 165, 250)
+		status = "Secure session established. Waiting for the first video frame..."
 	}
-	cardWidth, cardHeight := int32(min(420, int(client.Right)-24)), int32(250)
-	card := rect{Left: (client.Right - cardWidth) / 2, Top: (client.Bottom - cardHeight) / 2, Right: (client.Right + cardWidth) / 2, Bottom: (client.Bottom + cardHeight) / 2}
-	drawStatusRoundRect(hdc, card, 16, rgb(13, 15, 18), rgb(37, 42, 50))
-	drawStatusMark(hdc, card.Left+24, card.Top+24, 28, rgb(13, 15, 18))
-	drawStatusText(hdc, "SentinelGrid Remote", rect{Left: card.Left + 65, Top: card.Top + 21, Right: card.Right - 24, Bottom: card.Top + 50}, rgb(244, 245, 247), 15, fontWeightSemiBold)
-	drawStatusText(hdc, "Starting remote session", rect{Left: card.Left + 24, Top: card.Top + 76, Right: card.Right - 24, Bottom: card.Top + 100}, rgb(226, 232, 240), 14, fontWeightSemiBold)
-	drawStatusText(hdc, status, rect{Left: card.Left + 24, Top: card.Top + 105, Right: card.Right - 24, Bottom: card.Top + 128}, rgb(174, 181, 191), 12, fontWeightNormal)
-	for index, step := range []struct {
-		label string
-		color uintptr
-	}{{"Secure session", secure}, {"Starting video", rgb(96, 165, 250)}, {"Remote control", rgb(149, 156, 168)}} {
-		y := card.Top + 146 + int32(index)*25
-		fillStatusEllipse(hdc, rect{Left: card.Left + 25, Top: y + 5, Right: card.Left + 31, Bottom: y + 11}, step.color)
-		drawStatusText(hdc, step.label, rect{Left: card.Left + 40, Top: y, Right: card.Right - 24, Bottom: y + 17}, step.color, 12, fontWeightNormal)
+
+	cardWidth := int32(min(560, max(0, int(client.Right)-48)))
+	cardHeight := int32(min(306, max(220, int(client.Bottom)-32)))
+	card := rect{
+		Left:   (client.Right - cardWidth) / 2,
+		Top:    (client.Bottom - cardHeight) / 2,
+		Right:  (client.Right + cardWidth) / 2,
+		Bottom: (client.Bottom + cardHeight) / 2,
 	}
+
+	drawStatusRoundRect(hdc, card, 22, rgb(13, 15, 18), rgb(39, 45, 54))
+
+	// Product identity and current connection phase.
+	drawStatusMark(hdc, card.Left+28, card.Top+25, 32, rgb(13, 15, 18))
+	drawStatusText(
+		hdc,
+		"SentinelGrid Remote",
+		rect{Left: card.Left + 72, Top: card.Top + 23, Right: card.Right - 170, Bottom: card.Top + 54},
+		rgb(244, 245, 247),
+		16,
+		fontWeightSemiBold,
+	)
+	chip := rect{Left: card.Right - 150, Top: card.Top + 25, Right: card.Right - 28, Bottom: card.Top + 53}
+	drawStatusRoundRect(hdc, chip, 14, rgb(10, 17, 27), rgb(43, 70, 106))
+	fillStatusEllipse(hdc, rect{Left: chip.Left + 12, Top: chip.Top + 11, Right: chip.Left + 18, Bottom: chip.Top + 17}, stageColor)
+	drawStatusText(hdc, stageLabel, rect{Left: chip.Left + 26, Top: chip.Top, Right: chip.Right - 8, Bottom: chip.Bottom}, stageColor, 12, fontWeightSemiBold)
+
+	// Main connection message.
+	drawStatusText(
+		hdc,
+		"Connecting to remote device",
+		rect{Left: card.Left + 28, Top: card.Top + 82, Right: card.Right - 28, Bottom: card.Top + 112},
+		rgb(244, 245, 247),
+		21,
+		fontWeightSemiBold,
+	)
+	drawStatusText(
+		hdc,
+		status,
+		rect{Left: card.Left + 28, Top: card.Top + 116, Right: card.Right - 28, Bottom: card.Top + 142},
+		rgb(160, 169, 181),
+		12,
+		fontWeightNormal,
+	)
+
+	// A subtle animated progress rail makes the wait feel active without inventing
+	// a percentage that the transport cannot actually know.
+	track := rect{Left: card.Left + 28, Top: card.Top + 156, Right: card.Right - 28, Bottom: card.Top + 162}
+	drawStatusRoundRect(hdc, track, 6, rgb(24, 28, 34), rgb(24, 28, 34))
+	if state == viewerStateNegotiatingVideo {
+		progress := track
+		progress.Right = progress.Left + (progress.Right-progress.Left)*7/10
+		drawStatusRoundRect(hdc, progress, 6, rgb(74, 151, 119), rgb(74, 151, 119))
+	} else {
+		segmentWidth := int32(92)
+		travel := (track.Right - track.Left) - segmentWidth
+		offset := int32(0)
+		if travel > 0 {
+			offset = int32((time.Since(started).Milliseconds() / 5) % int64(travel))
+		}
+		segment := rect{Left: track.Left + offset, Top: track.Top, Right: track.Left + offset + segmentWidth, Bottom: track.Bottom}
+		drawStatusRoundRect(hdc, segment, 6, rgb(58, 123, 213), rgb(58, 123, 213))
+	}
+
+	// Connection stages.
+	type connectionStep struct {
+		label  string
+		detail string
+		color  uintptr
+	}
+	steps := []connectionStep{
+		{label: "Secure session", detail: "Authenticate relay", color: secureColor},
+		{label: "Video stream", detail: "Prepare display", color: videoColor},
+		{label: "Remote control", detail: "Enable input", color: controlColor},
+	}
+	contentWidth := card.Right - card.Left - 56
+	columnWidth := contentWidth / 3
+	for index, step := range steps {
+		left := card.Left + 28 + int32(index)*columnWidth
+		top := card.Top + 188
+		fillStatusEllipse(hdc, rect{Left: left, Top: top + 5, Right: left + 9, Bottom: top + 14}, step.color)
+		drawStatusText(hdc, step.label, rect{Left: left + 18, Top: top, Right: left + columnWidth - 6, Bottom: top + 22}, step.color, 12, fontWeightSemiBold)
+		drawStatusText(hdc, step.detail, rect{Left: left + 18, Top: top + 24, Right: left + columnWidth - 6, Bottom: top + 45}, rgb(115, 123, 136), 11, fontWeightNormal)
+		if index < 2 {
+			lineLeft := left + columnWidth - 18
+			fillStatusRect(hdc, rect{Left: lineLeft, Top: top + 9, Right: lineLeft + 12, Bottom: top + 10}, rgb(45, 51, 61))
+		}
+	}
+
+	drawStatusText(
+		hdc,
+		"Controls become available as soon as the first remote frame is ready.",
+		rect{Left: card.Left + 28, Top: card.Bottom - 44, Right: card.Right - 28, Bottom: card.Bottom - 20},
+		rgb(104, 112, 124),
+		11,
+		fontWeightNormal,
+	)
 }
 
 func main() {

@@ -80,6 +80,9 @@ func (v *viewer) localShellKey(message uint32, wparam, lparam uintptr) bool {
 func (v *viewer) handleShellPointer(hwnd uintptr, message uint32, lparam uintptr) bool {
 	v.mu.Lock()
 	action := v.shell.actionAt(int(int16(lparam)), int(int16(lparam>>16)))
+	if v.sessionState != viewerStateConnected && action != "disconnect" {
+		action = ""
+	}
 	if message == wmMouseLeave || message == wmCaptureChanged {
 		action = ""
 	}
