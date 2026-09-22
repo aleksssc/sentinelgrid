@@ -16,6 +16,7 @@ const (
 	PacketH264Config        byte = 6
 	PacketH264AccessUnit    byte = 7
 	PacketVideoKeyframe     byte = 8
+	PacketInputControl      byte = 9
 	maxRemotePacket              = 8 * 1024 * 1024
 	frameHeaderSize              = 20
 	h264HeaderSize               = 28
@@ -77,6 +78,12 @@ type Input struct {
 	VK       uint16 `json:"vk,omitempty"`
 	Scan     uint16 `json:"scan,omitempty"`
 	Extended bool   `json:"extended,omitempty"`
+}
+
+type InputControl struct {
+	Mode             string `json:"mode"`
+	BlockLocalInput  bool   `json:"block_local_input"`
+	ShowRemoteCursor bool   `json:"show_remote_cursor"`
 }
 
 func packet(kind byte, value []byte) ([]byte, error) {
@@ -213,6 +220,17 @@ func infoPacket(info ScreenInfo) ([]byte, error) {
 func validMouseCoordinates(input Input) bool {
 	return input.X >= 0 && input.Y >= 0 && input.X <= 16384 && input.Y <= 16384
 }
+func parseInputControl(data []byte) (InputControl, error) {
+	var control InputControl
+	if len(data) < 2 || len(data) > 1024 || data[0] != PacketInputControl || json.Unmarshal(data[1:], &control) != nil {
+		return InputControl{}, fmt.Errorf("invalid input control")
+	}
+	if control.Mode != "full" && control.Mode != "view" {
+		return InputControl{}, fmt.Errorf("invalid input control mode")
+	}
+	return control, nil
+}
+
 func parseInput(data []byte) (Input, error) {
 	var input Input
 	if len(data) < 2 || len(data) > 1024 || data[0] != PacketInput || json.Unmarshal(data[1:], &input) != nil {
