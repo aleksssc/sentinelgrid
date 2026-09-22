@@ -614,6 +614,7 @@ func readRemoteInput(ctx context.Context, ws *websocket.Conn, done chan<- remote
 			inputMode = settings.Mode
 			if inputMode == "view" {
 				injected.releaseAll()
+				settings.BlockLocalInput = false
 			}
 			if settings.BlockLocalInput != localBlocked {
 				want := uintptr(0)
