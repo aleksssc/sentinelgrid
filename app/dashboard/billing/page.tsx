@@ -1,10 +1,6 @@
 import Link from "next/link";
 
 import {
-  connection,
-} from "next/server";
-
-import {
   notFound,
   redirect,
 } from "next/navigation";
@@ -205,7 +201,6 @@ export default async function BillingPage({
       checkout?: string;
     }>;
 }) {
-  await connection();
 
   const query =
     await searchParams;
