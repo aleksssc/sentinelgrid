@@ -365,6 +365,18 @@ export default function DeviceDashboard({
       window.setInterval(
         () => {
           router.refresh();
+
+          if (
+            !hasInitialActivity &&
+            activeTab === "activity" &&
+            selectedDevice
+          ) {
+            setActivityState((current) =>
+              current.deviceId === selectedDevice.id
+                ? { ...current, loaded: false }
+                : current
+            );
+          }
         },
         30_000
       );
@@ -374,7 +386,7 @@ export default function DeviceDashboard({
         interval
       );
     };
-  }, [router]);
+  }, [router, hasInitialActivity, activeTab, selectedDevice?.id]);
 
   /* =========================
      LAZY ACTIVITY
@@ -460,6 +472,24 @@ export default function DeviceDashboard({
     activityState.loaded,
     activityState.loading,
   ]);
+
+  function refreshActivity() {
+    if (
+      hasInitialActivity ||
+      !selectedDevice
+    ) {
+      router.refresh();
+      return;
+    }
+
+    setActivityState((current) => ({
+      ...current,
+      deviceId: selectedDevice.id,
+      loading: false,
+      loaded: false,
+      error: undefined,
+    }));
+  }
 
   /* =========================
      FILTERS
@@ -1937,6 +1967,7 @@ export default function DeviceDashboard({
                     activityState.deviceId === selectedDevice.id &&
                     activityState.loading
                   }
+                  onActivityRefresh={refreshActivity}
                   now={now}
                   sites={sites}
                   canManage={canManage}
@@ -2178,6 +2209,7 @@ function DeviceTabPanel({
   activityCommands,
   activityError,
   activityLoading,
+  onActivityRefresh,
   now,
   sites,
   canManage,
@@ -2189,6 +2221,7 @@ function DeviceTabPanel({
   activityCommands: DeviceActivityCommand[];
   activityError?: string;
   activityLoading?: boolean;
+  onActivityRefresh?: () => void | Promise<void>;
   now: number;
   sites: Site[];
   canManage: boolean;
@@ -2244,6 +2277,7 @@ function DeviceTabPanel({
         commands={activityCommands}
         error={activityError}
         now={now}
+        onRefresh={onActivityRefresh}
       />
     );
   }
