@@ -12,8 +12,12 @@ export type OrganizationContextItem = {
   name: string;
   description: string | null;
   owner_id: string | null;
-  setup_completed: boolean | null;
+  setup_completed: boolean;
   created_at: string | null;
+};
+
+type OrganizationContextRow = Omit<OrganizationContextItem, "setup_completed"> & {
+  setup_completed: boolean | null;
 };
 
 type MembershipRow = {
@@ -43,7 +47,7 @@ export const getOrganizationContext = cache(async () => {
         .from("organizations")
         .select("id, name, description, owner_id, setup_completed, created_at")
         .order("name")
-        .returns<OrganizationContextItem[]>(),
+        .returns<OrganizationContextRow[]>(),
       supabase
         .from("organization_members")
         .select("organization_id, role")
@@ -76,7 +80,13 @@ export const getOrganizationContext = cache(async () => {
   }
 
   const organizationRoles: Record<string, OrganizationRole> = {};
-  const organizations = (organizationsResult.data ?? []).filter(
+  const normalizedOrganizations: OrganizationContextItem[] =
+    (organizationsResult.data ?? []).map((organization) => ({
+      ...organization,
+      setup_completed: Boolean(organization.setup_completed),
+    }));
+
+  const organizations = normalizedOrganizations.filter(
     (organization) => {
       if (organization.owner_id === user.id) {
         organizationRoles[organization.id] = "owner";
