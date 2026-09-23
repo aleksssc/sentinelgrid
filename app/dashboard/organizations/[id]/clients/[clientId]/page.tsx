@@ -2,20 +2,13 @@ import { StatusBadge } from "@/components/dashboard/dashboard-badges";
 import { PageHeader, SectionHeader, CompactSummary } from "@/components/dashboard/dashboard-primitives";
 import Link from "next/link";
 
-import { connection } from "next/server";
 import { notFound } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { getOrganizationAccessForUser } from "@/lib/organization-access";
 import { getRemoteFeatureAccess } from "@/lib/remote-feature-access";
 
 import DeviceDashboard from "./device-dashboard";
-import {
-  activityCorrelation, enrichActivityUpdateCommands,
-  type DeviceActivity, type DeviceActivityCommand,
-} from "@/lib/activity/device-activity";
-
 import {
   ArrowLeft,
   Building2,
@@ -35,7 +28,6 @@ export default async function ClientDetailsPage({
     clientId: string;
   }>;
 }) {
-  await connection();
 
   const {
     id,
@@ -288,81 +280,6 @@ export default async function ClientDetailsPage({
   const deviceList =
     devices ?? [];
 
-  const deviceIds = deviceList.map((device) => device.id);
-  let deviceActivity: DeviceActivity[] = [];
-  let activityCommands: DeviceActivityCommand[] = [];
-  const activityErrors: string[] = [];
-  const commandColumns = "id, device_id, command_type, status, created_at, requested_by, dispatched_at, acknowledged_at, started_at, completed_at, result, payload, error_code, error_message, update_transaction_id";
-
-  if (deviceIds.length > 0) {
-    const [auditResult, commandResult] = await Promise.all([
-      supabase.from("audit_logs")
-        .select("id, action, status, target_id, created_at, metadata, actor_email, user_id")
-        .in("target_id", deviceIds)
-        .order("created_at", { ascending: false })
-        .limit(100),
-      supabase.from("device_commands")
-        .select(commandColumns)
-        .in("device_id", deviceIds)
-        .order("created_at", { ascending: false })
-        .limit(100),
-    ]);
-    if (auditResult.error) {
-      console.error("Device activity audit query failed:", auditResult.error);
-      activityErrors.push("Audit events could not be loaded.");
-    }
-    if (commandResult.error) {
-      console.error("Device activity command query failed:", commandResult.error);
-      activityErrors.push("Command details could not be loaded.");
-    }
-    deviceActivity = auditResult.data ?? [];
-    activityCommands = commandResult.data ?? [];
-
-    // A recent completion can refer to a request outside the recent-command window.
-    const loadedIds = new Set(activityCommands.map((command) => command.id));
-    const loadedTransactions = new Set(activityCommands.map((command) => command.update_transaction_id));
-    const correlations = deviceActivity.map((event) => activityCorrelation(event.metadata));
-    const isId = (id: string | undefined): id is string => Boolean(id && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id));
-    const missingIds = [...new Set(correlations.map(({ commandId }) => commandId).filter(isId).filter((id) => !loadedIds.has(id)))];
-    const missingTransactions = [...new Set(correlations.map(({ transactionId }) => transactionId).filter(isId).filter((id) => !loadedTransactions.has(id)))];
-    const correlationFilters = [
-      missingIds.length ? `id.in.(${missingIds.join(",")})` : null,
-      missingTransactions.length ? `update_transaction_id.in.(${missingTransactions.join(",")})` : null,
-    ].filter((value): value is string => value !== null);
-    if (correlationFilters.length > 0 && !commandResult.error) {
-      const { data: correlated, error } = await supabase.from("device_commands")
-        .select(commandColumns)
-        .in("device_id", deviceIds)
-        .or(correlationFilters.join(","));
-      if (error) {
-        console.error("Device activity correlation query failed:", error);
-        activityErrors.push("Some related command details could not be loaded.");
-      } else {
-        activityCommands.push(...(correlated ?? []).filter((command) => !loadedIds.has(command.id)));
-      }
-    }
-    const transactionIds = [...new Set(activityCommands
-      .filter((command) => command.command_type === "update_agent")
-      .map((command) => command.update_transaction_id ?? undefined).filter(isId))];
-    if (transactionIds.length > 0 && (isOwner || memberRole)) {
-      try {
-        // Transactions are server-only. Scope to RLS-visible devices and verified org membership.
-        const { data: transactions, error } = await createAdminClient().from("agent_update_transactions")
-          .select("id, device_id, target_version, devices!inner(clients!inner(organization_id))")
-          .eq("devices.clients.organization_id", organization.id)
-          .in("device_id", deviceIds)
-          .in("id", transactionIds)
-          .abortSignal(AbortSignal.timeout(3_000));
-        if (error) throw error;
-        activityCommands = enrichActivityUpdateCommands(activityCommands, transactions ?? []);
-      } catch (error) {
-        // Optional enrichment must not affect the audit/command timeline or its refresh.
-        console.error("Device activity update transaction enrichment failed:",
-          error instanceof Error ? `${error.name}: ${error.message}` : JSON.stringify(error));
-      }
-    }
-  }
-
   /* =========================
      EFFECTIVE STATUS
   ========================= */
@@ -459,8 +376,6 @@ export default async function ClientDetailsPage({
             : "View, search and filter the devices registered for this client."} />
           <div className="sg-panel-body">
           <DeviceDashboard
-            activityCommands={activityCommands}
-            activityError={activityErrors.length ? activityErrors.join(" ") : undefined}
             rdpConfigured={Boolean(process.env.SENTINELGRID_RELAY_URL && process.env.SENTINELGRID_RDP_RELAY_SECRET)}
             devices={
               deviceList
@@ -475,9 +390,6 @@ export default async function ClientDetailsPage({
               canManageInfrastructure
             }
             remoteAccess={remoteAccess}
-            activity={
-              deviceActivity
-            }
           />
           </div>
         </section>
