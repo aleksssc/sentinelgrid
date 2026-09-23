@@ -3,7 +3,6 @@ import { PageHeader, SectionHeader, Surface, EmptyState } from "@/components/das
 import { FormSubmitButton } from "@/components/dashboard/form-submit-button";
 import Link from "next/link";
 
-import { connection } from "next/server";
 
 import {
   notFound,
@@ -62,7 +61,6 @@ export default async function OrganizationSettingsPage({
     inviteError?: string;
   }>;
 }) {
-  await connection();
 
   const { id } =
     await params;
