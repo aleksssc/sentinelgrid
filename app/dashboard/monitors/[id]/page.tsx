@@ -1,7 +1,6 @@
 import { StatusBadge } from "@/components/dashboard/dashboard-badges";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { connection } from "next/server";
 
 import {
   ArrowLeft,
@@ -19,7 +18,6 @@ export default async function MonitorDetailsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await connection();
 
   const { id } = await params;
 
