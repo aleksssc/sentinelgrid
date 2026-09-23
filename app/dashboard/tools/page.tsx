@@ -1,4 +1,3 @@
-import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { Wrench } from "lucide-react";
 import { getOrganizationContext } from "@/lib/organization-context";
@@ -6,7 +5,6 @@ import { PageHeader } from "@/components/dashboard/dashboard-primitives";
 import ToolsWorkspace from "@/components/dashboard/tools/tools-workspace";
 
 export default async function ToolsPage() {
-  await connection();
   const { user, organization } = await getOrganizationContext();
   if (!user) redirect("/auth/login");
   if (!organization) redirect("/onboarding");
