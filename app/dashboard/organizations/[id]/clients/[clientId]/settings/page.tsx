@@ -1,7 +1,6 @@
 import { assertOrganizationPermission } from "@/lib/organization-access";
 import Link from "next/link";
 
-import { connection } from "next/server";
 import { notFound } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
@@ -21,7 +20,6 @@ export default async function ClientSettingsPage({
     clientId: string;
   }>;
 }) {
-  await connection();
 
   const {
     id,
