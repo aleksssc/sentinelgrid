@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { connection } from "next/server";
 import { notFound } from "next/navigation";
 
 import {
@@ -20,7 +19,6 @@ export default async function AddDevicePage({
     clientId: string;
   }>;
 }) {
-  await connection();
 
   const {
     id,
