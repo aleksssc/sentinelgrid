@@ -1,4 +1,3 @@
-import { connection } from "next/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Bot, CheckCircle2, Download, ExternalLink, Server, TriangleAlert } from "lucide-react";
@@ -41,7 +40,6 @@ function formatLastCommunication(value: string | null) {
 }
 
 export default async function AgentsPage() {
-  await connection();
   const { user, organization } = await getOrganizationContext();
   if (!user) redirect("/auth/login");
   if (!organization) redirect("/onboarding");
