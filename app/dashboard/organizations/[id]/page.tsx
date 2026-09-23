@@ -1,7 +1,6 @@
 import { RoleBadge } from "@/components/dashboard/dashboard-badges";
 import { PageHeader, CompactSummary, SectionHeader } from "@/components/dashboard/dashboard-primitives";
 import Link from "next/link";
-import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import OrganizationClients from "./organization-clients";
@@ -12,7 +11,6 @@ type Device = { client_id: string; status: string | null; last_seen: string | nu
 type Site = { client_id: string };
 
 export default async function OrganizationDetailsPage({ params }: { params: Promise<{ id: string }> }) {
-  await connection();
   const { id } = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
