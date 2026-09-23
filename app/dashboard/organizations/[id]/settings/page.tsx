@@ -3,7 +3,6 @@ import { PageHeader, SectionHeader, Surface, EmptyState } from "@/components/das
 import { FormSubmitButton } from "@/components/dashboard/form-submit-button";
 import Link from "next/link";
 
-import { connection } from "next/server";
 
 import {
   notFound,
@@ -15,6 +14,7 @@ import { revalidatePath } from "next/cache";
 import { inviteMemberAction } from "../members/actions";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getOrganizationContext } from "@/lib/organization-context";
 import { createAuditLog } from "@/lib/audit/create-audit-log";
 import { SettingsNotice } from "@/components/organization/settings-notice";
 import { RemoveMemberButton } from "@/components/organization/remove-member-button";
@@ -62,7 +62,6 @@ export default async function OrganizationSettingsPage({
     inviteError?: string;
   }>;
 }) {
-  await connection();
 
   const { id } =
     await params;
@@ -73,134 +72,85 @@ export default async function OrganizationSettingsPage({
   const notice =
     query.notice ?? null;
 
+  const context =
+    await getOrganizationContext();
+
+  const user =
+    context.user;
+
+  if (!user) {
+    redirect("/auth/login");
+  }
+
+  const organization =
+    context.organizations.find(
+      (item) =>
+        item.id === id
+    );
+
+  if (
+    !organization ||
+    context.organizationRoles[id] !== "owner"
+  ) {
+    notFound();
+  }
+
   const supabase =
     await createClient();
 
   const admin =
     createAdminClient();
 
-  /* =========================================================
-                          USER
-  ========================================================== */
-
-  const {
-    data: { user },
-  } =
-    await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/auth/login");
-  }
-
-  /* =========================================================
-                      ORGANIZATION
-  ========================================================== */
-
-  const {
-    data: organization,
-    error: organizationError,
-  } = await supabase
-    .from("organizations")
-    .select("*")
-    .eq(
-      "id",
-      id
-    )
-    .eq(
-      "owner_id",
-      user.id
-    )
-    .single();
-
-  if (
-    organizationError ||
-    !organization
-  ) {
-    notFound();
-  }
-
-  /* =========================================================
-                          OWNER USER
-  ========================================================== */
-
-  const {
-    data: ownerAuthData,
-    error: ownerAuthError,
-  } =
-    await admin.auth.admin.getUserById(
-      organization.owner_id
-    );
-
-  if (ownerAuthError) {
-    console.error(
-      "Owner auth error:",
-      ownerAuthError
-    );
-  }
-
-  const ownerAuthUser =
-    ownerAuthData?.user ??
-    null;
-
   const ownerDisplayName =
-    ownerAuthUser
-      ?.user_metadata
-      ?.full_name ||
-    ownerAuthUser
-      ?.user_metadata
-      ?.name ||
-    ownerAuthUser
-      ?.email
-      ?.split("@")[0] ||
+    user.user_metadata?.full_name ||
+    user.user_metadata?.name ||
+    user.email?.split("@")[0] ||
     "Organization owner";
 
   const ownerDisplayEmail =
-    ownerAuthUser?.email ??
-    "";
+    user.email ?? "";
 
-  /* =========================================================
-                          MEMBERS
-  ========================================================== */
+  const [
+    membersResult,
+    invitesResult,
+  ] = await Promise.all([
+    supabase
+      .from("organization_members")
+      .select("id, user_id, role, joined_at")
+      .eq("organization_id", organization.id)
+      .order("joined_at", { ascending: true }),
+    supabase
+      .from("organization_invites")
+      .select("id, email, role, status, created_at, expires_at")
+      .eq("organization_id", organization.id)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false }),
+  ]);
 
-  const {
-    data: members,
-    error: membersError,
-  } = await supabase
-    .from(
-      "organization_members"
-    )
-    .select(`
-      id,
-      user_id,
-      role,
-      joined_at
-    `)
-    .eq(
-      "organization_id",
-      organization.id
-    )
-    .order(
-      "joined_at",
-      {
-        ascending: true,
-      }
-    );
-
-  if (membersError) {
+  if (membersResult.error) {
     console.error(
       "Organization members error:",
-      membersError
+      membersResult.error
     );
   }
 
-  /* =========================================================
-                    MEMBER USER DETAILS
-  ========================================================== */
+  if (invitesResult.error) {
+    console.error(
+      "Organization invites error:",
+      invitesResult.error
+    );
+  }
+
+  const members =
+    membersResult.data ?? [];
+
+  const invites =
+    invitesResult.data ?? [];
 
   const membersWithUsers:
     TeamMember[] =
     await Promise.all(
-      (members ?? [])
+      members
         .filter(
           (member) =>
             member.user_id !==
@@ -229,10 +179,8 @@ export default async function OrganizationSettingsPage({
 
               return {
                 ...member,
-
                 display_name:
                   "Unknown user",
-
                 display_email:
                   "",
               };
@@ -243,67 +191,17 @@ export default async function OrganizationSettingsPage({
 
             return {
               ...member,
-
               display_name:
-                authUser
-                  .user_metadata
-                  ?.full_name ||
-                authUser
-                  .user_metadata
-                  ?.name ||
-                authUser
-                  .email
-                  ?.split("@")[0] ||
+                authUser.user_metadata?.full_name ||
+                authUser.user_metadata?.name ||
+                authUser.email?.split("@")[0] ||
                 "User",
-
               display_email:
-                authUser.email ??
-                "",
+                authUser.email ?? "",
             };
           }
         )
     );
-
-  /* =========================================================
-                      PENDING INVITES
-  ========================================================== */
-
-  const {
-    data: invites,
-    error: invitesError,
-  } = await supabase
-    .from(
-      "organization_invites"
-    )
-    .select(`
-      id,
-      email,
-      role,
-      status,
-      created_at,
-      expires_at
-    `)
-    .eq(
-      "organization_id",
-      organization.id
-    )
-    .eq(
-      "status",
-      "pending"
-    )
-    .order(
-      "created_at",
-      {
-        ascending: false,
-      }
-    );
-
-  if (invitesError) {
-    console.error(
-      "Organization invites error:",
-      invitesError
-    );
-  }
 
   /* =========================================================
                     UPDATE ORGANIZATION

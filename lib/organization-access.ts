@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -25,23 +26,25 @@ export {
   type OrganizationRole,
 } from "./organization-access-core";
 
-export async function getOrganizationSubscription(organizationId: string) {
-  return getOrganizationSubscriptionById(
-    createAdminClient(),
-    organizationId
-  );
-}
+export const getOrganizationSubscription = cache(
+  async (organizationId: string) =>
+    getOrganizationSubscriptionById(
+      createAdminClient(),
+      organizationId
+    )
+);
 
-export async function getOrganizationAccessForUser(
-  organizationId: string,
-  userId: string
-) {
-  return resolveOrganizationAccessForUser(
-    createAdminClient(),
-    organizationId,
-    userId
-  );
-}
+export const getOrganizationAccessForUser = cache(
+  async (
+    organizationId: string,
+    userId: string
+  ) =>
+    resolveOrganizationAccessForUser(
+      createAdminClient(),
+      organizationId,
+      userId
+    )
+);
 
 export async function getOrganizationAccess(organizationId: string) {
   const supabase = await createClient();

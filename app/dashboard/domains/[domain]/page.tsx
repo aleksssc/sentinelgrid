@@ -1,4 +1,3 @@
-import { connection } from "next/server";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Globe2, Network, ShieldCheck } from "lucide-react";
@@ -15,7 +14,6 @@ function health(status: DomainMonitorStatus) {
 }
 
 export default async function DomainDetailsPage({ params }: { params: Promise<{ domain: string }> }) {
-  await connection();
   const { user, organization } = await getOrganizationContext();
   if (!user) redirect("/auth/login");
   if (!organization) redirect("/onboarding");

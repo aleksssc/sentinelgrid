@@ -204,8 +204,8 @@ type Props = {
     rdp: RemoteFeatureAccess;
   };
 
-  activity: DeviceActivity[];
-  activityCommands: DeviceActivityCommand[];
+  activity?: DeviceActivity[];
+  activityCommands?: DeviceActivityCommand[];
   activityError?: string;
 };
 
@@ -269,6 +269,30 @@ export default function DeviceDashboard({
     useState<DeviceTab>(
       "overview"
     );
+
+  const hasInitialActivity =
+    activity !== undefined ||
+    activityCommands !== undefined ||
+    activityError !== undefined;
+
+  const [
+    activityState,
+    setActivityState,
+  ] = useState<{
+    deviceId: string | null;
+    loading: boolean;
+    loaded: boolean;
+    activity: DeviceActivity[];
+    commands: DeviceActivityCommand[];
+    error?: string;
+  }>({
+    deviceId: null,
+    loading: false,
+    loaded: false,
+    activity: activity ?? [],
+    commands: activityCommands ?? [],
+    error: activityError,
+  });
 
   const [
     actionsOpen,
@@ -341,6 +365,18 @@ export default function DeviceDashboard({
       window.setInterval(
         () => {
           router.refresh();
+
+          if (
+            !hasInitialActivity &&
+            activeTab === "activity" &&
+            selectedDevice
+          ) {
+            setActivityState((current) =>
+              current.deviceId === selectedDevice.id
+                ? { ...current, loaded: false }
+                : current
+            );
+          }
         },
         30_000
       );
@@ -350,7 +386,110 @@ export default function DeviceDashboard({
         interval
       );
     };
-  }, [router]);
+  }, [router, hasInitialActivity, activeTab, selectedDevice?.id]);
+
+  /* =========================
+     LAZY ACTIVITY
+  ========================= */
+
+  useEffect(() => {
+    if (
+      hasInitialActivity ||
+      activeTab !== "activity" ||
+      !selectedDevice
+    ) {
+      return;
+    }
+
+    if (
+      activityState.deviceId === selectedDevice.id &&
+      (activityState.loading || activityState.loaded)
+    ) {
+      return;
+    }
+
+    const deviceId = selectedDevice.id;
+    const controller = new AbortController();
+
+    setActivityState({
+      deviceId,
+      loading: true,
+      loaded: false,
+      activity: [],
+      commands: [],
+    });
+
+    void fetch(
+      `/api/devices/${deviceId}/activity`,
+      {
+        cache: "no-store",
+        signal: controller.signal,
+      }
+    )
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Activity request failed with ${response.status}`);
+        }
+
+        return response.json() as Promise<{
+          activity?: DeviceActivity[];
+          activityCommands?: DeviceActivityCommand[];
+          activityError?: string;
+        }>;
+      })
+      .then((payload) => {
+        setActivityState({
+          deviceId,
+          loading: false,
+          loaded: true,
+          activity: payload.activity ?? [],
+          commands: payload.activityCommands ?? [],
+          error: payload.activityError,
+        });
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        console.error("Device activity load failed:", error);
+        setActivityState({
+          deviceId,
+          loading: false,
+          loaded: true,
+          activity: [],
+          commands: [],
+          error: "Activity could not be loaded.",
+        });
+      });
+
+    return () => controller.abort();
+  }, [
+    activeTab,
+    selectedDevice,
+    hasInitialActivity,
+    activityState.deviceId,
+    activityState.loaded,
+    activityState.loading,
+  ]);
+
+  function refreshActivity() {
+    if (
+      hasInitialActivity ||
+      !selectedDevice
+    ) {
+      router.refresh();
+      return;
+    }
+
+    setActivityState((current) => ({
+      ...current,
+      deviceId: selectedDevice.id,
+      loading: false,
+      loaded: false,
+      error: undefined,
+    }));
+  }
 
   /* =========================
      FILTERS
@@ -1802,9 +1941,33 @@ export default function DeviceDashboard({
                 <DeviceTabPanel
                   tab={activeTab}
                   device={selectedDevice}
-                  activity={activity}
-                  activityCommands={activityCommands}
-                  activityError={activityError}
+                  activity={
+                    hasInitialActivity
+                      ? activity ?? []
+                      : activityState.deviceId === selectedDevice.id
+                        ? activityState.activity
+                        : []
+                  }
+                  activityCommands={
+                    hasInitialActivity
+                      ? activityCommands ?? []
+                      : activityState.deviceId === selectedDevice.id
+                        ? activityState.commands
+                        : []
+                  }
+                  activityError={
+                    hasInitialActivity
+                      ? activityError
+                      : activityState.deviceId === selectedDevice.id
+                        ? activityState.error
+                        : undefined
+                  }
+                  activityLoading={
+                    !hasInitialActivity &&
+                    activityState.deviceId === selectedDevice.id &&
+                    activityState.loading
+                  }
+                  onActivityRefresh={refreshActivity}
                   now={now}
                   sites={sites}
                   canManage={canManage}
@@ -2045,6 +2208,8 @@ function DeviceTabPanel({
   activity,
   activityCommands,
   activityError,
+  activityLoading,
+  onActivityRefresh,
   now,
   sites,
   canManage,
@@ -2055,6 +2220,8 @@ function DeviceTabPanel({
   activity?: DeviceActivity[];
   activityCommands: DeviceActivityCommand[];
   activityError?: string;
+  activityLoading?: boolean;
+  onActivityRefresh?: () => void | Promise<void>;
   now: number;
   sites: Site[];
   canManage: boolean;
@@ -2091,6 +2258,17 @@ function DeviceTabPanel({
   }
 
   if (tab === "activity") {
+    if (activityLoading) {
+      return (
+        <div className="mt-6 space-y-3" role="status" aria-label="Loading activity">
+          <div className="h-4 w-36 animate-pulse rounded bg-surface-raised" />
+          <div className="h-20 animate-pulse rounded-xl bg-surface-raised" />
+          <div className="h-20 animate-pulse rounded-xl bg-surface-raised" />
+          <span className="sr-only">Loading activity...</span>
+        </div>
+      );
+    }
+
     return (
       <DeviceActivityTimeline
         key={device.id}
@@ -2099,6 +2277,7 @@ function DeviceTabPanel({
         commands={activityCommands}
         error={activityError}
         now={now}
+        onRefresh={onActivityRefresh}
       />
     );
   }

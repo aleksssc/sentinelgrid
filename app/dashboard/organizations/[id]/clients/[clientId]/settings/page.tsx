@@ -1,16 +1,9 @@
-import { assertOrganizationPermission } from "@/lib/organization-access";
 import Link from "next/link";
-
-import { connection } from "next/server";
 import { notFound } from "next/navigation";
+import { ArrowLeft, Settings } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
-
-import {
-  ArrowLeft,
-  Settings,
-} from "lucide-react";
-
+import { getOrganizationContext } from "@/lib/organization-context";
 import ClientSettingsForm from "./client-settings-form";
 
 export default async function ClientSettingsPage({
@@ -21,230 +14,89 @@ export default async function ClientSettingsPage({
     clientId: string;
   }>;
 }) {
-  await connection();
+  const { id, clientId } = await params;
+  const context = await getOrganizationContext();
 
-  const {
-    id,
-    clientId,
-  } = await params;
-
-  const supabase =
-    await createClient();
-
-  /* =========================================================
-                          USER
-  ========================================================== */
-
-  const {
-    data: { user },
-  } =
-    await supabase.auth.getUser();
-
-  if (!user) {
+  if (!context.user) {
     return null;
   }
 
-  await assertOrganizationPermission(id, "clients.manage");
+  const organization = context.organizations.find((item) => item.id === id);
+  const role = context.organizationRoles[id];
 
-  /* =========================================================
-                      ORGANIZATION
-  ========================================================== */
-
-  const {
-    data: organization,
-    error: organizationError,
-  } = await supabase
-    .from("organizations")
-    .select("*")
-    .eq("id", id)
-    .single();
-
-  if (
-    organizationError ||
-    !organization
-  ) {
-    console.error(
-      "Organization error:",
-      organizationError
-    );
-
+  if (!organization || !role || (role !== "owner" && role !== "admin")) {
     notFound();
   }
 
-  /* =========================================================
-                          CLIENT
-  ========================================================== */
+  const supabase = await createClient();
 
-  const {
-    data: client,
-    error: clientError,
-  } = await supabase
-    .from("clients")
-    .select(`
-      id,
-      name,
-      description,
-      status
-    `)
-    .eq(
-      "id",
-      clientId
-    )
-    .eq(
-      "organization_id",
-      organization.id
-    )
-    .single();
+  const [clientResult, sitesResult, devicesResult] = await Promise.all([
+    supabase
+      .from("clients")
+      .select("id, name, description, status")
+      .eq("id", clientId)
+      .eq("organization_id", organization.id)
+      .single(),
+    supabase
+      .from("sites")
+      .select("id, name, location, description, client_id")
+      .eq("client_id", clientId)
+      .order("name", { ascending: true }),
+    supabase
+      .from("devices")
+      .select("id, hostname, display_name, site_id, status")
+      .eq("client_id", clientId)
+      .order("hostname", { ascending: true }),
+  ]);
 
-  if (clientError) {
-    console.error(
-      "Client error:",
-      clientError
-    );
+  if (clientResult.error) {
+    console.error("Client error:", clientResult.error);
   }
 
-  if (!client) {
+  if (!clientResult.data) {
     notFound();
   }
 
-  /* =========================================================
-                          SITES
-  ========================================================== */
-
-  const {
-    data: sites,
-    error: sitesError,
-  } = await supabase
-    .from("sites")
-    .select(`
-      id,
-      name,
-      location,
-      description,
-      client_id
-    `)
-    .eq(
-      "client_id",
-      client.id
-    )
-    .order(
-      "name",
-      {
-        ascending: true,
-      }
-    );
-
-  if (sitesError) {
-    console.error(
-      "Sites error:",
-      sitesError
-    );
+  if (sitesResult.error) {
+    console.error("Sites error:", sitesResult.error);
   }
 
-  /* =========================================================
-                          DEVICES
-  ========================================================== */
-
-  const {
-    data: devices,
-    error: devicesError,
-  } = await supabase
-    .from("devices")
-    .select(`
-      id,
-      hostname,
-      display_name,
-      site_id,
-      status
-    `)
-    .eq(
-      "client_id",
-      client.id
-    )
-    .order(
-      "hostname",
-      {
-        ascending: true,
-      }
-    );
-
-  if (devicesError) {
-    console.error(
-      "Devices error:",
-      devicesError
-    );
+  if (devicesResult.error) {
+    console.error("Devices error:", devicesResult.error);
   }
 
-  /* =========================================================
-                            PAGE
-  ========================================================== */
+  const client = clientResult.data;
 
   return (
     <div className="sg-page-shell">
-
       <div className="sg-page">
-
-        {/* =====================================================
-                            BACK
-        ====================================================== */}
-
         <Link
           href={`/dashboard/organizations/${organization.id}/clients/${client.id}`}
           className="mb-6 inline-flex items-center gap-2 text-sm text-surface-muted transition hover:text-white"
         >
           <ArrowLeft size={16} />
-
           Back to {client.name}
         </Link>
 
-        {/* =====================================================
-                            HEADER
-        ====================================================== */}
-
         <div className="mb-8">
-
-          <div
-            className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-surface-edge bg-surface text-zinc-400"
-          >
+          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-surface-edge bg-surface text-zinc-400">
             <Settings size={22} />
           </div>
 
-          <h1 className="sg-page-title">
-            Client settings
-          </h1>
+          <h1 className="sg-page-title">Client settings</h1>
 
           <p className="mt-2 text-zinc-400">
-            Manage settings for{" "}
-
-            <span className="text-zinc-200">
-              {client.name}
-            </span>
-            .
+            Manage settings for <span className="text-zinc-200">{client.name}</span>.
           </p>
-
         </div>
 
-        {/* =====================================================
-                        SETTINGS FORM
-        ====================================================== */}
-
         <ClientSettingsForm
-          organizationId={
-            organization.id
-          }
-          client={
-            client
-          }
-          initialSites={
-            sites ?? []
-          }
-          initialDevices={
-            devices ?? []
-          }
+          organizationId={organization.id}
+          client={client}
+          initialSites={sitesResult.data ?? []}
+          initialDevices={devicesResult.data ?? []}
         />
-
       </div>
-
     </div>
   );
 }

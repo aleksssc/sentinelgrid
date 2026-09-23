@@ -1,4 +1,3 @@
-import { connection } from "next/server";
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import {
@@ -15,9 +14,9 @@ import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "@/components/dashboard/dashboard-badges";
 import { AddMonitorButton, type AddMonitorState } from "@/components/dashboard/add-monitor-button";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getOrganizationResourceCreationAccess } from "@/lib/resource-creation";
+import { getOrganizationResourceCreationAccess, getOrganizationResourceUsage } from "@/lib/resource-creation";
 import { getOrganizationContext } from "@/lib/organization-context";
-import { assertOrganizationPermission } from "@/lib/organization-access";
+import { accessCanCreateResource, assertOrganizationPermission, getOrganizationSubscription } from "@/lib/organization-access";
 import { redirect } from "next/navigation";
 import { CompactSummary, EmptyState, PageHeader, SectionHeader, Surface } from "@/components/dashboard/dashboard-primitives";
 import { FormSubmitButton } from "@/components/dashboard/form-submit-button";
@@ -51,23 +50,65 @@ function formatLastChecked(value: string | null) {
 }
 
 export default async function MonitorsPage() {
-  await connection();
+  const context = await getOrganizationContext();
+  if (!context.user) return null;
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { organization } = await getOrganizationContext();
+  const organization = context.organization;
   if (!organization) redirect("/onboarding");
-  const organizationId = organization.id;
-  const monitorCreationAccess = await getOrganizationResourceCreationAccess(createAdminClient(), organizationId, user.id, "monitors");
-  const monitorCreationReason = monitorCreationAccess.reason === "permission_denied" ? "Only owners and admins can create monitors." : monitorCreationAccess.reason === "subscription_restricted" ? "Your subscription requires attention before new monitors can be created." : monitorCreationAccess.reason === "limit_reached" ? "Monitor limit reached. Upgrade your plan to add more monitors." : undefined;
 
-  const { data: monitors, error: monitorsError } = await supabase
-    .from("monitors")
-    .select("*")
-    .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false });
-  if (monitorsError) throw new Error("Could not load organization monitors", { cause: monitorsError });
+  const role = context.organizationRoles[organization.id];
+  if (!role || !organization.owner_id) redirect("/onboarding");
+
+  const organizationId = organization.id;
+  const supabase = await createClient();
+  const admin = createAdminClient();
+
+  const [monitorsResult, subscription, currentUsage] = await Promise.all([
+    supabase
+      .from("monitors")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
+    getOrganizationSubscription(organizationId),
+    getOrganizationResourceUsage(admin, organizationId, "monitors"),
+  ]);
+
+  if (monitorsResult.error) {
+    throw new Error("Could not load organization monitors", {
+      cause: monitorsResult.error,
+    });
+  }
+
+  const initialAccess = {
+    organizationId,
+    ownerId: organization.owner_id,
+    userId: context.user.id,
+    role,
+    subscription,
+  };
+
+  const canCreateByRole = role === "owner" || role === "admin";
+  const allowed =
+    canCreateByRole &&
+    accessCanCreateResource(initialAccess, "monitors", currentUsage);
+
+  const monitorCreationAccess = {
+    allowed,
+    reason: !canCreateByRole
+      ? ("permission_denied" as const)
+      : allowed
+        ? undefined
+        : ("limit_reached" as const),
+    currentUsage,
+  };
+
+  const monitorCreationReason = monitorCreationAccess.reason === "permission_denied"
+    ? "Only owners and admins can create monitors."
+    : monitorCreationAccess.reason === "limit_reached"
+      ? "Monitor limit reached. Upgrade your plan to add more monitors."
+      : undefined;
+
+  const monitors = monitorsResult.data ?? [];
 
   async function addMonitor(_previousState: AddMonitorState, formData: FormData): Promise<AddMonitorState> {
     "use server";

@@ -129,12 +129,13 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
   );
 }
 
-export default function DeviceActivityTimeline({ deviceId, events, commands, error, now }: {
+export default function DeviceActivityTimeline({ deviceId, events, commands, error, now, onRefresh }: {
   deviceId: string;
   events: DeviceActivity[];
   commands: DeviceActivityCommand[];
   error?: string;
   now: number;
+  onRefresh?: () => void | Promise<void>;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<ActivityFilter>("all");
@@ -154,7 +155,10 @@ export default function DeviceActivityTimeline({ deviceId, events, commands, err
             <h3 className="text-sm font-semibold text-zinc-100">Activity timeline</h3>
             <p className="mt-1 text-xs leading-relaxed text-surface-muted">Recent device events, grouped by command. Refreshes every 30 seconds.</p>
           </div>
-          <button type="button" onClick={() => startRefresh(() => router.refresh())} disabled={refreshing} aria-label="Refresh activity" title="Refresh activity"
+          <button type="button" onClick={() => startRefresh(() => {
+              if (onRefresh) void onRefresh();
+              else router.refresh();
+            })} disabled={refreshing} aria-label="Refresh activity" title="Refresh activity"
             className="sg-button sg-button-secondary shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-focus disabled:opacity-50">
             <RefreshCw size={14} aria-hidden="true" className={refreshing ? "animate-spin motion-reduce:animate-none" : ""} />
           </button>

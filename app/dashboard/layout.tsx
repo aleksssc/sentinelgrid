@@ -19,7 +19,7 @@ import NotificationsBell from "@/components/dashboard/notifications/notification
 import { UserMenu } from "@/components/user-menu";
 
 import { getOrganizationContext } from "@/lib/organization-context";
-import { getOrganizationEntitlements } from "@/lib/billing/entitlements";
+import { getOrganizationSubscription } from "@/lib/organization-access";
 
 function NotificationFallback() {
   return (
@@ -84,13 +84,13 @@ export default async function DashboardLayout({
      CURRENT ORGANIZATION PLAN
   ========================================================== */
 
-  const entitlements =
-    await getOrganizationEntitlements(
+  const subscription =
+    await getOrganizationSubscription(
       organization.id
     );
 
   const plan =
-    entitlements.plan;
+    subscription.plan;
 
   /* =========================================================
      DASHBOARD

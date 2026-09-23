@@ -1,7 +1,6 @@
 import { StatusBadge } from "@/components/dashboard/dashboard-badges";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { connection } from "next/server";
 
 import {
   ArrowLeft,
@@ -19,17 +18,10 @@ export default async function MonitorDetailsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await connection();
 
   const { id } = await params;
 
   const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return null;
 
   const { data: monitor } = await supabase
     .from("monitors")

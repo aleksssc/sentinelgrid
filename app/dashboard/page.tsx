@@ -2,8 +2,8 @@ import { StatusBadge } from "@/components/dashboard/dashboard-badges";
 import { PageHeader } from "@/components/dashboard/dashboard-primitives";
 import Link from "next/link";
 
-import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getOrganizationContext } from "@/lib/organization-context";
 
 import {
   Activity,
@@ -233,261 +233,115 @@ function getStatusClasses(status: string) {
 // ============================================================
 
 export default async function DashboardPage() {
-  await connection();
+  const context = await getOrganizationContext();
 
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  if (!context.user) {
     return null;
   }
 
+  const organizations = context.organizations as Organization[];
+  const organizationIds = organizations.map((organization) => organization.id);
   const dashboardNow = Date.now();
   const sevenDaysAgo = new Date(
     dashboardNow - 7 * 86_400_000
   ).toISOString();
 
-  // ============================================================
-  // ORGANIZATIONS
-  // ============================================================
-
-  const {
-    data: ownedOrganizationsData,
-    error: ownedOrganizationsError,
-  } = await supabase
-    .from("organizations")
-    .select("*")
-    .eq("owner_id", user.id);
-
-  if (ownedOrganizationsError) {
-    console.error(
-      "Dashboard owned organizations error:",
-      ownedOrganizationsError
-    );
-  }
-
-  const ownedOrganizations =
-    (ownedOrganizationsData ?? []) as Organization[];
-
-  // ============================================================
-  // ORGANIZATION MEMBERSHIPS
-  // ============================================================
-
-  const {
-    data: membershipData,
-    error: membershipError,
-  } = await supabase
-    .from("organization_members")
-    .select("organization_id")
-    .eq("user_id", user.id);
-
-  if (membershipError) {
-    console.error(
-      "Dashboard organization memberships error:",
-      membershipError
-    );
-  }
-
-  const memberOrganizationIds = [
-    ...new Set(
-      (membershipData ?? [])
-        .map((membership) => membership.organization_id)
-        .filter(Boolean)
-    ),
-  ];
-
-  let memberOrganizations: Organization[] = [];
-
-  if (memberOrganizationIds.length > 0) {
-    const {
-      data: memberOrganizationsData,
-      error: memberOrganizationsError,
-    } = await supabase
-      .from("organizations")
-      .select("*")
-      .in("id", memberOrganizationIds);
-
-    if (memberOrganizationsError) {
-      console.error(
-        "Dashboard member organizations error:",
-        memberOrganizationsError
-      );
-    }
-
-    memberOrganizations =
-      (memberOrganizationsData ?? []) as Organization[];
-  }
-
-  // ============================================================
-  // MERGE ORGANIZATIONS
-  // ============================================================
-
-  const organizationMap = new Map<string, Organization>();
-
-  for (const organization of ownedOrganizations) {
-    organizationMap.set(organization.id, organization);
-  }
-
-  for (const organization of memberOrganizations) {
-    organizationMap.set(organization.id, organization);
-  }
-
-  const organizations = Array.from(
-    organizationMap.values()
-  );
-
-  const organizationIds = organizations.map(
-    (organization) => organization.id
-  );
-
-  // ============================================================
-  // CLIENTS
-  // ============================================================
+  const supabase = await createClient();
 
   let clients: Client[] = [];
 
   if (organizationIds.length > 0) {
-    const {
-      data: clientsData,
-      error: clientsError,
-    } = await supabase
+    const { data: clientsData, error: clientsError } = await supabase
       .from("clients")
       .select("*")
       .in("organization_id", organizationIds);
 
     if (clientsError) {
-      console.error(
-        "Dashboard clients error:",
-        clientsError
-      );
+      console.error("Dashboard clients error:", clientsError);
     }
 
     clients = (clientsData ?? []) as Client[];
   }
 
-  const clientIds = clients.map(
-    (client) => client.id
-  );
-
-  // ============================================================
-  // SITES
-  // ============================================================
+  const clientIds = clients.map((client) => client.id);
 
   let sites: Site[] = [];
-
-  if (clientIds.length > 0) {
-    const {
-      data: sitesData,
-      error: sitesError,
-    } = await supabase
-      .from("sites")
-      .select("*")
-      .in("client_id", clientIds);
-
-    if (sitesError) {
-      console.error(
-        "Dashboard sites error:",
-        sitesError
-      );
-    }
-
-    sites = (sitesData ?? []) as Site[];
-  }
-
-  // ============================================================
-  // DEVICES
-  // ============================================================
-
   let devices: Device[] = [];
-
-  if (clientIds.length > 0) {
-    const {
-      data: devicesData,
-      error: devicesError,
-    } = await supabase
-      .from("devices")
-      .select("*")
-      .in("client_id", clientIds);
-
-    if (devicesError) {
-      console.error(
-        "Dashboard devices error:",
-        devicesError
-      );
-    }
-
-    devices = (devicesData ?? []) as Device[];
-  }
-
-
-  // ============================================================
-  // MONITORS AND OPERATIONS
-  // ============================================================
-
   let monitors: Monitor[] = [];
   let commandFailures: OperationFailure[] = [];
   let auditFailures: OperationFailure[] = [];
 
-  const {
-    data: monitorsData,
-    error: monitorsError,
-  } = await supabase
-    .from("monitors")
-    .select("id, name, status, last_checked_at")
-    .in("organization_id", organizationIds);
+  const emptyResult = Promise.resolve({ data: [], error: null });
 
-  if (monitorsError) {
-    console.error(
-      "Dashboard monitors error:",
-      monitorsError
-    );
+  const [
+    sitesResult,
+    devicesResult,
+    monitorsResult,
+    commandFailuresResult,
+    auditFailuresResult,
+  ] = await Promise.all([
+    clientIds.length > 0
+      ? supabase.from("sites").select("*").in("client_id", clientIds)
+      : emptyResult,
+    clientIds.length > 0
+      ? supabase.from("devices").select("*").in("client_id", clientIds)
+      : emptyResult,
+    organizationIds.length > 0
+      ? supabase
+          .from("monitors")
+          .select("id, name, status, last_checked_at")
+          .in("organization_id", organizationIds)
+      : emptyResult,
+    organizationIds.length > 0
+      ? supabase
+          .from("device_commands")
+          .select("id, command_type, status, created_at")
+          .in("organization_id", organizationIds)
+          .in("status", ["failed", "expired"])
+          .gte("created_at", sevenDaysAgo)
+          .limit(50)
+      : emptyResult,
+    organizationIds.length > 0
+      ? supabase
+          .from("audit_logs")
+          .select("id, action, status, created_at")
+          .in("organization_id", organizationIds)
+          .eq("status", "failed")
+          .gte("created_at", sevenDaysAgo)
+          .limit(50)
+      : emptyResult,
+  ]);
+
+  if (sitesResult.error) {
+    console.error("Dashboard sites error:", sitesResult.error);
+  } else {
+    sites = (sitesResult.data ?? []) as Site[];
   }
 
-  monitors = (monitorsData ?? []) as Monitor[];
-
-  if (organizationIds.length > 0) {
-    const [
-      commandFailuresResult,
-      auditFailuresResult,
-    ] = await Promise.all([
-      supabase
-        .from("device_commands")
-        .select("id, command_type, status, created_at")
-        .in("organization_id", organizationIds)
-        .in("status", ["failed", "expired"])
-        .gte("created_at", sevenDaysAgo)
-        .limit(50),
-      supabase
-        .from("audit_logs")
-        .select("id, action, status, created_at")
-        .in("organization_id", organizationIds)
-        .eq("status", "failed")
-        .gte("created_at", sevenDaysAgo)
-        .limit(50),
-    ]);
-
-    if (commandFailuresResult.error) {
-      console.error(
-        "Dashboard command failures error:",
-        commandFailuresResult.error
-      );
-    }
-
-    if (auditFailuresResult.error) {
-      console.error(
-        "Dashboard audit failures error:",
-        auditFailuresResult.error
-      );
-    }
-
-    commandFailures =
-      (commandFailuresResult.data ?? []) as OperationFailure[];
-    auditFailures =
-      (auditFailuresResult.data ?? []) as OperationFailure[];
+  if (devicesResult.error) {
+    console.error("Dashboard devices error:", devicesResult.error);
+  } else {
+    devices = (devicesResult.data ?? []) as Device[];
   }
+
+  if (monitorsResult.error) {
+    console.error("Dashboard monitors error:", monitorsResult.error);
+  } else {
+    monitors = (monitorsResult.data ?? []) as Monitor[];
+  }
+
+  if (commandFailuresResult.error) {
+    console.error("Dashboard command failures error:", commandFailuresResult.error);
+  } else {
+    commandFailures = (commandFailuresResult.data ?? []) as OperationFailure[];
+  }
+
+  if (auditFailuresResult.error) {
+    console.error("Dashboard audit failures error:", auditFailuresResult.error);
+  } else {
+    auditFailures = (auditFailuresResult.data ?? []) as OperationFailure[];
+  }
+
   // ============================================================
   // DEVICE STATS
   // ============================================================
