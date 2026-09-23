@@ -1,4 +1,3 @@
-import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle, ArrowUpRight, CalendarClock, Globe2, Network, Plus, ScanSearch, ShieldX } from "lucide-react";
@@ -15,7 +14,6 @@ function domainHealth(status: DomainMonitorStatus) {
 function domainHref(hostname: string) { return `/dashboard/domains/${encodeURIComponent(hostname)}`; }
 
 export default async function DomainsPage() {
-  await connection();
   const { user, organization } = await getOrganizationContext();
   if (!user) redirect("/auth/login");
   if (!organization) redirect("/onboarding");
