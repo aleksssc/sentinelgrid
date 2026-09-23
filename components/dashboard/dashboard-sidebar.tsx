@@ -68,7 +68,7 @@ export default function DashboardSidebar({ organizationId }: { organizationId: s
   function renderLink({ name, href, icon: Icon, exact }: SidebarLink) {
     const active = name === "Clients" ? pathname.startsWith("/dashboard/organizations/") : exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
     return <div key={name} className="sg-sidebar-item" data-active={active || undefined}>
-      <Link prefetch={false} href={href} aria-label={name} title={name} aria-current={active ? "page" : undefined} onClick={() => setMobileOpen(false)} className="sg-sidebar-link group">
+      <Link href={href} aria-label={name} title={name} aria-current={active ? "page" : undefined} onClick={() => setMobileOpen(false)} className="sg-sidebar-link group">
         <Icon size={18} strokeWidth={active ? 2 : 1.75} aria-hidden="true" />
         <span className="sg-sidebar-label flex-1">{name}</span>
         <ChevronRight size={14} className="sg-sidebar-chevron" aria-hidden="true" />
@@ -79,7 +79,7 @@ export default function DashboardSidebar({ organizationId }: { organizationId: s
   function content(mobile: boolean) {
     return <>
       <div className="sg-sidebar-brand">
-        <Link prefetch={false} href="/dashboard" aria-label="SentinelGrid overview" onClick={() => setMobileOpen(false)}>
+        <Link href="/dashboard" aria-label="SentinelGrid overview" onClick={() => setMobileOpen(false)}>
           <BrandLogo variant="mark" className="sg-sidebar-mark" />
           <BrandLogo variant="lockup" className="sg-sidebar-lockup" />
         </Link>
