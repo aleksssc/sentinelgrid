@@ -13,12 +13,13 @@ import {
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getOrganizationContext } from "@/lib/organization-context";
 
 import {
   accessCanCreateResource,
   accessHasPermission,
   getAccessResourceLimit,
-  getOrganizationAccess,
+  getOrganizationSubscription,
 } from "@/lib/organization-access";
 
 import InviteMemberForm from "./invite-member-form";
@@ -51,37 +52,67 @@ export default async function MembersPage({
   const { id: organizationId } =
     await params;
 
-  const supabase =
-    await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const context = await getOrganizationContext();
+  const user = context.user;
 
   if (!user) {
     return null;
   }
 
+  const organization = context.organizations.find(
+    (item) => item.id === organizationId
+  );
+  const role = context.organizationRoles[organizationId];
 
-  /* =========================
-     ORGANIZATION ACCESS
-  ========================= */
-
-  const access =
-    await getOrganizationAccess(
-      organizationId
-    );
-
-
-  if (!access) {
+  if (!organization || !role || !organization.owner_id) {
     notFound();
   }
 
+  const supabase = await createClient();
+
+  const [
+    membersResult,
+    invitesResult,
+    subscription,
+  ] = await Promise.all([
+    supabase
+      .from("organization_members")
+      .select("user_id, role, joined_at")
+      .eq("organization_id", organizationId)
+      .order("joined_at", { ascending: true }),
+    supabase
+      .from("organization_invites")
+      .select("id, email, role, status, created_at, expires_at")
+      .eq("organization_id", organizationId)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false }),
+    getOrganizationSubscription(organizationId),
+  ]);
+
+  if (membersResult.error) {
+    console.error("Members error:", membersResult.error);
+  }
+
+  if (invitesResult.error) {
+    console.error("Invites error:", invitesResult.error);
+  }
+
+  const members =
+    (membersResult.data ?? []) as MemberRow[];
+
+  const pendingInvites =
+    (invitesResult.data ?? []) as InviteRow[];
+
+  const access = {
+    organizationId,
+    ownerId: organization.owner_id,
+    userId: user.id,
+    role,
+    subscription,
+  };
 
   const isOwner =
     access.role === "owner";
-
 
   const canManageMembers =
     accessHasPermission(
@@ -89,128 +120,17 @@ export default async function MembersPage({
       "members.manage"
     );
 
-
-  /* =========================
-     ORGANIZATION
-  ========================= */
-
-  const {
-    data: organization,
-    error: organizationError,
-  } = await supabase
-    .from("organizations")
-    .select(`
-      id,
-      name,
-      owner_id
-    `)
-    .eq("id", organizationId)
-    .single();
-
-
-  if (
-    organizationError ||
-    !organization
-  ) {
-    notFound();
-  }
-
-
-  /* =========================
-     MEMBERS
-  ========================= */
-
-  const {
-    data: membersData,
-    error: membersError,
-  } = await supabase
-    .from("organization_members")
-    .select(`
-      user_id,
-      role,
-      joined_at
-    `)
-    .eq(
-      "organization_id",
-      organizationId
-    )
-    .order("joined_at", {
-      ascending: true,
-    });
-
-
-  if (membersError) {
-    console.error(
-      "Members error:",
-      membersError
-    );
-  }
-
-
-  const members =
-    (membersData ?? []) as MemberRow[];
-
-
-  /* =========================
-     PENDING INVITES
-  ========================= */
-
-  const {
-    data: invitesData,
-    error: invitesError,
-  } = await supabase
-    .from("organization_invites")
-    .select(`
-      id,
-      email,
-      role,
-      status,
-      created_at,
-      expires_at
-    `)
-    .eq(
-      "organization_id",
-      organizationId
-    )
-    .eq(
-      "status",
-      "pending"
-    )
-    .order("created_at", {
-      ascending: false,
-    });
-
-
-  if (invitesError) {
-    console.error(
-      "Invites error:",
-      invitesError
-    );
-  }
-
-
-  const pendingInvites =
-    (invitesData ?? []) as InviteRow[];
-
-
-  /* =========================
-     OWNER ACCOUNT PLAN
-  ========================= */
-
   const plan =
     access.subscription.plan;
 
-
   const subscriptionStatus =
     access.subscription.status;
-
 
   const memberLimit =
     getAccessResourceLimit(
       access,
       "members"
     );
-
 
   /* =========================
      USER DETAILS
