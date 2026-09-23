@@ -23,12 +23,6 @@ export default async function MonitorDetailsPage({
 
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return null;
-
   const { data: monitor } = await supabase
     .from("monitors")
     .select("*")
