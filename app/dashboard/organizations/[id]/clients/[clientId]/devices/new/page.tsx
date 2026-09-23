@@ -82,7 +82,6 @@ export default async function AddDevicePage({
         <DeviceEnrollment
           organizationId={organization.id}
           clientId={client.id}
-          clientName={client.name}
           sites={sitesResult.data ?? []}
         />
       </div>
