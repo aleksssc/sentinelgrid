@@ -1,4 +1,3 @@
-import { connection } from "next/server";
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import {
@@ -51,7 +50,6 @@ function formatLastChecked(value: string | null) {
 }
 
 export default async function MonitorsPage() {
-  await connection();
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
