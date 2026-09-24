@@ -468,7 +468,6 @@ export default function DeviceDashboard({
     activeTab,
     selectedDevice?.id,
     hasInitialActivity,
-    activityState.deviceId,
     activityState.loaded,
   ]);
 
