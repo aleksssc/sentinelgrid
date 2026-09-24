@@ -466,11 +466,10 @@ export default function DeviceDashboard({
     return () => controller.abort();
   }, [
     activeTab,
-    selectedDevice,
+    selectedDevice?.id,
     hasInitialActivity,
     activityState.deviceId,
     activityState.loaded,
-    activityState.loading,
   ]);
 
   function refreshActivity() {
